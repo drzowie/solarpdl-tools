@@ -1,3 +1,5 @@
+=pod
+
 =head2 frag_hist
 =for ref
 
@@ -91,9 +93,6 @@ if all fragments are circular, b=5 can work for fragments up to 5x
 longer than wide (but at a speed cost).  
 
 Fragments that are too eccentric don't get properly considered.
-=begin comment
-' to make the code not look like a big string to emacs
-=end comment
 =item sep (default 3)
 
 Maximum separation between two fragments for them to be considered 
