@@ -1,0 +1,7 @@
+sub pwd {
+  chomp (my($a) = `pwd`);
+  $a;
+}
+
+1;
+
