@@ -1,0 +1,163 @@
+=head2 dr_mean
+
+Derorated, weighted mean of images
+
+=for usage
+
+  $im = dr_mean(\@list, $time, $fwhm, \%options);
+
+@list is a list of FITS images containing solar data.  $time is a
+timestamp of the time around which averaging is to take place.  $fwhm
+is the full-width at half maximum of the Gaussian weighting function
+(in minutes).  
+
+OPTIONS HASH
+
+=over 3
+
+=item hdr
+
+A FITS header to which the output image should be matched, after derotation
+
+=item o, origin
+
+Longitude and latitude of the subsolar point you want in the resampled
+coordinate system
+
+=item 
+
+
+=for ref
+
+This is a sort-of clone of John Beck's DR_MEAN module for the MDI data
+pipeline.  Advantages over the MDI pipeline module: (1) it works in
+floating point rather than integer; and (2) it uses the PDL::Transform
+local-linearization resampler rather than direct bilinear interpolation.
+
+You feed in a list of FITS images complete with dates, a central date
+for the average, a FWHM of the time-average for Gaussian weighting, a
+PDL containing the longitude and latitude of the viewpoint you want to
+hover over, and a timestamp from the image with that time.  You also feed
+in 
+
+
+AUTHOR & HISTORY
+
+Craig DeForest, 29-Jun-2004
+
+=cut
+
+use PDL::Transform::Cartography;
+use strict;
+
+sub dr_mean {
+  my($list,$time,$fwhm,$opt) = @_;
+  
+  barf("dr_mean needs an output header...\n")
+    unless defined($opt->{hdr});
+
+  print "date2int...";
+  $time = date2int($time);
+  print "working at ",int2date('soho ut all',$time),"\n";
+  $fwhm *= 60;
+
+  my $rtime = defined($opt->{hdr}->{DATE_OBS}) ? 
+    date2int($opt->{hdr}->{DATE_OBS}) :
+    $time;
+  print "rotating to ",int2date('soho ut all',date2int($rtime)),"\n";
+
+  $opt = {} unless defined $opt;
+
+
+  my $origin_lonlat = PDL::Transform::_opt($opt,['o','origin'],undef);
+
+  print "Checking origin...";
+  unless(defined($origin_lonlat)) {
+    if($opt->{hdr}) {
+      print "header...";
+      my $t = t_fits2helio($opt->{hdr});
+      print "fits2helio\n";
+      $origin_lonlat = (pdl($opt->{hdr}->{CRVAL1},$opt->{hdr}->{CRVAL2})
+			->apply( $t ) );
+      
+      print "Using $origin_lonlat for rotation origin (from hdr)\n";
+
+    } else {
+      print "Using (0,0) for rotation origin\n";
+      $origin_lonlat = zeroes(2);
+    }
+  }
+    
+  my ($before,$after);
+  
+  my $t;
+  my $out;
+  my $im;
+  my $weight;
+  my $i;
+  
+  print "starting loop....";
+  for $im(@$list) {
+    print "\n\tImage ".$i++." of ".(@$list+0)."....";
+
+    my $imtime = date2int($im->hdr->{DATE_OBS});
+    print "imtime is $imtime"." (".int2date('ut all',$imtime)."); time is $time
+"." (".int2date('ut all',$time).")...";
+    my $dt = $imtime - $time;
+    my $wgt = exp(- 4 * ($dt*$dt)/($fwhm*$fwhm) * log(2) );
+
+    print "dt=$dt sec; fwhm=$fwhm sec; wgt=".sprintf("%.2g",pdl($wgt)->at(0))."...";
+
+    $before += $wgt if($imtime <= $time);
+    $after  += $wgt if($imtime >= $time);
+    
+    my $motion = $origin_lonlat->apply(
+				       t_diff_rot(($rtime-$imtime)/24/3600)
+				       );
+    print "rot: ".sprintf("%.1g",pdl((($time-$imtime)/60))->at(0))." min...";
+    $motion -= $origin_lonlat;
+    print "o=$origin_lonlat...";
+
+    my $tx = ( !t_fits2helio( $opt->{hdr} )
+	       x t_rot_sphere(origin=>[$origin_lonlat->list])
+	       x t_linear(pre=>[$motion->at(0),0],dim=>2)
+	       x t_fits2helio($im->hdr)
+	       );
+    $FOO::tx = $tx;
+    print "map...";
+
+
+    print "(method=".($opt->{method}||'g').")...";
+    $im->hdrcpy(1);
+    my $goodmask = isgood($im);
+    $im = badmask($im,zeroes($im));
+    $goodmask->sethdr($im->gethdr);
+    $im->hdrcpy(0);
+    my $o2 =          $im->map($tx,$opt->{hdr},{m=>($opt->{method}||'g')});
+    $goodmask = $goodmask->map($tx,$opt->{hdr},{m=>'s'}); # good enough
+    print ("goodmask is ".join("x",$goodmask->dims)."...");
+
+    $weight = zeroes($o2) unless defined($weight);
+    $weight += $wgt * $goodmask;
+    $FOO::goodmask = $goodmask;
+    $out += $o2*$wgt;
+    if(defined $DEBUG::w) {
+      $DEBUG::w->fits_imag($o2,-300,300);
+    }
+    
+    print "ok.";
+
+
+    if(defined($out)) {
+      $out += $o2*$wgt;
+    } else {
+      $out = $o2 *$wgt;
+    }
+  }
+
+  return undef unless (defined($out) &&defined $weight);
+  $weight = $weight->setbadif($weight==0);
+  $out /= $weight;
+  $out->hdr->{DATE_OBS} = $time;
+  return $out;
+}
