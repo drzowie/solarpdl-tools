@@ -1,0 +1,8 @@
+Here you will find code related to simple magnetic extrapolations. 
+
+dipole.pdl - a routine that returns the potential field from a dipole
+at the specified location and orientation.
+
+monopole.pdl - a routine that returns the potential field from a monopole
+at the specified location.
+
