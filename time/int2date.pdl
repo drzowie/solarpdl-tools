@@ -1,0 +1,260 @@
+=head2 int2date
+
+=for ref
+
+Convert a UNIX integer time to an ASCII date stamp.
+
+=for example
+
+  $herenow = int2date('local,HH:mm');           # local 24-hour time
+  $tstamp = int2date('ut,soho');                # UT time in SOHO stamp format
+  $tstamp = int2date('%yyyy-mmm-dd hh:mm:ss a'); # 12-hour datestamp
+
+=for usage
+
+  $ascii = int2date($style,$date);
+
+You hand in a style string and a date integer; you get back an ASCII 
+rendering of the time/date.  
+
+The style string may contain any of the following keywords.
+Possible styles are:
+
+=over 3
+
+=item local 
+
+Specifies that local time (rather than UTC) is to be rendered.
+
+=item ut
+
+Specifies that UTC (rather than local time) is to be rendered.
+
+=item all
+
+Syntactic sugar for "date time"
+
+=item date
+
+Render the date
+
+=item time
+
+Render the time
+
+=item o'clock
+
+Give the time in English
+
+=item si
+
+use si format for the date and time
+
+=item soho
+
+use the SOHO standard date/time stamp format
+
+=item cds
+
+use the CDS date/time stamp format
+
+=item wilcox
+
+use the Wilcox Solar Observatory format for the date/time stamp.
+
+=item num
+
+Use numerical format for the date (all digits, same as "%yyyymmddHHMMss.ff").
+
+=item %<string>
+
+Build your own format.  After a leading '%', the following word 
+additional characters is replaced with a date/time string in the specified
+format.  End the format string with whitespace.
+
+=over 3
+
+=item yy, yyyy
+
+Year, in 2, or 4 digit format, respectively.
+
+=item mm, mmm
+
+The month, in 2-digit numeric or 3-letter abbrev format, respectively.
+
+=item dd
+
+The two-digit day of the month
+
+=item _
+
+Rendered as a space.
+
+=item __
+
+Rendered as '_'
+
+=item HH, hh
+
+Two-digit hour, rendered as 24 or 12 hour time respectively
+
+=item MM
+
+Two-digit minute
+
+=item SS, ss
+
+Either one renders a two-digit second.
+
+=item ff, fff
+
+Renders a two-digit or three-digit fractional second.
+
+=item a, p
+
+Either one renders the two-letter string "am" or "pm" as appropriate depending
+on the hour.
+
+=back
+
+For example, "%yyyymmddHHMMSS" yields a numeric-format 24-hour time date/time;
+"%hh:MM_a" yields a 12-hour time string (and no date).
+
+=back
+
+HISTORY
+
+- Written in the late 1990s, Craig DeForest
+
+- Updated to pod format, 16-Jun-2004
+
+NOTES
+
+Contains many inefficiencies such as redefining the months array each time.
+
+This is straight perl, not PDL -- but it's useful as an autoload file,
+so here it is.
+
+BUGS
+
+Does not support fractional seconds, though it should.
+
+=cut
+
+
+use strict;
+
+sub int2date{
+  my($AD,$key);
+
+  my(@months)=("Jan","Feb","Mar","Apr","May","Jun",
+		  "Jul","Aug","Sep","Oct","Nov","Dec");
+  my(@longmonths) = ("January","February","March","April","May","June","July","August",
+			"September","October","November","December");
+
+  my($what,$time) = @_;
+  my($out) = "";
+  local($_);
+
+  defined($time) || ($time = time);
+
+  my($sec,$min,$hour,$mday,$mon,$year) = 
+    ($what =~ m/local/ ? localtime($time) : gmtime($time));
+
+  # Turn 2000 dates back into two-digit years
+  if( ($year > 99) && ($year < 200) ) {$year = $year - 100;}
+
+  # Guess that two-digit years are in the range (1950 - 2049).
+  $AD = $year + ($year<200)*1900 + ($year<50)*100;
+
+    $_ = $what;
+ FOO: {
+
+   ### CDS section:  we just convert to a roll-your-own spec for CDS output
+   if(/^\s*cds\s*/i) {
+     $_ = "%yyyy-mm-ddTHH:MM:SS";
+   }
+   ### SOI support:  Convert to a roll-your-own spec for SOI output
+   if(/^\s*(mdi|soi)\s*/i) {
+     $_ = "%yyyy.mm.dd__HH:MM:SS";
+   }
+   ### Roll-your-own section ###
+   if(/^%([^\s]*)/) {
+     my($a);
+     local($_) = $1;
+     my(%trans) = (
+		      "yyyy",'sprintf("%4.4d",$AD)',
+		      "yyy", 'sprintf("%4.4d",$AD)',
+		      "yy",  'sprintf("%2.2d",$year)',
+		      "y",   'sprintf("%2.2d",$year)',
+		      "dd",  'sprintf("%2.2d",$mday)',
+		      "d",   'sprintf("%2.2d",$mday)',
+		      "a|p",   '(($hour >= 12)?"pm":"am")',
+		      "mmmm",'$longmonths[$mon]',
+		      "mmm", '$months[$mon]',
+		      "mm",  'sprintf("%2.2d",$mon+1)',
+		      "m",   'sprintf("%2.2d",$mon+1)',
+		      "__",  '" ZZ##XXZ"',
+		      "_",   '" "',
+		      " ZZ##XXZ",'"_"',
+		      "HH",  'sprintf("%2.2d",$hour)',
+		      "hh",  'sprintf("%2.2d",(($hour%12)||12))',
+		      "MM",  'sprintf("%2.2d",$min)',
+		      "ss",  'sprintf("%2.2d",$sec)',
+		      "SS",  'sprintf("%2.2d",$sec)',
+		      "s",   'sprintf("%2.2d",$sec)',
+		      "S",   'sprintf("%2.2d",$sec)',
+                      "ff",  'sprintf("%2.2d",($sec*100)%100',
+		      "fff", 'sprintf("%3.3d",($sec*1000)%1000'
+		      );
+     foreach $key (sort {our $b cmp our $a} (keys %trans)) {
+#       print "key $key:  before -- '$_'... ";
+#       m/$key/ && print "\$a = $trans{$key}; s/$key/\$a/g;";
+#       print "'$a'";
+       m/$key/ &&  eval "\$a = $trans{$key}; s/$key/\$a/g;";
+#       print "after -- '$_'\n";
+     }
+     $out .= $_;
+   }
+
+   if(/(date|all)/i) {
+     if(/si/i)      { $out .= sprintf("%2.2d-%s-%2.2d",$mday,$months[$mon],$year); }
+     elsif(/soho/i) { $out .= sprintf("%4.4d/%2.2d/%2.2d",$AD,$mon+1,$mday);    }
+     elsif(/wilcox/i){$out .= sprintf("%2.2d.%2.2d.%2.2d",$year,$mon+1,$mday);}
+     else           { $out .= sprintf("%2.2d%2.2d%2.2d",$year,$mon+1,$mday);       }
+   }
+
+   if(/(time|all)/i) {
+     if(/clock/i) { 
+       my($guess) = int((($min+7.5)%60)/15);
+       $guess = 0 if($guess < 0);
+       
+       $out .= " " if($out);
+       
+       $out .= ( ("","quarter past ","half past ","quarter to ")[$guess]);
+       $hour++ if($guess>2);
+
+       $out .= (( "twelve","one","two","three","four","five","six","seven","eight","nine","ten","eleven")[$hour % 12])." ";
+       $out .= ( "o'clock ","","","" )[$guess];
+       my($am,$pm,$ev) =("in the morning ",
+			    "in the afternoon ",
+			    "at night ");
+       
+       $out .= ("midnight",$am,$am,$am,$am,$am,$am,$am,$am,$am,$am,$am,
+		"noon",    $pm,$pm,$pm,$pm,$pm,$pm,$ev,$ev,$ev,$ev,$ev)[$hour%24];
+     }
+     elsif(/hh:mm/i) {
+       $out .= ($out && " ").sprintf("%2.2d:%2.2d",$hour,$min);
+     } 
+     elsif(/hhmm/i) {
+       $out .= ($out && " ").sprintf("%2.2d%2.2d",$hour,$min);
+     }
+     else {
+       $out .= ($out && " ").sprintf("%2.2d:%2.2d:%2.2d",$hour,$min,$sec);
+     }
+   }
+ }
+  $out;
+}
+
+1;
