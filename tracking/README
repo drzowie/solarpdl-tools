@@ -1,0 +1,57 @@
+<html>
+<head><title>B-tracking sw: a manifesto</title>
+</head>
+<body>
+<p><i>Craig DeForest, 6-Nov-2001</i>
+
+<p>A single flux concentration's tracking data should include:
+ <ul>
+ <li> Value, location, &amp; size for all times
+ <li> Pointers to neighbors?
+ <li> Origin and demise information
+ </ul>
+
+<p>A collection of flux concentrations come and go from frame to frame,
+so there should also be a per-frame (time-keyed?) list of concentrations that
+is valid for the whole data set.
+
+<hr>
+
+<p>Three pieces of code are needed:
+<dl>
+
+<dt><code>frag_detect</code><dd>locates where and what size each flux
+concentration is in each frame, using time/space hysteresis.  It takes
+as input a collection of magnetograms and emits a collection of
+masks, +1 for positive-going features and -1 for negative-going features.
+
+<dt><code>frag_id</code><dd>Inputs are the images and the masks
+from frag_detect.  Output is a list of number-keyed masks (a la Parnell's
+code) with numbers that are unique only within each frame but that identify
+individual fragments in that frame.  You can use different discriminator
+algorithms here:  `clump' (the default) is similar to Parnell's algorithm
+that spreads out to the boundary of each contiguous blob on the mask,
+and `downhill' is similar to Hagenaar's algorithm that spreads downward
+from each local maximum.
+
+<dt><code>frag_assoc</code><dd>Associates fragements across time
+slices.  Inputs are the id images from frag_id and outputs are
+twofold: a collection of modified-id images that have consistent id's
+between frames; and a collection of fragment lifetime data structures.
+The fragment data are in a perl array of hash refs, one hash ref per
+fragment.  The modified-id images use the sign bit of the ID to
+indicate the direction of each fragment -- but the fragment IDs are
+assigned consecutively in absolute value space, so that -3 and 3 can't
+both exist.
+
+<dt><code>frag_tabulate</code><dd>Takes an associated image set and produces
+a tabulated output containing a list of events in the data set (motions,
+mergers, emergences, fragmentations, etc.)
+
+</dl>
+<hr>
+<!---------------------------------------------------------------------->
+<pre>Note: Still need to investigate some interaction between tabulation and
+association code:  downhill method doesn't seem to always make the
+proper break.
+
