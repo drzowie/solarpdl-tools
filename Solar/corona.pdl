@@ -1,0 +1,39 @@
+## Quick-n-dirty corona generator.  You specify initial density, 
+## scale height and 1/r^2 factor (in solar radii, of course) and 
+## get back a PDL with the coronal electron density versus altitude.
+## Works out to 100 solar radii, in 0.1 R0 steps, hardwired for now.
+
+## A nice parameter set is (1e8,0.25,0.05) -- but use real values!
+
+
+sub corona {
+    
+    my ($step,$d0,$scaleheight,$r2fact) = @_;
+
+    $step = 0.02 if(!defined $step);
+    print "corona: step is $step\n";
+    my($naxis1) = (200 - 1)/$step + 1;
+
+    $d0           = 1.0e8 if(!defined $d0);
+    $scaleheight  = 0.25  if(!defined $scaleheight);
+    $r2fact       = 0.05  if(!defined($r2fact));
+
+    print "naxis1=$naxis1\nd0=$d0\nscaleheight=$scaleheight\nr2fact=$r2fact\n";
+    
+    my $foo = xvals(zeroes($naxis1))*$step + 1;
+    
+    my($corona) = $d0 * (exp(-($foo-1)/$scaleheight) + $r2fact / $foo / $foo);
+    
+    my $hdr = {  CDELT1  => $step
+		,CTYPE1  => 'solar-radii'
+		,CRVAL1 => 1
+		,CRPIX1 => 1
+	        ,NAXIS  => 1
+		,NAXIS1 => $naxis1	};
+
+    $corona->sethdr($hdr);
+    return $corona;
+}
+
+	
+
