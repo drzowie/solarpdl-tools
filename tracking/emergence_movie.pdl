@@ -1,0 +1,148 @@
+=head2 emergence_movie
+
+=for ref 
+
+Given fragment history, tab files, and data frames, generate a movie
+showing different types of emergence event.
+
+=for usage 
+
+emergence_movie($hist,$tab,\@data,{options})
+
+C<$hist> is a history table from frag_hist, C<$tab> is a tabulation file
+from frag_tabulate, C<\@data> is an array ref of FITS files containing the
+original data (or a diskcache object, of course).
+
+By default the frames are written to the directory "movie"; options can
+change the movie directory.
+
+=cut
+
+
+sub emergence_movie {
+  my($hist,$tab,$data,$ids,$opt) = @_;
+
+  $opt = {} unless defined($opt);
+
+  my $dir   = $opt->{dir} || "movie/";   # Dir for movies
+  my $fname = $opt->{fname} || "frame";  # Frame name template
+  my $size  = $opt->{size}  || [10,10];  # Frame size (inches)
+
+  my $start = $opt->{start} || 4;        # Don't show events in first n frames
+  my $pre   = $opt->{pre}   || 4;        # Pre-illumination frame count
+  my $post  = $opt->{post}  || 20;       # Post-illumination frame count
+  my $range = $opt->{range} || [-50,50]; # Data range to display
+  my $decay = $opt->{decay} || 0.94;
+  my $evmask = $opt->{evmask} || [1,1,1,1,1,1];
+  my $imag_options = $opt->{options} || {};
+
+  my $radius = $opt->{radius} || 20;    # Radius (in pixels) of marks
+
+  my $id_frags = $opt->{id_frags} || 0; # whether to circle each fragment
+
+  my $co_color =   pdl(-0.3,0.3,0.6);   # Coalescences are bluish
+  my $em_color   =  pdl(0.5,0.5,-0.4);  # Emergences are yellow
+
+  my $frag_color = pdl(-0.1,0.3,-0.1);  # Fragmentations are green
+  my $cmplx_color = pdl(-0.1,-0.1,-0.1); 
+  my $err_color = pdl(0.2,-0.1,-0.1); # Errors are faint red
+  
+  my $anti_alias = $opt->{anti} || 1;
+
+  my @colors = (zeroes(3), $co_color, $em_color, $frag_color, $cmplx_color, $err_color);
+
+
+
+  my $rr = rvals(2*$radius+1,2*$radius+1);
+  my $cmask = $rr*$rr*$rr*($rr<=$radius);
+  $cmask /= $cmask->max;
+
+
+  `rm -r $dir`;
+  `mkdir $dir`;
+
+
+  my $i;
+
+  use PDL::Transform;
+  my $framename;
+  for $i(1..$#$data) {
+    print "Frame $i...";
+    my $w = pgwin(dev=> $framename=sprintf("%s%s%3.3d.ppm/ppm",$dir,$fname,$i),
+		  size=>($size*$anti)
+	       );
+
+    # RGB-ify data and scale to [0,1].
+    $im = $data->[$i]->float->clip(@$range)->dummy(2,3)->copy;
+    $im->sethdr($data->[$i]->hdr_copy);
+    $im->hdrcpy(1);
+    $im -= $range->[0];
+    $im /= ($range->[1]-$range->[0]);
+    
+    print "...";
+    ##############################
+    # Identify start events and locations
+    $st = which($hist->(:,(0)) >= $i-$post & $hist->(:,(0)) <= $i+$pre);
+    print " ".$st->nelem." events...";
+    my $event;
+    foreach $event($st->list) {
+
+      my $h = $hist->(($event));
+      next unless( $evmask->[$h->at(1)]);
+
+#     my $grab = ($i<$h->(0)?$h->(7:8):$tabs->(($event),($i),2:3));
+      my $grab = $h->(7:8);
+
+      my $imr = $im->range($grab-$radius,$radius*2+1,'t');
+
+      $imr += $cmask * $colors[$h->at(1)]->(*1,*1) * pow($decay,$i+$pre-$h->at(0)) if($evmask->[$h->at(1)]) ;
+
+
+    }
+
+    $w->fits_imag($im->clip(0.01,0.99),0,1,{j=>1,title=>$title.sprintf("MDI Tracked Rgn %s",$im->hdr->{DATE_OBS},$i),dr=>0,charsize=>0.99,%$imag_options});
+    $w->hold;
+
+    if($opt->{id_frags}) {
+      my $id;
+
+      my $t = t_fits($im);
+
+      my($boundaries)=zeroes(3,1);
+
+      for $id(which($tabs->(:,($i),((0))))->list) {
+	my $xy = $tabs->(($id),($i),2:3)->apply($t);
+	my $r = sqrt($tabs->(($id),($i),(1))/3.14159) * $im->hdr->{CDELT1};
+	
+	if($opt->{contour}) {
+	  $boundaries(2,-1) .= 0; # lift up pen
+	  my $l = boundary($id,$tabs->(($id),($i)),$ids->[$i]);
+	  $boundaries = $boundaries->glue(1,$l);
+	} else {
+	  $w->ellipse($xy->at(0),$xy->at(1),$r,$r,{fill=>2,color=>3});
+	}
+	
+	
+	$w->text($id,$xy->at(0)+$r*1.05,$xy->at(1),{charsize=>0.67*$anti,color=>3});
+	print ".";
+      }
+      
+      if($opt->{contour}) {
+	$w->lines($boundaries->apply($t));
+      }
+
+    }
+
+    print "\n";
+
+    $w->close;
+    if($anti > 1) {
+      $im = rim($framename);
+      $im = $im->match([(pdl($im->dims)/$anti)->short->list],{method=>'h'});
+      wim($im,$framename);
+    }
+  } # frame loop
+}
+
+    
+
