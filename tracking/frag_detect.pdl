@@ -82,6 +82,7 @@ Parnell.
 
 2.0-b: 15-April-2004
 
+
 =cut
   use Carp;
   use strict vars;
@@ -93,11 +94,16 @@ sub frag_detect_diag {
 ##  my ($diag,$frloc,$chk);
   my $diag = shift;
   my $frloc = shift;
-  my $chk = shift;
-  my $chk = $chk(:,:)->glue(1,map { ($frloc + pdl($_))->(:,:) } ([0,1],[0,-1],[1,0],[-1,0]))
+  my $chk = shift; 
+
+  $chk = $chk(:,:)->glue(1,map { ($frloc + pdl($_))->(:,:) } ([0,1],[0,-1],[1,0],[-1,0]))
     if($diag >= 0 && $frloc->nelem);
+
   $chk = $chk(:,:)->glue(1,map { ($frloc + pdl($_))->(:,:) } ([1,1],[1,-1],[-1,1],[-1,-1]))
     if($diag >= 1 && $frloc->nelem);
+
+  $chk = pdl(0) unless defined($chk);
+
   return $chk->(:,:);
 }
 
