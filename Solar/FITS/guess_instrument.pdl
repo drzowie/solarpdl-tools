@@ -1,0 +1,14 @@
+sub guess_instrument {
+  my($hdr) = shift;
+  
+  return undef unless ref $hdr eq 'HASH';
+  
+  return $hdr->{INSTRUME} if defined $hdr->{INSTRUME};
+  
+  # Michelson Doppler Imager often puts a "DPC_STR" in the output
+  return 'MDI' if( defined($hdr->{DPC_STR}) );
+  return 'MDI' if( $hdr->{ORIGIN} =~ m/SOI SDS/s);
+
+  # All out of guesses.
+  return undef;
+}

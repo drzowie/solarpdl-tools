@@ -1,0 +1,55 @@
+#
+# Ingester for MDI images -- puts the correct pointing headers into even
+# malformed MDI files.  You feed in the header, and simple translation happens
+# between MDI/SOI data system tags and standard tags.
+#
+use Carp;
+
+sub ingest_mdi {
+  my($hdr) = shift;
+  my($im) =shift;
+  
+  my($str) = mdi_dpcstr($hdr->{DPC});
+
+  if(!$hdr->{dpc}) {
+    cluck("ingest_mdi: What the hell kind of MDI data is this?  No DPC code!\n");
+    return undef;
+  }
+
+  $hdr->{CRPIX1} = $hdr->{X0}+1   unless defined($hdr->{CRPIX1});
+  $hdr->{CRPIX2} = $hdr->{Y0}+1   unless defined($hdr->{CRPIX2});
+  $hdr->{CDELT1} = $hdr->{XSCALE} unless defined($hdr->{CDELT1});
+  $hdr->{CDELT2} = $hdr->{YSCALE} unless defined($hdr->{CDELT2});
+  $hdr->{CTYPE1} = $hdr->{CTYPE2} = 'arcsec' unless defined($hdr->{CTYPE1});
+  $hdr->{CRVAL1} = $hdr->{CRVAL2} = 0 unless defined($hdr->{CRVAL1});
+  $hdr->{CROTA} = 0 unless defined($hdr->{CROTA});
+  
+  return $hdr;
+}
+
+
+__END__
+
+BEGIN {
+  $instruments::soho::mdi::default_hdrs = 
+    {
+      FD=>{
+	CRPIX1=>512.5,    CRPIX2=>512.5,
+	CDELT1=>1.9778,   CDELT2=>1.9778,
+	CRVAL1=>0.0,      CRVAL2=>0.0,
+	CTYPE1=>'arcsec', CTYPE2=>'arcsec',
+	CROTA=>0
+	} ,
+      HR=>{
+	CRPIX1=>496.8,    CRPIX2=>312.6,
+	CDELT1=>0.6054,   CDELT2=>0.6054,
+	CRVAL1=>0.0,      CRVAL2=>0.0,
+	CTYPE1=>'arcsec', CTYPE2=>'arcsec',
+	CROTA=>0
+	} 
+    }
+}
+	
+	
+      
+	
