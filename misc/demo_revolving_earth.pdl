@@ -1,0 +1,20 @@
+sub demo_revolving_earth{
+  use PDL::Transform;
+  use PDL::Transform::Projection;
+
+  $a= lonlat(10);
+  $axyz = t_unitsphere->apply($a*3.14159/180);
+  
+  $m = get_earth();
+  $xyz = t_unitsphere->apply($a*3.14159/180);
+
+
+  for $i(0..90){
+    $w = pgwin(dev=>sprintf("%2.2d.gif/gif",$i),size=>[10,10]);
+    $t = t_compose(t_linear(rot=>[-30,0,0]),t_linear(rot->[90,0,$i*4]));
+    $xyz2 = $t->apply($xyz);
+    $axyz2 = $t->apply($axyz2);
+    $w->lines([$xyz2,$axyz2],[$m->((2))*($xyz2->(2)>0),$a->((2))*($xyz2->(2)>0)],{XRange=>[-1,1],YRange=>[-1,1],HardLW=>1,HardCH=>1});
+    $w->close;
+  }
+}
