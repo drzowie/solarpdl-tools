@@ -1,0 +1,82 @@
+=head2 boundary
+
+Given a fragment ID, a tab line and an id image, returns out outline
+(in pixel coordinates) of the associated fragment.
+
+=cut
+sub boundary {
+  ($fragid,$tabline,$id,$opt) = @_;
+
+  return null() unless($fragid);
+
+  my $b = $opt->{b} || 5;
+  my $color = $opt->{color} || 3;
+
+  my $radius = pdl(sqrt($tabline->(1)/3.14159)*$b)->ceil * 10;
+  my $offset = $tabline->(2:3)-$radius;
+
+  my $subim = $id->range($offset, $radius*2+1, 't')->sever->abs == abs($fragid);
+  
+  ## Assume a simply connected map -- 
+  ## grab a random location and walk right to the boundary.
+
+  $xy = whichND($subim);
+  unless($xy->nelem) {
+    print "boundary: got non-overlapping frag! ($fragid)\n";
+    print ($id->range($offset,$radius*2+1,'t'),$offset);
+    return null;
+  }
+
+  $xy = $xy->(:,(0));
+
+  while($subim->indexND($xy,'t')) {
+    $xy -= pdl(1,0);
+  }
+
+#  print $subim;
+
+  my $dir = 0;
+
+  my @out;
+
+  # Directions to step
+  my @dirs = ( pdl(0,-1), pdl(-1,0), pdl(0,1), pdl(1,0) );
+  
+  # Directions to check, for clockwise traversal (unfilled, filled).
+  my @check =( pdl([0,0],[1,0]), # Stepping down
+	       pdl([0,1],[0,0]), # Stepping left
+	       pdl([1,1],[0,1]), # Stepping up
+	       pdl([1,0],[1,1]), # Stepping right
+	       );
+
+  my $foo;
+  push(@out,$xy->copy);
+  
+  my $startdir,$lastdir;
+
+  do {
+    $startdir = $dir;
+
+    do {
+      $dir++;
+      $dir %= 4;
+      my $fill_clear = $xy + $check[$dir];
+      $foo =  all( pdl(0,1) == $subim->indexND($xy+$check[$dir],'t') );
+    } until ( $foo || $dir==$startdir);
+
+    $xy += $dirs[$dir];
+    push(@out,$xy->copy); 
+
+  } until (   ( (@out>2) && all($xy==$out[0]))
+	    ||  ( @out > 800 )   
+	    ||  !$foo );
+  
+  push(@out,$xy->copy);
+
+  my $out = cat(@out) + $offset - pdl(0.5);
+  return $out->glue(0,$color * ones(1,$out->dim(1)));
+}
+
+  
+  
+  
