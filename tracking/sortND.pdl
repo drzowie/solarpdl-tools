@@ -1,0 +1,35 @@
+=head2 sortND
+
+=for usage
+
+$a = sortND( $pdl, $n )
+
+=for ref
+
+Sort a list of N-dimensional objects
+
+$pdl should be an N+1 dimensional PDL (any additional dimensions just
+get clumped), and $n is the number of dimensions to treat as part of the
+object.  The list is sorted into lexicographic order, with the 0th element
+of the 0th dimension most significant, the -1 element of the 0th dimension
+midly significant, and the -1 element of the Nth dimension least significant.
+
+=cut
+
+sub sortND {
+  my $pdl = shift;
+  my $n = shift;
+  
+  return $pdl->qsort
+    if($n==0);
+
+  # Reduce to a 1-D list of 1-D objects
+  my $pdl2 = $pdl->clump($n)->mv(0,-1)->clump($pdl->ndims-$n)->mv(0,-1);
+  
+  $pdl2 = sortvec($pdl);
+  my @dlist = $pdl->dims;
+
+  return $pdl2->reshape(@dlist[0..$n-1],pdl(@dlist[$n..$#list])->prod->at(0));
+}
+  
+  

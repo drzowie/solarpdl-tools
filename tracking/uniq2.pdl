@@ -1,0 +1,16 @@
+## Return a unique list, sorted in decreasing order of number
+## of repetitions
+
+sub uniq2 {
+  my ($arr) = @_;
+  my ($a1) = $arr->uniq;
+  return $a1 if($a1->nelem <2);
+  my($num) = zeroes($a1);
+  my $i;
+#  print "Number of elements: ",$a1->nelem, "\n";
+  for $i(0..$a1->nelem-1) {
+#    print $i,"\t" unless($i%100);
+    $num($i) .= which($arr == $a1($i))->nelem;
+  }
+  return $a1->((-$num)->qsorti);
+}

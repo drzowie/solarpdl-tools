@@ -1,0 +1,18 @@
+=head2 frag_annotate
+=for ref
+
+Generate frames with annotated tracked-fragment markings
+
+=for usage
+
+$out = frag_annotate($dest_dir,\@frag_id_list,\@images,$summary,{options});
+
+=cut
+
+sub frag_annotate{
+  my($opt,$dest_dir,$id_list,$im_list,summary) = find_opt(@_);
+  local($_);
+
+  my($i);
+  for($i=0;$i<$#$id_list;$i++){
+    $opt->{

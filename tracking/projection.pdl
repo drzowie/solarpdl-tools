@@ -1,0 +1,85 @@
+=head2 projection
+
+=for usage
+projection($inref,$outref,$region,<options>);
+
+OPTIONS
+
+=item o, orig, origin, Orig, ORIGIN (default [0,0])
+ The [lat,lon] over which the tranform should be centered
+
+=cut
+
+use PDL::AutoLoader;
+use PDL::Transform;
+use PDL::Transform::Cartography;
+use Time::ParseDate;
+
+sub projection
+{
+ my $inref=shift;
+ my $outref=shift;
+ my $region=shift;
+ my $opt=shift;
+
+ my $origin=PDL::Transform::_opt($opt,['o','orig','origin','Orig','ORIGIN'],[0,0]);
+ 
+ $inref->[0]=~m/(\d{4}.\d{2}.\d{2})_(\d{2}:\d{2})/;
+ my $start_time=parsedate("$1 $2");
+ 
+ #declare variables up here so they don't get redeclared every iteration
+ my $Dt; #change in time for t_diff_rot (in seconds)
+ my $pbvals;
+ my $orig;
+ my $a0;
+ my $scale;
+ my $t;
+ my $t1;
+ my $t_total;
+
+if($region=~m/ar/i){$region="AR";}
+elsif($region=~m/po/i){$region="pole";}
+elsif($region=~m/q/i){$region="quiet";}
+elsif($region=~m/pl/i){$region="plage";}
+else {print "unknown region type, no subdirectory will be assigned\n";}
+ for $i(0..$#$inref)
+  {
+   ####get time of observation from filename
+   $inref->[$i] =~ m/(\d{4}.\d{2}.\d{2})_(\d{2}:\d{2})/;
+   $Dt = parsedate("$1 $2") - $start_time;
+   $pbvals=pb0r("$1 $2"); #observing platform parameters
+   my $time = $2;
+
+   ####read in original MDI image
+   print "Reading image $i of $#$inref.\n";
+   $orig=double(rfits($inref->[$i]));
+
+   ####compensate the actual pixel values
+   $a0=rvals($orig,{center=>[$orig->fhdr->{CRPIX1}-1,$orig->fhdr->{CRPIX2}-1]})/$orig->fhdr->{R_SUN};
+   $orig=$orig/sqrt(1-$a0**2);  
+#used same name to save 8Mb of memory per iteration
+
+   ####set up necessary transformations
+   $scale=$orig->fhdr->{R_SUN}*$orig->fhdr->{CDELT1};
+   $t=!(t_orthographic(o=>[0,$pbvals->at(1)])) x t_scale(1.0/$scale);
+
+   ####account for differential rotation
+#   $t1=t_diff_rot(- $Dt,{t_unit=>'s'}) x $t;
+#differentially rotate the origin so that we keep the rotation effects:
+   $origin2 = (t_diff_rot($Dt,{t_unit=>'s'})) -> apply(pdl($origin));
+   $t1 = $t;
+   
+   ####final transformation
+   $t_total=t_orthographic(o=>$origin2) x $t1;
+
+   $outref->[$i]=$orig->map($t_total,[500,500],{method=>"J",blur=>0.6,orange=>pdl([[-.2,.2],[-.2,.2]])});
+
+   ###write out image & graticule to a PGPLOT ppm file
+   $w = pgwin(dev=>sprintf("../$region/frames/frame%3.3d.ppm/ppm",$i),size=>[6,6],j=>1);
+   $w->fits_imag($outref->[$i],{title=>"Frame $i: time=$time"},-100,100);
+   $w->hold;
+#   $w->lines((t_orthographic(o=>$origin2) x t_diff_rot($Dt,{t_unit=>'s'}))->apply(graticule(10,2)));
+   $w->close;
+  }
+ return $outref;
+}
