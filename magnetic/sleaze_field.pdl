@@ -1,0 +1,40 @@
+=head2 sleaze_field
+
+=for usage
+
+$field = sleaze_field($monopoles,$openflux)
+
+=for ref
+
+Return a code ref that accepts a location and returns a field vector, for
+the sleaze_field approximation.  $openflux is the total amount of (unsigned)
+open magnetic flux over a sphere at infinity.  $monopoles is a 4xN PDL
+containing (x,y,z,flux) for each monopole in the approximation.  
+
+=cut
+
+sub sleaze_field {
+  my($monopoles,$openflux,$sign,$rpower) = @_;
+  my $mpxyz = $monopoles->(0:2);
+  my $mpflux = $monopoles->((3));
+
+  my $bzero = $openflux / 4 / 3.14159;
+
+  my $rdiv = (1 - $rpower);
+  print "rdiv = $rdiv\n";
+
+  return sub {
+    my $xyz = shift;
+    my $pot = monopole( $mpxyz, $mpflux, $xyz );
+    my $r2 = ( $xyz * $xyz ) ->sumover;
+    my $r = $r2->sqrt;
+    my $rfact = (- ($r->log * ($rpower-1)))->exp;
+    my $pr = ( $pot * $xyz )->sumover;
+    my $bsign = $pr/abs($pr);
+    my $out = $openflux * $xyz * $bsign * $bzero * $rfact;
+    $out += $pot;
+    $out *= $sign;
+    return $out;
+  };
+
+}
