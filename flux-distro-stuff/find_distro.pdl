@@ -1,0 +1,39 @@
+sub find_distro {
+  my($thresholds, $f, $slice, $name) = @_;
+  my($device);
+  my($pane);
+
+  my(@f) = @$f;
+
+  $range = [0, $#f]  unless (defined($range));
+  print join(",",@f);
+  my($im1) = accumulate(@f) ;
+  $im1 = $im1->slice($slice) if($slice);
+
+  my($zz) = gauss2(11,2);
+#    $im = conv2d($im1,$zz,{Boundary=>Truncate});
+  my($im) = $im1;
+  $im->sethdr($im1->gethdr);
+  $im->gethdr->{NAXIS1} = 501;
+  my($b) = $im * 2.4 * 6.0/6.6; # Fudge in the MDI calibration (this is lev0 data)
+  $b->sethdr($im->gethdr);
+  $b->hdrcpy(1);
+
+  $device='magnetogram${name}.ps/ps';
+  $pane = pgwin(Device=>$device,AspectRatio=>500/1000.0,WindowWidth=>5,Charsize=>2.0, HardLW=>1);
+  $pane->fits_imag($b->clip(-100,100),{xtitle=>"Solar-X",ytitle=>"Solar-Y",title=>"MDI 5-minute HR Magnetogram, 23-Feb-1996, +/- 100 Gauss"});
+  $pane->close;
+  
+  #####
+  #strengths gets a list of all summed-over-pixels strengths of 
+  #fragments, in Gauss-pixels.
+  my($stren) = mag_distro($b,{verbose=>1,thresh=>$thresholds});
+  
+  $device="mask${name}.ps/ps";
+  $md::mask->[0]->sethdr($im1->gethdr);
+  $pane = pgwin(Device=>$device,AspectRatio=>500/1000.0,WindowWidth=>5,Charsize=>2.0, HardLW=>1);
+  $pane->fits_imag($md::mask->[0],{xtitle=>"X",ytitle=>"Y",title=>"Fragment Mask: 50-minute average, threshold=[8,6] Gauss"});5,
+  $pane->close;
+print "find_distro ending...\n";  
+  return ($stren, $im, $b)
+}
