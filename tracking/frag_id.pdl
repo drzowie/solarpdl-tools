@@ -12,7 +12,9 @@ scan.  The mask_list is a similar list containing above-threshold regions
 in the images (use frag_detect to get hysteresis in the scan!).  If
 the images contain both positive and negative features, then the feature
 masks should have sign bits that correspond to the features' signs.
-
+=begin comment
+'
+=end comment
 The output is an array of masks with per-image unique fragment ids.
 The fragment ids are not guaranteed to be consecutive, only unique. 
 Negative fragments get negative ids; positive fragments get positive ids.

@@ -38,8 +38,11 @@ You feed in a list of FITS images complete with dates, a central date
 for the average, a FWHM of the time-average for Gaussian weighting, a
 PDL containing the longitude and latitude of the viewpoint you want to
 hover over, and a timestamp from the image with that time.  You also feed
-in 
+in
 
+=begin comment 
+' just to make the whole document not appear as a string to emacs
+=end comment
 
 AUTHOR & HISTORY
 
@@ -49,7 +52,7 @@ Craig DeForest, 29-Jun-2004
 
 use PDL::Transform::Cartography;
 use strict;
-
+use Carp;
 sub dr_mean {
   my($list,$time,$fwhm,$opt) = @_;
   

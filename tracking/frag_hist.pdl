@@ -91,7 +91,9 @@ if all fragments are circular, b=5 can work for fragments up to 5x
 longer than wide (but at a speed cost).  
 
 Fragments that are too eccentric don't get properly considered.
-
+=begin comment
+' to make the code not look like a big string to emacs
+=end comment
 =item sep (default 3)
 
 Maximum separation between two fragments for them to be considered 
@@ -124,7 +126,7 @@ Craig DeForest 05/20/04 Hacked up Davey code...
 
 use Carp;
 
-sub frag_hist2 {
+sub frag_hist {
    my($opt,$tabs,$ids) = find_opt(@_);
 
    my($frag_ct, $frame_ct) = $tabs->dims;
