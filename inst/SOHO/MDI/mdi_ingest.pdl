@@ -1,0 +1,40 @@
+=head2 mdi_ingest
+
+=for usage
+
+  mdi_ingest($srcdir, $destdir);
+
+=for ref
+
+``ingests'' MDI data sets by linking MDI image files to type-and-date
+named files in $destdir.  Recursively steps through all directories of
+$srcdir to find FITS files, reads the headers to determine the observation 
+time/date, and hard-links the files to the $destdir.
+
+=cut
+
+sub mdi_ingest {
+  my($srcdir,$destdir)=@_;
+  chomp(my @dirs = `find $srcdir -type d -print`);
+  
+  `mkdir $destdir`;
+  for my $dir(@dirs) {
+    my @files = grep(m/\d+.fits/, <$dir/*fits>);
+    
+    for my $f(@files){
+      my $hdr = rfits($f,{data=>0});
+      unless($hdr->{DATE_OBS}) {
+	print "File $f: DATE_OBS not found in header; skipping..\n";
+	next;
+      }
+      my $type=$hdr->{DNAME0} || "unk";
+      my $timedate=$hdr->{DATE_OBS};
+      $timedate =~ s/T/_/;
+      $timedate =~ s/:\d{2}.\d{3}Z//;
+      
+      $of="$destdir/${type}_${timedate}.fits";
+      print "cp -p $f $of\n";
+      `cp -p $f $of`;
+    }
+  }
+} 
