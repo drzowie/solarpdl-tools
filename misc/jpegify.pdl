@@ -1,0 +1,20 @@
+sub jpegify{
+  my($dir) = shift;
+
+  ($dj = $dir)=~ s/$/-jpeg/;
+
+  @f = `ls $dir`;
+  chomp @f;
+  @jf = @f;
+  grep(s/fits/jpeg/,@jf);
+  `mkdir $dj`;
+  
+  foreach $i(0..$#f) {
+    $s = "$dir/$f[$i]";
+    $s2 = "$dj/$jf[$i]";
+    print "$s->$s2...";
+    $a = rfits("$dir/$f[$i]");
+    wpic($a,"$dj/$jf[$i]");
+    print "ok\n";
+  }
+}
