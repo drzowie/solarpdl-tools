@@ -1,0 +1,55 @@
+sub run_initial_schrijver_compare {
+
+
+  chomp(@f = `ls 2-hovered/*`);
+  $im = accumulate(@f);          
+  $b = $im->(:,50:550);
+  $b->gethdr->{CRPIX2} -= 50;
+  $b->hdrcpy(1);
+
+  $device='magnetogram.ps/ps';
+  $pane = new PDL::Graphics::PGPLOT::Window(Device=>$device,AspectRatio=>500/1000.0,WindowWidth=>6,Charsize=>2.0);
+  $pane->fits_imag($b->clip(-20,20),{xtitle=>"Solar-X",ytitle=>"Solar-Y",title=>"MDI 50-minute HR Magnetogram, 23-Feb-1996, +/- 20 Gauss"});
+  $pane->close;
+
+  #####
+  #strengths gets a list of all summed-over-pixels strengths of 
+  #fragments, in Gauss-pixels.
+  $strengths = mag_distro($b,{verbose=>1,thresh=>[4,3]});
+
+  $device='mask.ps/ps';
+  $pane = new PDL::Graphics::PGPLOT::Window(Device=>$device,AspectRatio=>500/1000.0,WindowWidth=>6,Charsize=>2.0);
+  $pane->fits_imag($md::mask->[0],{xtitle=>"X",ytitle=>"Y",title=>"Fragment Mask: 50-minute average, threshold=[4,3] Gauss"});
+  $pane->close;
+
+  ##########
+  # Put the histogram in units of 10^18 Maxwells (converting from gauss-pixels)
+  # the 60 converts arcmin to arcsec, 0.7 to Mm, and 1e16 to cm^2.
+  $strengths *= $b->gethdr->{CDELT1} * $b->gethdr->{CDELT2} * 60 * 60 * 0.7 * 0.7 * 1e16 / 1e18;
+  $sizes = $md::sizes * $b->gethdr->{CDELT1} * $b->gethdr->{CDELT2} * 60 * 60 * 0.7 * 0.7;
+
+  $str_histo = histogram(abs($strengths),1.0/20,0,20);
+  $str_histo_y = $str_histo->dummy(1,100)->xchg(0,1)->flat;
+  $str_histo_x = xvals($str_histo_y)/100.0/20.0;
+
+  $siz_histo = histogram(abs($sizes),0.5,0,40);
+  $siz_histo_y = $siz_histo->dummy(0,100)->flat;
+  $siz_histo_x = xvals($siz_histo_y)/100.0*0.5;
+  
+  $device='distribution-plots.ps/ps';
+  $pane = new PDL::Graphics::PGPLOT::Window(Device=>$device,AspectRatio=>2,WindowWidth=>3,Charsize=>2.0,NYPanel=>2);
+  $pane->panel(2);
+  
+  $pane->line($str_histo_x,log10($str_histo_y),{yrange=>[0,3],xrange=>[0,0.9]});
+  $pane->label_axes("Absolute flux (10\\u18\\dMx)","log\\d10\\u count","Frequency distribution of fragment fluxes");
+  
+  $pane->panel(1);
+  
+  $pane->line($siz_histo_x,log10($siz_histo_y)->clip(0,2.5),{xrange=>[0,15]});
+  $pane->label_axes("Fragment size (Mm\u2\d)","log\\d10\\u count","Frequency distribution of fragment sizes");
+
+  $pane->close;
+
+}
+
+
