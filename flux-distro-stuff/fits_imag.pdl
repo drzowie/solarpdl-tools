@@ -1,0 +1,39 @@
+sub fits_imag {
+  my($pane) = shift;
+  $pdl = shift;
+  my($opt) = shift;
+  $opt = {} unless defined($opt);
+
+  $hdr = $pdl->gethdr();
+
+  print STDERR "Warning: fits_imag got a null FITS header (didja set hdrcpy?)\n" unless
+    scalar(keys %$hdr);
+
+  my($ic) = [ defined($hdr->{CRPIX1}) ? 
+		    $hdr->{CDELT2} * ($hdr->{CRPIX1} - 1 - $hdr->{NAXIS1}/2 ) - ( $hdr->{CRVAL1} ) : 
+		    0
+		    ,
+		    
+		    defined($hdr->{CRPIX2}) ?
+		    $hdr->{CDELT2} * ($hdr->{CRPIX2} - 1 - $hdr->{NAXIS2}/2 ) - ( $hdr->{CRVAL2} ) : 
+		    0
+	      ];
+
+
+
+  my($transform) = $pane->transform(
+    {ImageDimensions=>[$pdl->dims],
+     Angle=>( ( 3.141592653589793238 / 180 * $hdr->{CROTA} ) || 0),
+     Pixinc=>($hdr->{CDELT1} || 1.0),
+     ImageCenter=>$ic
+     }
+   );
+  print "ok\n";
+  $opt->{Transform} = $transform;
+  %opt2 = %{$opt};
+  delete $opt2{xtitle};
+  delete $opt2{ytitle};
+  delete $opt2{title};
+  $pane->imag($pdl,\%opt2);
+  $pane->label_axes($opt->{xtitle} . " ($hdr->{CTYPE1}) ",$opt->{ytitle} . " ($hdr->{CTYPE2}) ",$opt->{title},$opt);
+}
