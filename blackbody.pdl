@@ -1,0 +1,33 @@
+# Return the energy density of a blackbody between the lower and upper
+# bounds, in MKS (J/m^3).  Q&D.  Bounds are wavelength in nm.
+
+sub blackbody {
+  ($temp,$lower,$upper,$n) = @_;
+
+  $n = 1000 unless defined $n;
+
+  $upper /= 1e9;
+  $lower /= 1e9;
+
+  $dl = ($upper-$lower)/$n;
+
+  $out = 0;
+
+  $pi = 3.14159;
+  $hbar = 6.626e-34/2/$pi;
+  $c = 2.998e8;
+  $kb= 1.380e-23;
+
+  $wscale = $hbar * $c / $kb / $temp;
+
+  $plot = zeroes($n);
+
+  for $i(1..$n) {
+    $lambda = $lower + ($i - 0.5)*$n;
+    $plot->($i-1) .= ( ($c / $lambda / $lambda) * $hbar * exp(-$wscale/$lambda) /
+		       ($pi*$pi * $lambda * $lambda * $lambda * (1 - exp(-$wscale/$lambda) ) ) );
+    }
+  $plot *= $dl;
+
+  $plot->sum;
+}
