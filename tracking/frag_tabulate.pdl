@@ -1,0 +1,161 @@
+=head2 frag_tabulate
+=for ref
+
+Tabulate fragments in an associated set of frames
+
+=for usage
+
+$tabs = frag_tabulate(\@frag_id_list,\@images,{options});
+
+The output is a hash ref containing a large pdl and several perl
+variables about the data set.  The `summary' field is a pdl indexed by
+(fragment, frame, data type) and contains the flux, size, and centroid
+x and y of each fragment in each frame, in that order.  
+The `frag_event' field contains the event list for each fragment.  The
+'event' field contains the event list for the whole data set.
+
+The IDs get crunched down to a set of consecutive integers.  The
+assoc files are changed in place, so if the thing crashes you have to 
+remake them, but at least it reduces the egregiousness of the disk waste.
+
+=cut
+
+sub frag_tabulate {
+  my($opt,$id_list,$im_list) = find_opt(@_);
+  local($_);
+
+  ##############################
+  ## Set up options
+  $opt->{v_min} = 8         unless(defined $opt->{v_min});
+  $opt->{t_min} = 4         unless(defined $opt->{t_min});
+  $opt->{sz_min}= 4         unless(defined $opt->{sz_min});
+
+  $opt->{tab} = $id_list    unless(defined $opt->{tab}); 
+  #assoc files are set to change in place unless {tab} is defined
+
+  $opt->{r} = 2                 unless(defined $opt->{r});
+  $opt->{r_em}    = $opt->{r}   unless(defined $opt->{r_em});
+  $opt->{r_sub}   = $opt->{r}   unless(defined $opt->{r_sub});
+  $opt->{r_merge} = $opt->{r}   unless(defined $opt->{r_merge});
+  $opt->{r_frag}  = $opt->{r}   unless(defined $opt->{r_frag});
+
+  $opt->{verbose} = 2 if($opt->{DEBUG});
+
+  ##############################
+  ## Allocate the fragments table
+  for ($k=-1;!defined($id_list->[$k]);$k--){;}
+#do this to find the last defined image in $id_list
+#may not be necessary if frag_assoc completed successfully
+
+  my($maxfrag) = abs($id_list->[$k])->max;
+    print "k: $k\n";
+  p $maxfrag,scalar(@{$id_list}),4,"\n";
+  my($summary) = zeroes($maxfrag+1,scalar(@{$id_list}),4);
+
+  ##############################
+  ## Ancillary indices for locus calculation
+  my($xcoord) = xvals(abs($id_list->[$k])) ->flat;
+  my($ycoord) = yvals(abs($id_list->[$k])) ->flat;
+  my($icoord) = xvals(abs($id_list->[$k])->flat);
+  my($loci)= [];
+
+  ##############################
+  ## Loop over frames and accumulate data.  To do event sorting-out, we have to 
+  ## lag that by one frame.
+  my($fr);
+  for $fr(0..$#{$im_list}){
+    next unless (defined($im_list->[$fr]) && defined($id_list->[$fr]));
+
+    print "(1) summarizing f$fr: \n" if($opt->{verbose});
+
+    # Retrieve current images & find list of current fragments
+    my($idmap) = abs($id_list->[$fr]);
+    my($im) = $im_list->[$fr];
+    my($ids) = $idmap->flat->long->uniq;
+
+    print $ids->nelem," frags" if($opt->{verbose});
+
+    my($floci) = {}; 
+
+    # Loop over current fragments
+    my($id);    
+    my($n);
+
+    for $id($ids->list) {
+      next unless $id;  # Skip the null case
+      
+      # Retrieve loci and cache 'em for later use.
+      my($xl,$yl,$il,$val) = where($xcoord, $ycoord, $icoord, $im->flat, $idmap->flat->long == $id);
+
+      $floci->{ $id } = $il;
+
+      my($flux)     = sumover($val);
+      my($size)     = $val->nelem;
+
+      my($locus) = cat($xl,$yl);
+      my($centroid) = sumover($locus * $val) / $flux;
+
+      $summary->(($id),($fr),:) .= $flux->append($size)->append($centroid);
+      
+      print "$fr,$id: ",$summary->(($id),($fr),:),", ",$flux->append($size)->append($centroid),"\n"
+	if($opt->{verbose}>2);
+      print "." if($opt->{verbose} && (($n++ % 10 == 0) || $opt->{verbose}>1));
+
+    } 
+
+    # Cache locus information for later
+    $loci->[$fr] = $floci;
+
+    print "\n" if($opt->{verbose});
+  }
+    
+  
+  ##############################
+  ## Filter on volume and other criteria, and crunch IDs.
+  
+  print "Filtering fragments: volume..." if($opt->{verbose});
+  my($frag_ok) = ($summary->(:,:,(1))->xchg(0,1)->sumover > $opt->{v_min});
+
+  print "time..." if($opt->{verbose});
+  $frag_ok &= (($summary->(:,:,(1))->xchg(0,1) != 0)->sumover) > $opt->{t_min};
+
+  print "size..." if($opt->{verbose});
+  $frag_ok &= ($summary->(:,:,(1))->xchg(0,1)->maximum > $opt->{sz_min});
+
+  print "ok\n" if($opt->{verbose});
+
+  my($ok_id) = which ($frag_ok);
+
+  # Generate forward and backward conversions for IDs.  The +1s are to 
+  # make the new IDs starts at 1 not 0.
+  my($a,$id_conv);
+  for $a(0..$ok_id->nelem-1) {
+    $id_conv->{$ok_id->at($a)} = $a+1;
+  }
+  my($newids) = xvals($ok_id)+1;
+
+  # Compress all the IDs in the images.
+  for $fr(0..$#{$im_list}) {
+    print "(2) crunching f$fr: " if($opt->{verbose});
+    $idmap = zeroes(abs($id_list->[0]));
+    $floci = $loci->[$fr];
+    
+    print scalar(keys %{$floci}),"ids, of which",sum($frag_ok->(pdl(keys %{$floci})))," are OK " if($opt->{verbose});
+
+    my($n) = 0;
+    for $old_id(keys %{$floci}) {
+      next unless $id_conv->{$old_id};
+      $idmap->flat->($floci->{$old_id}) .= $id_conv->{$old_id};
+      print "." if($opt->{verbose} && (($n++ % 10 == 0) || $opt->{verbose}>1));
+    }
+    
+    $opt->{tab}->[$fr] = $idmap;
+    print "\n" if($opt->{verbose});
+  }
+  print "Copying summary...\n";
+  my($sum2) = $summary->(append(pdl(0),$ok_id),:,:)->copy;
+  print "cleaning up...\n";
+  undef $summary;
+  print "frag_tabulate completed successfully.\n";
+  return $sum2;
+}
