@@ -1,0 +1,182 @@
+=head2 rmxf
+
+=for usage
+
+  $hdrs = rmxf('tracefile.mxf');     # scalar: read header table only (as hash)
+  @ims  = rmxf('tracefile.mxf');     # array: demultiplex all the images
+  $im   = rmxf('tracefile.mxf[5]');         # Read 5th image
+  $im   = rmxf('tracefile.mxf',5);          # Read 5th image
+  @im   = rmxf('tracefile.mxf',[0,5,7]);    # Read images 0, 5, and 7
+  @im   = rmxf('tracefile.mxf',pdl(0,5,7)); # Read images 0, 5, and 7 
+
+=for ref
+
+Read a multiple-image FITS file in the TRACE mxf format 
+
+Data from the TRACE spacecraft are often stored as a single FITS file
+that contains multiple images (with the '.mxf' extension).  rmxf provides
+L<rfits|rfits>-like functionality for those files. 
+
+In scalar context with no index specification, rmxf returns just the
+multi-header that describes the data.  In list context with no index
+specification, rmxf unpacks all of the images from the file into a
+list of PDLs and returns them.
+
+NOTES
+
+In the MXF file, the images are stored in a single 1-dimensional chunk
+of data in the first HDU of the FITS file, and the size information is
+stored in a binary table in the second HDU.  
+
+Some header fields, like the original DP_HEADER field, are lost in the 
+translation -- it would be too tedious to insert a new header line for
+each byte (or even each long) of the header.  But you can access them with
+the scalar form.
+
+All forms except the header-table-only form read the whole file, then
+discard what isn't needed.  That is wasteful if you only want one image, 
+but it would be sort of tedious to do it Right and seek-and-load only the 
+appropriate parts of the file.
+
+=cut
+
+BEGIN {
+ @PDL::IO::rmxf_idl_types = (
+   undef
+   ,[ "byte",     byte,    8  ]
+   ,[ "short",    short,  16  ]
+   ,[ "long",     long,   32  ]
+   ,[ "float",    float ,-32  ]
+   ,[ "double",   double,-64  ]
+   ,[ "complex",  undef  ]
+   ,[ "string",   undef  ]
+   ,[ "struct",   undef  ]
+   ,[ "cmplx dbl",undef  ]
+   ,[ "heap ptr", undef  ]
+   ,[ "object",   undef  ]
+   ,[ "ushort",   ushort, 16 ]
+   ,[ "ulong",    long,   32 ]
+   ,[ "longlong", undef  ]
+   ,[ "ulonglong",undef  ]
+);
+}
+
+
+
+sub rmxf {
+    my($fname) = shift;
+    my($index) = shift;
+
+    if(defined $index && (ref $index eq 'ARRAY' || !(ref $index))) {
+	$index = pdl($index);
+    }
+
+    # Parse trailing-brackets notation
+    if($fname =~ s/\[(\d+)\]$//) {
+	$index = $1;
+    }
+
+    # No index and scalar context -- return the header table only.
+    if(!defined $index && !wantarray) {
+	return rfits($fname.'[1]');
+    }
+
+    # Read the data values and header table.
+    my ($data,$table) = rfits($fname);
+    my $rows = $table->{hdr}->{naxis2};
+
+    if( (!defined $index)) {
+	$index = xvals($rows);
+    }
+
+
+    my @out;
+    my @index;
+    if(!ref $index) {
+	@index = ($index);
+    } elsif(UNIVERSAL::isa($index,'PDL')) {
+	@index = $index->list;
+    } elsif(ref $index eq 'ARRAY') {
+	@index = @{$index};
+    } else { barf "This can't happen (rmxf)...\n"; }
+
+    my $ii;
+
+    for $ii(@index) {
+	my $foo;
+	
+	$type = $PDL::IO::rmxf_idl_types[ $foo = $table->{DATA_TYPE}->at($ii) ];
+	barf "Unknown data type $foo for image $ii of $fname\n"
+	    unless defined($type);
+	barf "Data type ".$type->[0]." isn't supported.  Giving up.\n"
+	    unless defined($type->[1]);
+	
+	
+     ### Create a new PDL
+	my $pdl = PDL->new_from_specification(
+					      $type->[1]
+					      ,$table->{NAXIS1}->at($ii)
+					      ,$table->{NAXIS2}->at($ii)
+					      );
+	
+	
+     ### Copy the data into the new PDL
+	my $s = $pdl->get_dataref;
+	my $howbig = PDL::Core::howbig($type->[1]);
+
+	### (The substr is offset by 2880 since the START_BYTE is apparently
+	### a seek location within the file, and not within the data segment
+	### itself.)
+	$$s = substr(  ${$data->get_dataref}
+	             , $table->{START_BYTE}->slice("($ii)") - 2880
+	             , $howbig * $pdl->nelem
+			 );
+        $pdl->upd_data;
+
+     ### TRACE images appear to be in big-endian order.
+        unless(isbigendian()) {
+	       if($howbig==2) { bswap2($pdl); }
+	    elsif($howbig==4) { bswap4($pdl); }
+	    elsif($howbig==8) { bswap8($pdl); }
+	}
+
+	push(@out,$pdl);
+
+     ### Stuff the appropriate items into the header...
+
+        $pdl->fhdr->{BITPIX} = $type->[2];
+        $pdl->fhdr->{NAXIS} = 2;
+
+        my $key;
+        for $key("NAXIS1", "NAXIS2", sort keys %$table) {
+	    next if($key eq 'hdr');
+	    if(UNIVERSAL::isa($table->{$key},'PDL')) {
+		if($table->{$key}->dims == 1) {
+		    $pdl->fhdr->{$key} = $table->{$key}->at($ii);
+		} else {
+		    print "Warning -- skipping multi-element PDL value for key $key\n" if($PDL::verbose);
+#		    $pdl->fhdr->{$key} = [$table->{$key}->slice("($ii)")->list];
+		}
+	    } elsif(ref ($table->{$key}) eq 'ARRAY') {
+		$pdl->fhdr->{$key} = $table->{$key}->[$ii];
+	    } else {
+		print "warning: unknown ref in key $key"." (".$table->{$key}.")\n" if($PDL::verbose);
+		$pdl->fhdr->{$key} = "$table->{$key}";
+	    }
+	}
+    }
+	
+    if(!wantarray) {
+	if(@out==1) {
+	    return $out[0];
+	} else {
+	    print "rmxf warning: returning a list in scalar context (is this what you want?)\n";
+	}
+    }
+
+    @out;
+}
+	    
+
+    
+    
