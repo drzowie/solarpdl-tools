@@ -132,7 +132,7 @@ sub frag_tabulate {
 
     my $reassoc = 0;
     my $frag_recon = !$frag_ok;
-    $ids_recon = which($frag_recon); 
+    my $ids_recon = which($frag_recon); 
     print "reconsidering",$ids_recon->nelem,"ids.\n" if $opt->{verbose};
     my $loci_recon=[];
     my $xsize=$im_list->[0]->dim(0);
@@ -153,9 +153,9 @@ sub frag_tabulate {
             ##set up a bounding box
 	    ($xmin,$xmax)=minmax($loci->[$fr]->{$id}->pdl % $xsize);
 	    ($ymin,$ymax)=minmax(floor($loci->[$fr]->{$id}->pdl / $xsize));
-	    $subfield=$id_list->[$fr]->range([$xmin-1,$ymin-1],[$xmax-$xmin+2,$ymax-$ymin+2],'t');
+	    my $subfield=$id_list->[$fr]->range([$xmin-1,$ymin-1],[$xmax-$xmin+2,$ymax-$ymin+2],'t');
             ##find out what other ids are in this subfield
-	    $idsub=$subfield->uniq;
+	    my $idsub=$subfield->uniq;
 	    $sizes=zeroes($idsub);
 	    ##just loop over those
 
@@ -167,12 +167,12 @@ sub frag_tabulate {
 		next unless (sign($summary($id_ok,$fr,(0)))==sign($summary($id,$fr,(0)))); ##only reassociate if it's the same sign
 		$pixarray=zeroes($subfield->dims,4);
                 ##set pixarray = 1 where the reconsidered id is
-		($xok,$yok)=whichND($subfield->abs==$id);
-		$xyok=cat($xok,$yok)->mv(-1,0);
+		my ($xok,$yok)=whichND($subfield->abs==$id);
+		my $xyok=cat($xok,$yok)->mv(-1,0);
 		$pixarray->indexND($xyok).=1;
 ##increment pixarray by 1 where the ok id is, but offset by 1 in each direction
-		($xid,$yid)=whichND($subfield==$id_ok);
-		$xyid=cat($xid,$yid,pdl(0))->mv(-1,0);
+		my ($xid,$yid)=whichND($subfield==$id_ok);
+		my $xyid=cat($xid,$yid,pdl(0))->mv(-1,0);
 		$pixarray->indexND($xyid+pdl(1,0,0),'t')+=1;
 		$pixarray->indexND($xyid+pdl(-1,0,1),'t')+=1;
 		$pixarray->indexND($xyid+pdl(0,1,2),'t')+=1;
@@ -187,7 +187,7 @@ sub frag_tabulate {
             ##reassociate it with the largest one that it touches
 	    if (any($sizes))
 	    {
-		$idreassoc=$idsub(which($sizes==$sizes->max)->(0)); ##->(0) just in case two of same size
+		my $idreassoc=$idsub(which($sizes==$sizes->max)->(0)); ##->(0) just in case two of same size
 		$idreassoc=$idreassoc->((0));
 ##for some reason that doesn't need to be done with $id, but it's necessary here for accessing the keys of the $loci hashes
 
@@ -196,12 +196,12 @@ sub frag_tabulate {
 		$summary(($idreassoc),($fr),(1))+=$summary(($id),($fr),(1));
 
 ## redo the center of gravity calculation
-		$locus=cat($loci->[$fr]->{$idreassoc}%$xsize,floor($loci->[$fr]->{$idreassoc}/$xsize));
+		my $locus=cat($loci->[$fr]->{$idreassoc}%$xsize,floor($loci->[$fr]->{$idreassoc}/$xsize));
 	       #$locus+=pdl(($xmin),($ymin))->transpose;
-		$val=index($im_list->[$fr]->flat,$loci->[$fr]->{$idreassoc});
+		my $val=index($im_list->[$fr]->flat,$loci->[$fr]->{$idreassoc});
 #		p "val dims",join("x",$val->dims),", locus dims",join("x",$locus->dims),"\n";
 
-		$centroid=sumover($locus*$val)/$summary(($idreassoc),($fr),(0));
+		my $centroid=sumover($locus*$val)/$summary(($idreassoc),($fr),(0));
 		$summary(($idreassoc),($fr),(2)).=$centroid((0));
 		$summary(($idreassoc),($fr),(3)).=$centroid((1));
 
@@ -230,7 +230,7 @@ sub frag_tabulate {
     # Compress all the IDs in the images.
     for $fr(0..$#{$im_list}) {
 	print "(2) crunching f$fr: " if($opt->{verbose});
-	$idmap = zeroes(abs($id_list->[0]));
+	my $idmap = zeroes(abs($id_list->[0]));
 	$floci = $loci->[$fr];
 	
 	print scalar(keys %{$floci}),"ids, of which",sum($frag_ok->(pdl(keys %{$floci})))," are OK " if($opt->{verbose});

@@ -1,3 +1,5 @@
+=pod
+
 =head2 emergence_movie
 
 =for ref 
@@ -15,6 +17,20 @@ original data (or a diskcache object, of course).
 
 By default the frames are written to the directory "movie"; options can
 change the movie directory.
+
+BUGS
+
+1) contours drawn around features are offset substantially.
+
+2) image output in gif format is funky (data is just broad vertical stripes).
+
+3) mpegify doesn't work on ppm output (on Urania, ok on Euterpe), though this probably isn't a problem with this code, it is important and does need to be dealt with.
+
+HISTORY
+
+Craig DeForest May 2004--original code
+
+Derek Lamb April 2005--bug finding and fixing
 
 =cut
 
@@ -68,10 +84,8 @@ sub emergence_movie {
   my $framename;
   for $i(1..$#$data) {
     print "Frame $i...";
-    my $w = pgwin(dev=> $framename=sprintf("%s%s%3.3d.ppm/ppm",$dir,$fname,$i),
-		  size=>($size*$anti)
-	       );
-
+    my $w = pgwin(dev=> $framename=sprintf("%s%s%3.3d.ppm/ppm",$dir,$fname,$i),size=>$size);
+    ##my $w=pgwin(xw,size=>$size);  
     # RGB-ify data and scale to [0,1].
     $im = $data->[$i]->float->clip(@$range)->dummy(2,3)->copy;
     $im->sethdr($data->[$i]->hdr_copy);
@@ -82,7 +96,7 @@ sub emergence_movie {
     print "...";
     ##############################
     # Identify start events and locations
-    $st = which($hist->(:,(0)) >= $i-$post & $hist->(:,(0)) <= $i+$pre);
+    my $st = which($hist->(:,(0)) >= $i-$post & $hist->(:,(0)) <= $i+$pre);
     print " ".$st->nelem." events...";
     my $event;
     foreach $event($st->list) {
@@ -99,7 +113,7 @@ sub emergence_movie {
 
 
     }
-
+    
     $w->fits_imag($im->clip(0.01,0.99),0,1,{j=>1,title=>$title.sprintf("MDI Tracked Rgn %s",$im->hdr->{DATE_OBS},$i),dr=>0,charsize=>0.99,%$imag_options});
     $w->hold;
 
@@ -122,23 +136,19 @@ sub emergence_movie {
 	  $w->ellipse($xy->at(0),$xy->at(1),$r,$r,{fill=>2,color=>3});
 	}
 	
-	
-	$w->text($id,$xy->at(0)+$r*1.05,$xy->at(1),{charsize=>0.67*$anti,color=>3});
+	$w->text($id,$xy->at(0)+$r*1.05,$xy->at(1),{charsize=>0.67*$anti_alias,color=>3});
 	print ".";
       }
       
       if($opt->{contour}) {
-	$w->lines($boundaries->apply($t));
+	  $w->lines( $boundaries->apply($t),{color=>3});
       }
 
     }
-
-    print "\n";
-
     $w->close;
-    if($anti > 1) {
+    if($anti_alias > 1) {
       $im = rim($framename);
-      $im = $im->match([(pdl($im->dims)/$anti)->short->list],{method=>'h'});
+      $im = $im->match([(pdl($im->dims)/$anti_alias)->short->list],{method=>'h'});
       wim($im,$framename);
     }
   } # frame loop

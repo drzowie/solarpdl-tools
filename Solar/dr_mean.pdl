@@ -1,3 +1,5 @@
+=pod 
+
 =head2 dr_mean
 
 Derorated, weighted mean of images
@@ -24,9 +26,6 @@ A FITS header to which the output image should be matched, after derotation
 Longitude and latitude of the subsolar point you want in the resampled
 coordinate system
 
-=item 
-
-
 =for ref
 
 This is a sort-of clone of John Beck's DR_MEAN module for the MDI data
@@ -40,9 +39,6 @@ PDL containing the longitude and latitude of the viewpoint you want to
 hover over, and a timestamp from the image with that time.  You also feed
 in
 
-=begin comment 
-' just to make the whole document not appear as a string to emacs
-=end comment
 
 AUTHOR & HISTORY
 

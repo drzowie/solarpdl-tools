@@ -12,22 +12,22 @@ sub boundary {
   my $b = $opt->{b} || 5;
   my $color = $opt->{color} || 3;
 
+##might be better if we grabbed the lowest and highest x and y to get $subim
   my $radius = pdl(sqrt($tabline->(1)/3.14159)*$b)->ceil * 10;
   my $offset = $tabline->(2:3)-$radius;
-
   my $subim = $id->range($offset, $radius*2+1, 't')->sever->abs == abs($fragid);
   
   ## Assume a simply connected map -- 
   ## grab a random location and walk right to the boundary.
 
-  $xy = whichND($subim);
+  my $xy = whichND($subim);
   unless($xy->nelem) {
     print "boundary: got non-overlapping frag! ($fragid)\n";
     print ($id->range($offset,$radius*2+1,'t'),$offset);
     return null;
   }
 
-  $xy = $xy->(:,(0));
+  $xy = $xy->(:,(0)); ##not random--grabs the pixel with the smallest y, then smallest x
 
   while($subim->indexND($xy,'t')) {
     $xy -= pdl(1,0);
@@ -73,7 +73,7 @@ sub boundary {
   
   push(@out,$xy->copy);
 
-  my $out = cat(@out) + $offset - pdl(0.5);
+  my $out = cat(@out) + $offset + pdl(0.5);
   return $out->glue(0,$color * ones(1,$out->dim(1)));
 }
 
