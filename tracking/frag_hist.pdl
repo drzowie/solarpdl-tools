@@ -161,7 +161,7 @@ sub frag_hist {
     $starts(1:-1)-=1;
     $hist->(:,(0)) .= $starts;
     $hist->(:,(3)) .= $ends;
-    $hist->(:,(6)) .= $ends - $starts;
+    $hist->(:,(6)) .= $ends - $starts +1;
     
     $hist->(:,7:8) .= $tabs->(:,:,2:3)->range(yvals(1,$frag_ct)->glue(0,$starts->(*1)));
     $hist->(:,9:10).= $tabs->(:,:,2:3)->range(yvals(1,$frag_ct)->glue(0,$ends->(*1)));
