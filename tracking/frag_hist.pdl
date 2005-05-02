@@ -4,7 +4,7 @@
 
 =for ref
 
-Generate history for fragment ids.
+Generate history for feature ids.
 
 =for usage
 
@@ -15,8 +15,8 @@ of unique ids with information on flux, size, and position.
 $frag_ids is the frag id of each pixel. This will be regularized by
 frag_tabulate.
 
-$hist gets an Nx11 PDL that lists fragment history versus ID (which is
-used as an index).  For each fragment, the elements are:
+$hist gets an Nx11 PDL that lists feature history versus ID (which is
+used as an index).  For each feature, the elements are:
 
 =over 3
 
@@ -50,33 +50,33 @@ These are:
 
 =item -1: UNKNOWN OR ERROR
 
-The fragment didn't fit any particular pattern.  (For example, it is near
-enough other fragments to be interacting with them, but the interaction
+The feature didn't fit any particular pattern.  (For example, it is near
+enough other features to be interacting with them, but the interaction
 doesn't even approximate flux conservation).
 
 n=item 0: SURVIVAL
 
-The fragment was born before, or survived past, the last frame
+The feature was born before, or survived past, the last frame
 
-=item 1: COALESCENCE/DISSIPATION
+=item 1: APPEARANCE/DISAPPEARANCE
 
-The fragment appeared "out of the blue", or disappeared mysteriously.
+The feature appeared "out of the blue", or disappeared mysteriously.
 
 =item 2: EMERGENCE/CANCELLATION
 
-The fragment was born associated with a recently-born opposing flux
+The feature was born associated with a recently-born opposing flux
 concentration, or with a growing opposing flux concentration; or 
 died associated with a recently-died opposing flux concentration or
 with a shrinking opposing flux concentration.
 
 =item 3: FRAGMENTATION/MERGER
 
-The fragment broke off of another similar-signed fragment; or 
+The feature broke off of another similar-signed feature; or 
 died by glomming onto a same-sign concentration.
 
 =item 4: COMPLEX
 
-The fragment fits both 1 and 3.
+The feature fits both 1 and 3.
 
 =back
 
@@ -90,18 +90,18 @@ radius for consideration for determining neighbours, measured in
 pixels. radius is given (a+br) where a and b are variable coefficients
 and r is one pixel.  'a' sets a minimum size for consideration; 'b' is
 an effective maximum eccentricity to consider -- e.g. b=1 only works
-if all fragments are circular, b=5 can work for fragments up to 5x
+if all features are circular, b=5 can work for features up to 5x
 longer than wide (but at a speed cost).  
 
-Fragments that are too eccentric don't get properly considered.
+Features that are too eccentric don't get properly considered.
 =item sep (default 3)
 
-Maximum separation between two fragments for them to be considered 
+Maximum separation between two features for them to be considered 
 to be interacting.  Measured in pixels.
 
 =item ratio (default 0.75) 
 
-The relative loss required in an associated fragment for a new fragment to be
+The relative loss required in an associated feature for a new feature to be
 consistent with emergence and/or fragmentation.  Setting this to 0 requires
 only that the flux differential be in the correct direction, neglecting 
 its magnitude.  Setting it to a negative number allows nonconservative
@@ -123,15 +123,18 @@ The only death event that is currently accurately measured is (none).
 
 HISTORY
 
-Alisdair Davey 05/10/04 Removed fragment history code from frag_hist
+Alisdair Davey 05/10/04 Removed feature history code from frag_hist
                         and moved to here. 
 
 Craig DeForest 05/20/04 Hacked up Davey code...
 
-Derek Lamb 03/25/05 minor debugging... 
+Derek Lamb 03/25/05 minor debugging
+
+Derek Lamb 05/02/05 Implemented death events
 =cut
 
 use Carp;
+use strict;
 
 sub frag_hist {
     my ($opt,$tabs,$ids) = find_opt(@_);
@@ -146,11 +149,11 @@ sub frag_hist {
     ## Find all the start and end times.  Just find the minimum and maximum
     ## frame for each one.  This is cheesy but oh so sweet.
     
-    # frame gets the frame number for all frames with fragments of nonzero size.
+    # frame gets the frame number for all frames with features of nonzero size.
     my $frame =  (yvals($frag_ct,$frame_ct)+ones($frag_ct)) * ($tabs->(:,:,(1)) != 0) ;
     
     
-    # starts and ends get the max and min frame number for each fragment.
+    # starts and ends get the max and min frame number for each feature.
     # (long-named collapse operators collapse in 0th dim only)
     my $ends =   $frame->xchg(0,1)->maximum;
     $ends(1:-1)-=1;
@@ -163,7 +166,7 @@ sub frag_hist {
     $hist->(:,7:8) .= $tabs->(:,:,2:3)->range(yvals(1,$frag_ct)->glue(0,$starts->(*1)));
     $hist->(:,9:10).= $tabs->(:,:,2:3)->range(yvals(1,$frag_ct)->glue(0,$ends->(*1)));
     
-    
+    ##now we only need to fill in items 1,2,4,5    
     
     ##############################
     ## Set up options
@@ -189,20 +192,23 @@ sub frag_hist {
     print "frame_offsets is $frame_offsets...\n" if($opt->{verbose});
     
     # The circmask is a precalculated circular mask for convolution to find
-    # separation distances between fragments.
+    # separation distances between features.
     my $circmask = (rvals($opt->{sep}*2+1,$opt->{sep}*2+1)<=$opt->{sep});
     
     ##############################
-    ## Loop over fragments and characterize each one.
+    ## Loop over features and characterize each one.
     
     for $i(1..$frag_ct-1) {
 	print "\n$i:\t" if($opt->{verbose});
-	
 	my $h = $hist->(($i));
 	
-	
-	########### Determine birth method...
-	# 
+#################################################
+#################################################
+##
+##          Determine birth
+##
+#################################################
+#################################################	
 	
 	$h->(1:2) .= -1; # Default is ERROR.
 	print "-";
@@ -212,18 +218,18 @@ sub frag_hist {
 	    $h->(1:2) .= 0;  # SURVIVAL
 	    print "S" if($opt->{verbose});
 	    
-	} elsif ( $h->(0) <= $frame_ct-2 ) {  
+	} elsif ( $h->(0) <= $frame_ct-2 ) {  ##don't look at any born in the last frame
 	    
 	    ##########
 	    # All other cases are a little harder.  
 	    # Do some legwork to assemble an interaction chart.
 	    
 	    print " ".$h->(0)." " if($opt->{verbose} > 1);
-	    my $t = $tabs->(($i),($h->(0)));
+	    my $t = $tabs->(($i),($h->(0)) );
 	    
 	    ##########
 	    # Calculate radius to consider.  $r is the calculated radius of the
-	    # current fragment if it were circular.  $radius is assembled from 
+	    # current feature if it were circular.  $radius is assembled from 
 	    # the a and b coefficients, and the allowed separation.
 	    
 	    my $r = floor(sqrt($t->((1))/3.14159)+1);
@@ -231,7 +237,7 @@ sub frag_hist {
 	    print "radius=$radius   ";
 	    
 	    ##########
-	    ## Find pixels of interest for this fragment...
+	    ## Find pixels of interest for this feature...
 	    ## cut out the relevant portion of the ID image with range, 
 	    ## mask it to find the equal pixels, then convolve the mask 
 	    ## with the circmask to expand it.
@@ -244,7 +250,7 @@ sub frag_hist {
 	    print ("\nrange:".($ids->[$h->at(0)]->range($t->(2:3)->floor- $radius,$radius*2+1,'t')->abs)."\nmask:".$mask."\n") if($opt->{verbose}>3);
 	    
 	    ############
-	    ## Find interacting fragments for surrounding frames.
+	    ## Find interacting features for surrounding frames.
 	    ## For each frame, pull out the relevant range and multiply by
 	    ## the localization mask.  Frames vary from current frame minus $pre
 	    ## to current frame plus $pre, clipped to stay in range.
@@ -275,7 +281,7 @@ sub frag_hist {
 		## summary: each row gets (sign, starting, [consistent]),
 		## where consistent is consistent with that frag being a source 
 		## of the current frag.  Sign is relative to the current 
-		## fragment's sign.
+		## feature's sign.
 		
 		my $j;
 		
@@ -284,8 +290,8 @@ sub frag_hist {
 		
 		for $j(0..$#interactions) {
 		    my $other = $interactions[$j];
-		    next if($other >= $tabs->dim(0));
-		    print "\nother=$other  " if($opt->{verbose});
+		    barf "Non-valid birth interaction number $other, $j" if($other >= $tabs->dim(0));
+		    print "\nother=$other  " if($opt->{verbose}>1);
 		    my $sign = 1 - ($t->((0)) * $tabs->(($other),($starts->($other)),(0))<0)*2;
 ##$sign is 1 if "this" and "other" are the same sign, -1 if different.
 		    
@@ -297,10 +303,10 @@ sub frag_hist {
 		    my $ending=( ($ends->($other) <= $h->(0) + $post) &&
 				 ($ends->($other) >= $h->(0) - $pre)
 				 )->at(0);
-##$starting ($ending)isn't used anywhere!  It is a boolean that answers "Does $other start (end) in the frame range we're considering?"
+##$starting ($ending)isn't used anywhere!  It is a boolean that answers "Does $other start (end) in the frame range we're considering?"  We probably need to use this somewhere, especially if the frame range is large
 		    
 		    
-##this is where all the origin decision-making takes place, so need to go over this carefully
+##this is where all the origin decision-making takes place
 		    
 		    my $df_other = $tabs->(($other),(pdl($h->((0))-$pre,0)->max),(0)) - $tabs->(($other),(pdl($h->((0))+$post,$frame_ct-1)->min),(0));
 		    
@@ -318,43 +324,120 @@ sub frag_hist {
 		    } elsif( $sign > 0 && $consistent ) {
 			push(@fr, $interactions[$j]);
 		    }
-		}
-##so now @em and @fr contain the ids of those concentrations that consistently interacted with $i to result in an emergence or fragmentation
+		} ##end loop over birth interactions
+		
+##so now @em and @fr contain the ids of those features that consistently interacted with $i to result in an emergence or fragmentation
 		
 		if(@em && @fr) {
 		    $h->(1:2) .= pdl(4,-1);
 		    print "*" if($opt->{verbose});
 		} elsif(@em) {
-		    $h->(1:2) .= pdl(2,@em[0]); ##using the first in the list for the direct object is abitrary
+		    $h->(1:2) .= pdl(2,@em[0]); ##using the first in the list for the direct object is arbitrary
 		    print "E" if($opt->{verbose});
 		} elsif(@fr) {
 		    print "F" if($opt->{verbose});
 		    $h->(1:2) .= pdl(3,@fr[0]);
 		} else {
-		    print "ERROR" if($opt->{verbose});
+		    print "BIRTH ERROR" if($opt->{verbose});
 		}
-		
-		
-	    }
-	    
-	}
+	    } ##end 'else' block to determine emergence & fragmentation
+	} ##end 'elsif' block to determine ALL birth events
 	
+	print "\n\n" if($opt->{verbose});	
 	
+#################################################
+#################################################
+##
+##     Determine death ( birth in reverse )
+## for comments see corresponding birth section
+#################################################
+#################################################
 	
+	$h->(4:5) .=-1; 
 	
-	########## Determine death
-	print "\n\t" if($opt->{verbose});
-	
-	if( $h->(3) >= $frame_ct-1 ) { # SURVIVAL
+	if( $h->(3) == $frame_ct-1 ) { 
 	    $h->(4:5) .= 0;
 	    print "S" if($opt->{verbose});
-	} else {
-	    print "NDD" if($opt->{verbose});
+	} elsif ($h->(3) >= 1){ ##don't look at any dying in the 0th frame.
 	    
-	}
-	
-	
-    }
-    
+	    my $t=$tabs->(($i),($h->(3)) );
+	    
+	    my $r=floor(sqrt($t->((1))/3.14159)+1);
+	    my $radius = $opt->{a} + $r*$opt->{b} + $opt->{sep};
+	    print "radius=$radius\t";
+	    
+	    print "  end frame is ".$h->(3)."; \$t->"."(2:3) is ".$t->(2:3)."   " if($opt->{verbose} > 2);
+	    
+	    my $mask = (( $ids->[$h->at(3)]->range($t->(2:3)->floor-$radius, $radius*2+1,'t')
+			  == $i )->convolveND($circmask) != 0);
+	    
+	    print ("\nrange:".($ids->[$h->at(3)]->range($t->(2:3)->floor- $radius,$radius*2+1,'t')->abs)."\nmask:".$mask."\n") if($opt->{verbose}>3);
+	    
+	    my @vicinity = 
+		map { $ids->[$_]->range($t->(2:3)-$radius,$radius*2+1,'t') * $mask }
+	    (($h->(3) + $frame_offsets)->clip(0,$frame_ct-1)->list);
+	    print "::";
+	    
+	    my $interactions = zeroes(1)->
+		glue(0, map {$_->uniq->(:)} @vicinity)->short;
+	    $interactions->where( $interactions == $i ) .= 0;
+	    my @interactions = $interactions->uniq->list;
+	    shift @interactions if($interactions[0]==0);
+	    print "int - ".join(", ",@interactions)," " if($opt->{verbose}>1);
+	    
+	    print ".. ";
+	    unless(@interactions) {
+		print "D" if($opt->{verbose});
+		$h->(4:5) .= pdl(1,0);
+	    } else {
+		print "! ";
+		
+		my $j;
+		
+		my @ca=();
+		my @mg=();
+		
+		for $j(0..$#interactions) {
+		    my $other = $interactions[$j];
+		    barf "Non-valid interaction number $other, $j" if($other >= $tabs->dim(0));
+		    print "\nother=$other " if($opt->{verbose});
+		    my $sign = 1- ($t->((0)) * $tabs->(($other),($ends->($other)),(0))<0)*2;
+		    
+		    print "flux: ".$t->((0))->long."; other: ".$tabs->(($other),($ends->($other)),(0))->long."; sign is $sign\t" if($opt->{verbose} > 1);
+		    
+##starting and ending go here if we ever decide to use them
+		    
+		    my $df_other = $tabs->(($other),(pdl($h->((3))+$post,$frame_ct -1)->min),(0)) - $tabs->(($other),(pdl($h->((3))-$pre,0)->max),(0));
+		    
+		    my $df_this = $tabs->(($i),(pdl($h->((3))-$pre,0)->max),(0));
+		    
+		    my $consistent = ($df_other / $df_this > $opt->{ratio});
+		    print "df_this:  ".$df_this->long."  df_other: ".$df_other->long."  consistent: $consistent     " if($opt->{verbose} > 1);
+		    
+		    if($sign < 0 && $consistent) {
+			push(@ca,$interactions[$j]);
+		    } elsif( $sign >0 && $consistent ) {
+			push(@mg, $interactions[$j]);
+		    }
+		    
+		} ##end loop over death interactions	
+		
+		if(@ca && @mg) {
+		    $h->(4:5) .= pdl(4,-1);
+		    print "%" if($opt->{verbose});
+		} elsif(@ca) {
+		    $h->(4:5) .= pdl(2,@ca[0]);
+		    print "C" if($opt->{verbose});
+		} elsif(@mg) {
+		    print "M" if($opt->{verbose});
+		    $h->(4:5) .=pdl(3,@mg[0]);
+		} else {
+		    print "DEATH ERROR" if($opt->{verbose});
+		}
+		
+	    } ##end 'else' block to determine cancellation and merging
+	} ##end 'elsif' block to determine ALL death events
+	print "\n\n" if($opt->{verbose});
+    } #end feature loop
     return $hist;
 }

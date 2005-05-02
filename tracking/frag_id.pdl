@@ -1,6 +1,7 @@
 =pod
 
 =head2 frag_id
+
 =for ref
 
 Identify magnetic features from a sequence of masks and original data. 
@@ -63,215 +64,219 @@ with your Perl/PDL distribution; for a copy, contact
 intact.
 
 =cut
-  use Carp;
-  use PDL::Graphics::PGPLOT::Window;
+    
+use Carp;
+use strict;
+use PDL::Graphics::PGPLOT::Window;
+
+
 sub frag_id {
-  my($opt, $images, $masks) = find_opt(@_);
-  local($_);
-
-  ##############################
-  ## Set up options
-
-  my($id_out)= (defined $opt->{ids}) ? $opt->{ids} : [];
-
-  my($dirs) = ( $opt->{diag} ? 
-		pdl([-1,-1,-1,0,0,1,1,1],[-1,0,1,-1,1,-1,0,1]) :
-		      pdl([-1,1,0,0],[0,0,-1,1])
-		);
-  my($method) = 1;
-  if($opt->{method}) {
-    if($opt->{method} =~ m/hill/) {
-      $method = 2;
-    } elsif($opt->{method} =~ /clump/) {
-      $method = 1;
-    } else {
-      croak "frag_id: method option should be 'downhill' or 'clump'.\n";
-    }
-  }
-
-
-  print "Method is $method...\n" if($opt->{verbose});
-
-  ##############################
-  # Main loop
-  my($frame);
-  for $frame(0..$#$masks) {
-
-    my($m) = $masks->[$frame];
-    my($mpos,$mneg) = (($m>0), ($m<0));
-    if(!defined($m)) {
-      print "Frame No.",$frame," undefined.  Skipping...\n";
-      next;
-    }
-    print ("Frame $frame: ",$mpos->sum," pos. and ",$mneg->sum,
-	   " neg. pixels in mask..\n") 
-      if($opt->{verbose});
-
-    my($im) = $images->[$frame];
-    my($w,$h) = $im->dims;   # Width and height of masks
-
-
-    my($imp) = zeroes($w+2,$h+2);
-    $imp->(1:$w,1:$h) .= $im;
+    my($opt, $images, $masks) = find_opt(@_);
+    local($_);
     
-    my($idp) = zeroes($w+2,$h+2);
-    my($id) = $idp(1:$w,1:$h);
-
-    my($newa) = $idp->copy;
-
-    my($mp) = zeroes($w+2,$h+2);
-    $mp(1:$w,1:$h) .= $m;
+    ##############################
+    ## Set up options
     
-    my($maxp) = zeroes($w+2,$h+2);
-    my($max) = $maxp->(1:$w,1:$h);
-    $max .= $m;               # Put the flags into the max
-
-    ##########
-    # Over all comparison directions, keep points if they're in a found
-    # object and also not closer to zero than their masked neighbors. 
-    # This is probably doable with andover and some other clever
-    # index manipulation but I'm too lazy to figure it out.
-    # Since &= is broken in PDL 2.2, I use explicit assignment.
-    # Multiplying by $m ensures that only clusters of same-sign 
-    # pixels are considered in the maximum calculation.
-    ##########
-    print "Finding maxima" if($opt->{verbose});
-    my($a) = $m * $im;
-    for (my($z)=0; $z<$dirs->(:,(0))->nelem; $z++) {
-      my($zz) = $dirs->(($z));
-      print "." if($opt->{verbose});
-      $max .= $m * (($max != 0) & ($a >= $m * $imp->(1+$zz(0):$zz(0)-2,
-						      1+$zz(1):$zz(1)-2)
-				 )
-		    );
+    my($id_out)= (defined $opt->{ids}) ? $opt->{ids} : [];
+    
+    my($dirs) = ( $opt->{diag} ? 
+		  pdl([-1,-1,-1,0,0,1,1,1],[-1,0,1,-1,1,-1,0,1]) :
+		  pdl([-1,1,0,0],[0,0,-1,1])
+		  );
+    my($method) = 1;
+    if($opt->{method}) {
+	if($opt->{method} =~ m/hill/) {
+	    $method = 2;
+	} elsif($opt->{method} =~ /clump/) {
+	    $method = 1;
+	} else {
+	    croak "frag_id: method option should be 'downhill' or 'clump'.\n";
+	}
     }
-    if($opt->{monitor}){
-    $win=pgwin(xs,size=>[6,6]);
-    $win->imag($max);
-    $win->hold;
-    }
-
-    print "ok. Found ",$max->abs->sum,"\n" if($opt->{verbose});
-
-    ##########
-    # Assign local concentration numbers to each of the maxima.
-    # Start the concentration numbers at 1, and assign signs
-    # according to concentration sign.
-    my($maxes,$ids) = where($max,$id,$max);
-
-    if($maxes->nelem > 0) {
-      $ids .= (xvals($maxes->nelem)+1) * $maxes;
-      
-      ##########
-      # Central loop: walk in each of the possible directions and associate
-      # pixels to prior maxima.  Treat collisions differently between the 
-      # "downhill" and "clump" methods:  clumping causes concentrations to
-      # become grouped when they collide, while downhill motion causes them
-      # to stop at the border.  The border pixel goes to whomever gets there
-      # first (for now).
-      
-      my($done);
-      my($new);
-      my($xa,$ya) = (xvals($idp),yvals($idp));
-      my($xmin,$xmax,$ymin,$ymax) = (pdl(1),pdl($w),pdl(1),pdl($h));
-      
-      print "xrange:($xmin,$xmax); yrange: ($ymin,$ymax)\n" if($opt->{verbose});
-      
-      do {
-	my($nxmin) = $xmax + 0;
-	my($nymin) = $ymax + 0;
-	my($nxmax) = $xmin + 0;
-	my($nymax) = $ymin + 0;
-
-	$done = 1;
-	print "****iterating: " if($opt->{verbose});
+    
+    
+    print "Method is $method...\n" if($opt->{verbose});
+    
+    ##############################
+    # Main loop
+    my($frame);
+    for $frame(0..$#$masks) {
 	
-	if($opt->{monitor}) {print "-"; $newa .= 0; print "-";}
-
-	for(my($z)=0;$z<$dirs->(:,(0))->nelem; $z++) {
-	  my($zz) = $dirs->(($z));
-
-	  my $slstr = ($xmin+$zz(0))->at(0).":".($xmax+$zz(0))->at(0).","
-	              .($ymin+$zz(1))->at(0).":".($ymax+$zz(1))->at(0);
-	  my($idd) = $idp->slice($slstr);
-	  my($md)  =  $mp->slice($slstr);
-
-	  my($id0) = $idp->($xmin:$xmax,$ymin:$ymax);
-			    
+	my($m) = $masks->[$frame];
+	my($mpos,$mneg) = (($m>0), ($m<0));
+	if(!defined($m)) {
+	    print "Frame No.",$frame," undefined.  Skipping...\n";
+	    next;
+	}
+	print ("Frame $frame: ",$mpos->sum," pos. and ",$mneg->sum,
+	       " neg. pixels in mask..\n") 
+	    if($opt->{verbose});
 	
-	  
-	  if($method == 1) {
-	    print "n" if($opt->{verbose});
-	    # Normal spreading
-	    $new = ((($md * $id0)> 0)        # New rgn exists and has same sign
-		    & ($idd != $id0)          # New rgn isn't same as current
-		    & (abs($idd) < abs($id0)) # New rgn has lower id no.
-		    );
-
-	  } elsif($method==2) {
-	    print "d" if($opt->{verbose});
-	    # Downhill
-	    my($im0) = $imp->($xmin:$xmax,$ymin:$ymax);
- 	    my($imd) = $imp->slice($slstr);
-	    $new = ((($md * $id0) > 0) 	# New rgn exists and has same sign
-		    & ($idd != $id0)	# New rgn isn't same as current
+	my($im) = $images->[$frame];
+	my($w,$h) = $im->dims;   # Width and height of masks
+	
+	
+	my($imp) = zeroes($w+2,$h+2);
+	$imp->(1:$w,1:$h) .= $im;
+	
+	my($idp) = zeroes($w+2,$h+2);
+	my($id) = $idp(1:$w,1:$h);
+	
+	my($newa) = $idp->copy;
+	
+	my($mp) = zeroes($w+2,$h+2);
+	$mp(1:$w,1:$h) .= $m;
+	
+	my($maxp) = zeroes($w+2,$h+2);
+	my($max) = $maxp->(1:$w,1:$h);
+	$max .= $m;               # Put the flags into the max
+	
+	##########
+	# Over all comparison directions, keep points if they're in a found
+	# object and also not closer to zero than their masked neighbors. 
+	# This is probably doable with andover and some other clever
+	# index manipulation but I'm too lazy to figure it out.
+	# Since &= is broken in PDL 2.2, I use explicit assignment.
+	# Multiplying by $m ensures that only clusters of same-sign 
+	# pixels are considered in the maximum calculation.
+	##########
+	print "Finding maxima" if($opt->{verbose});
+	my($a) = $m * $im;
+	for (my($z)=0; $z<$dirs->(:,(0))->nelem; $z++) {
+	    my($zz) = $dirs->(($z));
+	    print "." if($opt->{verbose});
+	    $max .= $m * (($max != 0) & ($a >= $m * $imp->(1+$zz(0):$zz(0)-2,
+							   1+$zz(1):$zz(1)-2)
+					 )
+			  );
+	}
+	if($opt->{monitor}){
+	    $win=pgwin(xs,size=>[6,6]);
+	    $win->imag($max);
+	    $win->hold;
+	}
+	
+	print "ok. Found ",$max->abs->sum,"\n" if($opt->{verbose});
+	
+	##########
+	# Assign local concentration numbers to each of the maxima.
+	# Start the concentration numbers at 1, and assign signs
+	# according to concentration sign.
+	my($maxes,$ids) = where($max,$id,$max);
+	
+	if($maxes->nelem > 0) {
+	    $ids .= (xvals($maxes->nelem)+1) * $maxes;
+	    
+	    ##########
+	    # Central loop: walk in each of the possible directions and associate
+	    # pixels to prior maxima.  Treat collisions differently between the 
+	    # "downhill" and "clump" methods:  clumping causes concentrations to
+	    # become grouped when they collide, while downhill motion causes them
+	    # to stop at the border.  The border pixel goes to whomever gets there
+	    # first (for now).
+	    
+	    my($done);
+	    my($new);
+	    my($xa,$ya) = (xvals($idp),yvals($idp));
+	    my($xmin,$xmax,$ymin,$ymax) = (pdl(1),pdl($w),pdl(1),pdl($h));
+      
+	    print "xrange:($xmin,$xmax); yrange: ($ymin,$ymax)\n" if($opt->{verbose});
+	    
+	    do {
+		my($nxmin) = $xmax + 0;
+		my($nymin) = $ymax + 0;
+		my($nxmax) = $xmin + 0;
+		my($nymax) = $ymin + 0;
+		
+		$done = 1;
+		print "****iterating: " if($opt->{verbose});
+		
+		if($opt->{monitor}) {print "-"; $newa .= 0; print "-";}
+		
+		for(my($z)=0;$z<$dirs->(:,(0))->nelem; $z++) {
+		    my($zz) = $dirs->(($z));
+		    
+		    my $slstr = ($xmin+$zz(0))->at(0).":".($xmax+$zz(0))->at(0).","
+			.($ymin+$zz(1))->at(0).":".($ymax+$zz(1))->at(0);
+		    my($idd) = $idp->slice($slstr);
+		    my($md)  =  $mp->slice($slstr);
+		    
+		    my($id0) = $idp->($xmin:$xmax,$ymin:$ymax);
+		    
+		    
+		    
+		    if($method == 1) {
+			print "n" if($opt->{verbose});
+			# Normal spreading
+			$new = ((($md * $id0)> 0)        # New rgn exists and has same sign
+				& ($idd != $id0)          # New rgn isn't same as current
+				& (abs($idd) < abs($id0)) # New rgn has lower id no.
+				);
+			
+		    } elsif($method==2) {
+			print "d" if($opt->{verbose});
+			# Downhill
+			my($im0) = $imp->($xmin:$xmax,$ymin:$ymax);
+			my($imd) = $imp->slice($slstr);
+			$new = ((($md * $id0) > 0) 	# New rgn exists and has same sign
+				& ($idd != $id0)	# New rgn isn't same as current
 #################   & (($id0 * $im0) > ($idd * $md))
-		    & ( (abs($imd) < abs($im0)) 
-		    & (abs($idd) < abs($id0) )) #New rgn has lower id no.
+				& ( (abs($imd) < abs($im0)) 
+				    & (abs($idd) < abs($id0) )) #New rgn has lower id no.
 # |
 #			((abs($imd) == abs($im0)) & (abs($idd) < abs($id0)))
 #			)
-		    );
-	  } else {
-	    croak('Unknown method!');
-	  }
-	    if($opt->{monitor}) {
-	      print "..$xmin:$xmax, $ymin:$ymax..";
-		$newa->slice($slstr)
-		  += $new;
-	    }
-
-	  print "." if($opt->{verbose});
-	  
-	  my($wnidd,$wnid,$newx,$newy) = where($idd,
-					       $id0,
-					       $xa($xmin+$zz(0):$xmax+$zz(0),$ymin+$zz(1):$ymax+$zz(1))
-					       ,$ya($xmin+$zz(0):$xmax+$zz(0),$ymin+$zz(1):$ymax+$zz(1))
-					       ,$new);
-	  
-	  $wnidd .= $wnid;
-	  
-	  $done = $done & ($wnidd->nelem == 0);
-	  
-	  if($wnidd->nelem > 0) {
-	    # These are within bounds by construction (so if it fails, check
-	    # bounds and find out why they're out of bounds!)
-	    $nxmin .= min(cat($newx,$nxmin));
-	    $nxmax .= max(cat($newx,$nxmax));
-	    $nymin .= min(cat($newy,$nymin));
-	    $nymax .= max(cat($newy,$nymax));
-	  }
-	  print "."if($opt->{verbose});
-	  
-	} 	  
-	if($opt->{monitor}) {
-	  my($disp);
-	  $disp = $idp->copy;
-	  $disp += $newa*1.0*max($idp);
-	  $disp->($xmin:$xmax,$ymin:$ymax) -= max($idp)*0.5;
-	  $win->imag($disp);
+				);
+		    } else {
+			croak('Unknown method!');
+		    }
+		    if($opt->{monitor}) {
+			print "..$xmin:$xmax, $ymin:$ymax..";
+			$newa->slice($slstr)
+			    += $new;
+		    }
+		    
+		    print "." if($opt->{verbose});
+		    
+		    my($wnidd,$wnid,$newx,$newy) = where($idd,
+							 $id0,
+							 $xa($xmin+$zz(0):$xmax+$zz(0),$ymin+$zz(1):$ymax+$zz(1))
+							 ,$ya($xmin+$zz(0):$xmax+$zz(0),$ymin+$zz(1):$ymax+$zz(1))
+							 ,$new);
+		    
+		    $wnidd .= $wnid;
+		    
+		    $done = $done & ($wnidd->nelem == 0);
+		    
+		    if($wnidd->nelem > 0) {
+			# These are within bounds by construction (so if it fails, check
+			# bounds and find out why they're out of bounds!)
+			$nxmin .= min(cat($newx,$nxmin));
+			$nxmax .= max(cat($newx,$nxmax));
+			$nymin .= min(cat($newy,$nymin));
+			$nymax .= max(cat($newy,$nymax));
+		    }
+		    print "."if($opt->{verbose});
+		    
+		} 	  
+		if($opt->{monitor}) {
+		    my($disp);
+		    $disp = $idp->copy;
+		    $disp += $newa*1.0*max($idp);
+		    $disp->($xmin:$xmax,$ymin:$ymax) -= max($idp)*0.5;
+		    $win->imag($disp);
+		}
+		
+		($xmin,$xmax,$ymin,$ymax) = ($nxmin,$nxmax,$nymin,$nymax);
+		print "new bounds: ($nxmin,$nxmax; $nymin,$nymax)\n" if($opt->{verbose});
+		
+	    } until ($done);
 	}
-
-	($xmin,$xmax,$ymin,$ymax) = ($nxmin,$nxmax,$nymin,$nymax);
-	print "new bounds: ($nxmin,$nxmax; $nymin,$nymax)\n" if($opt->{verbose});
 	
-      } until ($done);
+	$id_out->[$frame] = $id;
     }
-    
-    $id_out->[$frame] = $id;
-  }
-  $win->release if($opt->{monitor});
-  $win->close if($opt->{monitor});
-  print "frag_id completed sucessfully.\n";
-  return $id_out;
+    $win->release if($opt->{monitor});
+    $win->close if($opt->{monitor});
+    print "frag_id completed sucessfully.\n";
+    return $id_out;
 }

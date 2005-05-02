@@ -1,3 +1,5 @@
+=pod
+
 =head2 frag_assoc
 =for ref
 
@@ -45,7 +47,7 @@ ARD 04/10/04 Removed fragment history processing from frag_assoc.
 =cut
 
 use Carp;
-
+use strict;
 
 sub frag_assoc {
   my($opt,$ids) = find_opt(@_);
