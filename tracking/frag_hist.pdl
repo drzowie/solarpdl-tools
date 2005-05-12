@@ -200,8 +200,9 @@ sub frag_hist {
     
     for $i(1..$frag_ct-1) {
 	print "\n$i:\t" if($opt->{verbose});
+
 	my $h = $hist->(($i));
-	
+
 #################################################
 #################################################
 ##
@@ -304,17 +305,13 @@ sub frag_hist {
 				 ($ends->($other) >= $h->(0) - $pre)
 				 )->at(0);
 ##$starting ($ending)isn't used anywhere!  It is a boolean that answers "Does $other start (end) in the frame range we're considering?"  We probably need to use this somewhere, especially if the frame range is large
-		    
-		    
+    
 ##this is where all the origin decision-making takes place
 		    
 		    my $df_other = $tabs->(($other),(pdl($h->((0))-$pre,0)->max),(0)) - $tabs->(($other),(pdl($h->((0))+$post,$frame_ct-1)->min),(0));
+		    #delta-flux over frame range (backwards to account for polarity & flux conservation)
 		    
-# $df_other = $tabs->(($other),($h->(0)-$pre),(0)) - $tabs->(($other),($h->(0)+$post),(0)); 
-#delta-flux over frame range (backwards to account for polarity & flux conservation)--but what if h(0)+post goes past the end of the data set? or h(0)-pre goes past the beginning?
-		    
-		    my $df_this = $tabs->(($i),(pdl($h->((0))+$post,$frame_ct-1)->min),(0));
-#$df_this = $tabs->(($i),($h->(0)+$post),(0)); ##no need to subtract as flux was 0 at beginning
+		    my $df_this = $tabs->(($i),(pdl($h->((0))+$post,$frame_ct-1)->min),(0)); ##no need to subtract as flux was 0 at beginning
 		    
 		    my $consistent = ($df_other / $df_this > $opt->{ratio});
 		    print "df_this:  ".$df_this->long."  df_other: ".$df_other->long."  consistent: $consistent     " if($opt->{verbose} > 1);
@@ -344,7 +341,7 @@ sub frag_hist {
 	} ##end 'elsif' block to determine ALL birth events
 	
 	print "\n\n" if($opt->{verbose});	
-	
+
 #################################################
 #################################################
 ##

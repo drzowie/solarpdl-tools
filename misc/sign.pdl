@@ -1,7 +1,20 @@
+=pod
+
+=head2 sign
+
+=for ref
+
+Return the sign of elements in a piddle
+
+=for usage
+
+$sign = sign($pdl1);
+
+Sign returns +1 for positive values, -1 for negative values, and 0 in the value is 0.  Needs to be fed a pdl (not just a number), and returns the same-sized pdl with the above values set (done for every element).  Good to use if dividing by absolute values is making your code look all nasty.
+
+=cut
+
 sub sign{
-##sign returns +1 for postive values, -1 for negative, and 0 for 0
-##you can feed it a pdl, too, and it will return the same-sized pdl
-##with the above values (done for every element).
     my($numbers)=@_;
     my($out)=$numbers/abs($numbers);
     my($bad)=$out->where(!$numbers);

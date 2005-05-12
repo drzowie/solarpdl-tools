@@ -99,6 +99,8 @@ sub frag_id {
     
     ##############################
     # Main loop
+    my $win=pgwin('xs',size=>[6,6]) if $opt->{monitor};
+
     my($frame);
     for $frame(0..$#$masks) {
 	
@@ -151,7 +153,6 @@ sub frag_id {
 			  );
 	}
 	if($opt->{monitor}){
-	    $win=pgwin(xs,size=>[6,6]);
 	    $win->imag($max);
 	    $win->hold;
 	}

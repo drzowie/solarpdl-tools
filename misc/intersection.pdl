@@ -1,0 +1,29 @@
+=pod
+
+=head2 intersection
+
+=for ref
+
+Return the intersection of two piddles.
+
+=for usage
+
+$int = intersection($pdl1,$pdl2);
+
+If you want to do more than two pdls, you'll have to do them recursively.  There are definitely more succinct ways to do this, but this way is probably more readable.
+
+History
+
+Derek Lamb May 12 2005.
+
+=cut
+
+sub intersection{
+    my ($one,$two)=@_;
+    my @intersection=();
+    
+    foreach $o($one->list){
+	push(@intersection,$o) if (($two==$o)->any);
+    }
+    return pdl(@intersection);
+}

@@ -234,12 +234,12 @@ sub frag_tabulate {
     for $fr(0..$#{$im_list}) {
 	print "(2) crunching f$fr: " if($opt->{verbose});
 	my $idmap = zeroes(abs($id_list->[0]));
-	$floci = $loci->[$fr];
+	my $floci = $loci->[$fr];
 	
 	print scalar(keys %{$floci}),"ids, of which",sum($frag_ok->(pdl(keys %{$floci})))," are OK " if($opt->{verbose});
 	
 	my($n) = 0;
-	for $old_id(keys %{$floci}) {
+	for my $old_id(keys %{$floci}) {
 	    next unless $id_conv->{$old_id};
 	    $idmap->flat->($floci->{$old_id}) .= $id_conv->{$old_id};
 	    print "." if($opt->{verbose} && (($n++ % 10 == 0) || $opt->{verbose}>1));
