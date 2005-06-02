@@ -16,9 +16,9 @@ in the images (use frag_detect to get hysteresis in the scan!).  If
 the images contain both positive and negative features, then the feature
 masks should have sign bits that correspond to the features' signs.
 
-The output is an array of masks with per-image unique fragment ids.
-The fragment ids are not guaranteed to be consecutive, only unique. 
-Negative fragments get negative ids; positive fragments get positive ids.
+The output is an array of masks with per-image unique feature ids.
+The feature ids are not guaranteed to be consecutive, only unique. 
+Negative features get negative ids; positive features get positive ids.
 
 IDs start at +/- 2 and count away from zero.
 
@@ -28,9 +28,9 @@ IDs start at +/- 2 and count away from zero.
 
 =item method
 
-Technique for identification of individual fragments.  "downhill" finds
+Technique for identification of individual features.  "downhill" finds
 centroided maxima; "clump" finds continuous collections of pixels.
-(default is "downhill"; "clump" yields Parnell-compatible fragments).
+(default is "downhill"; "clump" yields Parnell-compatible features).
 
 =item diag
 

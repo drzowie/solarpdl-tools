@@ -4,7 +4,7 @@
 
 =for ref 
 
-Given fragment history, tab files, and data frames, generate a movie
+Given feature history, tab files, and data frames, generate a movie
 showing different types of emergence event.
 
 =for usage 
@@ -112,8 +112,8 @@ sub emergence_movie {
     
     my $radius = $opt->{radius} || 20;    # Radius (in pixels) of marks
     
-    my $id_frags = $opt->{id_frags} || 0; # whether to label and circle each fragment
-    my $contour = $opt->{contour} || 0;   # whether to circle each fragment
+    my $id_frags = $opt->{id_frags} || 0; # whether to label and circle each feature
+    my $contour = $opt->{contour} || 0;   # whether to circle each feature
     
     my $ap_color =   pdl(-0.3,0.3,0.6);   # Appearances are bluish
     my $em_color   =  pdl(0.5,0.5,-0.4);  # Emergences are yellow

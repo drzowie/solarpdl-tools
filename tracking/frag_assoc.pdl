@@ -11,9 +11,9 @@ $assoc_ids = frag_assoc(\@frag_id_list, {options})
 
 The frag_id_list is the output from frag_id. 
 
-The output is an array of masks with regularized fragment ids.
-The fragment ids are consecutive in absolute-value space, though the
-sign bit corresponds to the sign of each fragment.
+The output is an array of masks with regularized feature ids.
+The feature ids are consecutive in absolute-value space, though the
+sign bit corresponds to the sign of each feature.
 
 =for options
 
@@ -22,11 +22,6 @@ sign bit corresponds to the sign of each fragment.
 =item start_id
 
 If this gets passed in, IDs start here rather than at +/- 1.
-
-=item continue
-
-If set, then this should contain a fits image containing the last image
-of the previous data set [NOT IMPLEMENTED YET]
 
 =back
 
@@ -42,7 +37,7 @@ Craig DeForest, 27-Nov-2001.  Based on code and algorithms developed by
 Parnell and by Hagenaar.
 Derek Lamb, 24-Jul-2003. Updated display commands for OO.
 ARD 04/07/04 Fixed bug whereby 0 was being used as valid frag id.
-ARD 04/10/04 Removed fragment history processing from frag_assoc.
+ARD 04/10/04 Removed feature history processing from frag_assoc.
 
 =cut
 
@@ -108,7 +103,7 @@ sub frag_assoc {
       my($ovl) = where($plocus, (floor($locus * $plocus) > 0));
 
       if($ovl->nelem == 0) {
-	### No overlap: create new fragment
+	### No overlap: create new feature
 
 	$fid = $nextid++ * ($im_id<0 ? -1 : 1);
       } else {

@@ -1,9 +1,10 @@
 =pod
 
 =head2 frag_tabulate
+
 =for ref
 
-Tabulate fragments in an associated set of frames
+Tabulate features in an associated set of frames
 
 =for usage
 
@@ -11,14 +12,65 @@ $tabs = frag_tabulate(\@frag_id_list,\@images,{options});
 
 The output is a hash ref containing a large pdl and several perl
 variables about the data set.  The 'summary' field is a pdl indexed by
-(fragment, frame, data type) and contains the flux, size, and centroid
-x and y of each fragment in each frame, in that order.  
-The 'frag_event' field contains the event list for each fragment.  The
+(feature, frame, data type) and contains the flux, size, and centroid
+x and y of each feature in each frame, in that order.  
+The 'frag_event' field contains the event list for each feature.  The
 'event' field contains the event list for the whole data set.
 
 The IDs get crunched down to a set of consecutive integers.  The
-assoc files are changed in place, so if the thing crashes you have to 
-remake them, but at least it reduces the egregiousness of the disk waste.
+assoc files can be changed in place (see option 'tab'), so if the thing 
+crashes you have to remake them, but at least it reduces the egregiousness 
+of the disk waste.
+
+OPTIONS
+
+=over 3
+
+=item v_min (default 8)
+
+A feature with a total volume (total number of pixels in the x-y-t sense) 
+smaller than this value will get filtered as noise.
+
+=item t_min (default 4)
+
+A feature with a lifetime (in frames) smaller than this value will get 
+filtered as noise.
+
+=item sz_min (default 4)
+
+A feature with a maximum size smaller than this value will get filtered as 
+noise.
+
+=item keep (default 0)
+
+In order to prevent filtering causing the C<Swiss cheese problem>, features
+that are going to get discarded that are touching another feature of the 
+same sign will be reassociated to that feature.  Features that do not touch
+ another same-sign feature will be discarded.  Set this option to 1 to 
+prevent the discarding.  Reassociation happens whether you want it or not.
+
+=item tab
+
+Set this option to an array ref or DiskCache object to prevent the assoc 
+files from being changed in place.
+
+=item verbose
+
+Chat.
+
+=back
+
+BUGS
+
+None reported (1-June-2005)
+
+HISTORY
+
+Craig DeForest ??? wrote most of it.
+
+Derek Lamb 15-Nov-2004 added reassociation to fix the swiss cheese problem.
+
+Derek Lamb 02-Jun-2005 added documentation.
 
 =cut
 
@@ -41,12 +93,12 @@ sub frag_tabulate {
     $opt->{verbose} = 2 if($opt->{DEBUG});
     
     ##############################
-    ## Allocate the fragments table
+    ## Allocate the features table
     
     my($maxfrag) = abs($id_list->[-1])->max;
     p $maxfrag,scalar(@{$id_list}),4,"\n";
     my($summary) = zeroes($maxfrag+1,scalar(@{$id_list}),4);
-##summary is indexed by (fragment number, frame number, (flux, size, centroid x, centroid y)) 
+##summary is indexed by (feature number, frame number, (flux, size, centroid x, centroid y)) 
    
     ##############################
     ## Ancillary indices for locus calculation
@@ -64,7 +116,7 @@ sub frag_tabulate {
 	
 	print "(1) summarizing f$fr: \n" if($opt->{verbose});
 	
-	# Retrieve current images & find list of current fragments
+	# Retrieve current images & find list of current features
 	my($idmap) = abs($id_list->[$fr]);
 	my($im) = $im_list->[$fr];
 	my($ids) = $idmap->flat->long->uniq;
@@ -73,7 +125,7 @@ sub frag_tabulate {
 	
 	my($floci) = {}; 
 	
-	# Loop over current fragments
+	# Loop over current features
 	my($id);    
 	my($n);
 	
@@ -101,7 +153,13 @@ sub frag_tabulate {
 ##end loop over ids in a frame 
 =pod
 =begin comment
- Cache locus information for later.  This deserves a little more explanation: $loci is an array (indexed by frame) whose elements are hashes.  The keys of the hash are the unique ids in that frame, and the values are the flattened image pixel numbers that contain the id for that frame.  So to get all the pixels that have id of 16 in frame 10, one would say $loci->[10]->{16}.  Remember that while the frames are continuously indexed (0,1,2,3,...), the hash keys for a given frame won't be: {0,4,5,8,9,13,...}
+ Cache locus information for later.  This deserves a little more explanation: 
+$loci is an array (indexed by frame) whose elements are hashes.  The keys of 
+the hash are the unique ids in that frame, and the values are the flattened 
+image pixel numbers that contain the id for that frame.  So to get all the 
+pixels that have id of 16 in frame 10, one would say $loci->[10]->{16}.  
+Remember that while the frames are continuously indexed (0,1,2,3,...), the 
+hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 =end comment
 =cut
 
@@ -114,14 +172,14 @@ sub frag_tabulate {
     ##############################
     ## Filter on volume and other criteria, and crunch IDs.
 
-    print "Filtering fragments: volume..." if($opt->{verbose});
-    my($frag_ok) = ($summary->(:,:,(1))->xchg(0,1)->sumover > $opt->{v_min});
+    print "Filtering features: volume..." if($opt->{verbose});
+    my($frag_ok) = ($summary->(:,:,(1))->xchg(0,1)->sumover >= $opt->{v_min});
     
     print "time..." if($opt->{verbose});
-    $frag_ok &= (($summary->(:,:,(1))->xchg(0,1) != 0)->sumover) > $opt->{t_min};
+    $frag_ok &= (($summary->(:,:,(1))->xchg(0,1) != 0)->sumover) >= $opt->{t_min};
     
     print "size..." if($opt->{verbose});
-    $frag_ok &= ($summary->(:,:,(1))->xchg(0,1)->maximum > $opt->{sz_min});
+    $frag_ok &= ($summary->(:,:,(1))->xchg(0,1)->maximum >= $opt->{sz_min});
     
     print "ok\n" if($opt->{verbose});
 
@@ -186,7 +244,7 @@ sub frag_tabulate {
 		    $sizes(which($idsub==$id_ok)).=$summary($id_ok,$fr,(1));
 		}
 	    }
-            ##end loop over alread ok ids to match to
+            ##end loop over already ok ids to match to
             ##reassociate it with the largest one that it touches
 	    if (any($sizes))
 	    {
@@ -200,9 +258,8 @@ sub frag_tabulate {
 
 ## redo the center of gravity calculation
 		my $locus=cat($loci->[$fr]->{$idreassoc}%$xsize,floor($loci->[$fr]->{$idreassoc}/$xsize));
-	       #$locus+=pdl(($xmin),($ymin))->transpose;
+	       
 		my $val=index($im_list->[$fr]->flat,$loci->[$fr]->{$idreassoc});
-#		p "val dims",join("x",$val->dims),", locus dims",join("x",$locus->dims),"\n";
 
 		my $centroid=sumover($locus*$val)/$summary(($idreassoc),($fr),(0));
 		$summary(($idreassoc),($fr),(2)).=$centroid((0));

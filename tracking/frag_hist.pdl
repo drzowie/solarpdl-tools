@@ -54,7 +54,7 @@ The feature didn't fit any particular pattern.  (For example, it is near
 enough other features to be interacting with them, but the interaction
 doesn't even approximate flux conservation).
 
-n=item 0: SURVIVAL
+=item 0: SURVIVAL
 
 The feature was born before, or survived past, the last frame
 
@@ -76,7 +76,7 @@ died by glomming onto a same-sign concentration.
 
 =item 4: COMPLEX
 
-The feature fits both 1 and 3.
+The feature fits both 2 and 3.
 
 =back
 
@@ -86,7 +86,7 @@ OPTIONS
 
 =item a,b (default 1,4)
 
-radius for consideration for determining neighbours, measured in
+radius for consideration for determining neighbors, measured in
 pixels. radius is given (a+br) where a and b are variable coefficients
 and r is one pixel.  'a' sets a minimum size for consideration; 'b' is
 an effective maximum eccentricity to consider -- e.g. b=1 only works
@@ -101,29 +101,33 @@ to be interacting.  Measured in pixels.
 
 =item ratio (default 0.75) 
 
-The relative loss required in an associated feature for a new feature to be
-consistent with emergence and/or fragmentation.  Setting this to 0 requires
-only that the flux differential be in the correct direction, neglecting 
-its magnitude.  Setting it to a negative number allows nonconservative
-solutions. 
+The relative loss required in an associated feature for a new feature to 
+be consistent with emergence and/or fragmentation.  The inverse of this 
+number is the 'agreement factor' (i.e., setting it to 0.25 requires that 
+the change in fluxes agree to within a factor of 4).  Setting this to 0 
+requires only that the flux differential be in the correct direction, 
+neglecting its magnitude.  Setting it to a negative number allows 
+nonconservative solutions, such that the 'agreement factor' is 
+1/(1 - abs(ratio) ), so setting it equal to -.75 requires that the change 
+in fluxes agree to within a factor of 4, in a nonconservative sense.  
+The upshot is that ratio >= 0 is physical, with ratio = 1 being the most 
+strict, and ratio < 0 is unphysical, with ratio = -1 being the most lenient.
 
-=item pre (default 1)
+=item pre, post (default 1,1)
 
-Number of frames before an event in which to look for a complimentary event.
-
-=item post (default 1)
-
-Number of frames after an event in which to look for a complimentary event.
+Number of frames before (after) a birth/death in which to look for an 
+interaction.  Note that it only looks at the frame "pre" behind 
+("post" ahead), not at all the frames in between.
 
 =back
 
 BUGS
 
-The only death event that is currently accurately measured is (none).
+None reported (1-June-2005)
 
 HISTORY
 
-Alisdair Davey 05/10/04 Removed feature history code from frag_hist
+Alisdair Davey 05/10/04 Removed feature history code from frag_assoc
                         and moved to here. 
 
 Craig DeForest 05/20/04 Hacked up Davey code...
@@ -131,6 +135,9 @@ Craig DeForest 05/20/04 Hacked up Davey code...
 Derek Lamb 03/25/05 minor debugging
 
 Derek Lamb 05/02/05 Implemented death events
+
+Derek Lamb 06/01/05 more minor debugging
+
 =cut
 
 use Carp;
@@ -155,6 +162,7 @@ sub frag_hist {
     
     # starts and ends get the max and min frame number for each feature.
     # (long-named collapse operators collapse in 0th dim only)
+    # the -=1 accounts for adding the ones($frag_ct) in the $frame def
     my $ends =   $frame->xchg(0,1)->maximum;
     $ends(1:-1)-=1;
     my $starts = ( $frame + ($ends * ($frame==0)))->xchg(0,1)->minimum;
@@ -178,15 +186,15 @@ sub frag_hist {
     $opt->{pre} = 1 unless defined($opt->{pre});
     $opt->{post} = 1 unless defined($opt->{post});
     $opt->{ratio} = 0.75 unless defined($opt->{ratio});
-    
+    barf "Ratio should be >= -1 and <= 1" if (abs($opt->{ratio}) > 1);
+
     my $pre = $opt->{pre};
     my $post = $opt->{post};
     
-    print "Separation is ".$opt->{sep}."\n";
+    print "Separation is ".$opt->{sep}."\n" if($opt->{verbose});
     ##############################
     ## Set up variables
     ##
-    
     my $i;
     my $frame_offsets = xvals($opt->{post}+$opt->{pre}+1)-$opt->{pre};
     print "frame_offsets is $frame_offsets...\n" if($opt->{verbose});
@@ -235,7 +243,7 @@ sub frag_hist {
 	    
 	    my $r = floor(sqrt($t->((1))/3.14159)+1);
 	    my $radius = $opt->{a} + $r*$opt->{b} + $opt->{sep};
-	    print "radius=$radius   ";
+	    print "radius=$radius   " if($opt->{verbose});
 	    
 	    ##########
 	    ## Find pixels of interest for this feature...
@@ -304,18 +312,32 @@ sub frag_hist {
 		    my $ending=( ($ends->($other) <= $h->(0) + $post) &&
 				 ($ends->($other) >= $h->(0) - $pre)
 				 )->at(0);
-##$starting ($ending)isn't used anywhere!  It is a boolean that answers "Does $other start (end) in the frame range we're considering?"  We probably need to use this somewhere, especially if the frame range is large
+##$starting ($ending)isn't used anywhere!  It is a boolean that answers "Does $other start (end) in the frame range we're considering?"  We probably need to use this somewhere, especially if the frame range is large.  On the other hand it's not clear yet exactly how to properly handle a larger frame range.
     
 ##this is where all the origin decision-making takes place
-		    
-		    my $df_other = $tabs->(($other),(pdl($h->((0))-$pre,0)->max),(0)) - $tabs->(($other),(pdl($h->((0))+$post,$frame_ct-1)->min),(0));
-		    #delta-flux over frame range (backwards to account for polarity & flux conservation)
-		    
-		    my $df_this = $tabs->(($i),(pdl($h->((0))+$post,$frame_ct-1)->min),(0)); ##no need to subtract as flux was 0 at beginning
-		    
-		    my $consistent = ($df_other / $df_this > $opt->{ratio});
+##df_other is backwards to account for polarity & flux conservation
+##no need to subtract on df_this as flux was 0 at beginning
+##needed to take into account what happens if other/this >1.  Otherwise other/this = 10/2 = 5 was considered consistent, when really it should have been 0.2.
+
+		    my $df_other = $tabs->(($other),(pdl($h->((0))-$pre ,    0      )->max),(0)) - 
+			           $tabs->(($other),(pdl($h->((0))+$post,$frame_ct-1)->min),(0)) ;
+
+    		    my $df_this = $tabs->(($i),(pdl($h->((0))+$post,$frame_ct-1)->min),(0));
+		    my $ratio=pdl($df_other/$df_this,$df_this/$df_other)->min;
+		    my $consistent;
+
+		    if ($opt->{ratio}>=0 || $ratio>=0){ ##works when we have approximate conservation, whether or not it is required.
+			$consistent = ( $ratio   >=   $opt->{ratio} ); 
+		    }
+		    elsif($ratio<0){ ##works when we don't have conservation, if it isn't required.
+			$consistent = ( 1/$ratio >=   $opt->{ratio} );
+		    }
+		    else{ ##should never get here
+			barf "Birth consistency check failed for this=$i, other=$other";
+		    }
+
 		    print "df_this:  ".$df_this->long."  df_other: ".$df_other->long."  consistent: $consistent     " if($opt->{verbose} > 1);
-		    
+
 		    if($sign < 0 && $consistent) {
 			push(@em, $interactions[$j]);
 		    } elsif( $sign > 0 && $consistent ) {
@@ -347,6 +369,7 @@ sub frag_hist {
 ##
 ##     Determine death ( birth in reverse )
 ## for comments see corresponding birth section
+##
 #################################################
 #################################################
 	
@@ -361,7 +384,7 @@ sub frag_hist {
 	    
 	    my $r=floor(sqrt($t->((1))/3.14159)+1);
 	    my $radius = $opt->{a} + $r*$opt->{b} + $opt->{sep};
-	    print "radius=$radius\t";
+	    print "radius=$radius\t" if($opt->{verbose});
 	    
 	    print "  end frame is ".$h->(3)."; \$t->"."(2:3) is ".$t->(2:3)."   " if($opt->{verbose} > 2);
 	    
@@ -407,8 +430,20 @@ sub frag_hist {
 		    my $df_other = $tabs->(($other),(pdl($h->((3))+$post,$frame_ct -1)->min),(0)) - $tabs->(($other),(pdl($h->((3))-$pre,0)->max),(0));
 		    
 		    my $df_this = $tabs->(($i),(pdl($h->((3))-$pre,0)->max),(0));
-		    
-		    my $consistent = ($df_other / $df_this > $opt->{ratio});
+		    my $ratio=pdl($df_other/$df_this,$df_this/$df_other)->min;
+		    my $consistent;
+
+		    if ($opt->{ratio}>=0 || $ratio>=0){
+			$consistent = ( $ratio >= $opt->{ratio} );
+		    }
+		    elsif($ratio<0){
+			$consistent = (1/$ratio >= $opt->{ratio} );
+		    }
+		    else{
+			barf "Death consistency check failed for this=$i, other=$other";
+		    }
+
+#		    my $consistent = (pdl($df_other/$df_this,$df_this/$df_other)->min >= $opt->{ratio});
 		    print "df_this:  ".$df_this->long."  df_other: ".$df_other->long."  consistent: $consistent     " if($opt->{verbose} > 1);
 		    
 		    if($sign < 0 && $consistent) {
