@@ -8,14 +8,19 @@ Return the sign of elements in a piddle
 
 =for usage
 
-$sign = sign($pdl1);
+$sign = sign($a);
 
-Sign returns +1 for positive values, -1 for negative values, and 0 in the value is 0.  Needs to be fed a pdl (not just a number), and returns the same-sized pdl with the above values set (done for every element).  Good to use if dividing by absolute values is making your code look all nasty.
+Sign returns +1 for positive values, -1 for negative values, and 0 in the value is 0.  Returns a scalar or the same-sized pdl with the above values set (done for every element).  Good to use if dividing by absolute values is making your code look all nasty.
+
+AUTHOR
+
+Derek Lamb
 
 =cut
 
+use PDL::Core ':Internal';
 sub sign{
-    my($numbers)=@_;
+    my $numbers = topdl(shift);
     my($out)=$numbers/abs($numbers);
     my($bad)=$out->where(!$numbers);
     $bad.=0;

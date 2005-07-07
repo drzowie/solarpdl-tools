@@ -94,6 +94,7 @@ if all features are circular, b=5 can work for features up to 5x
 longer than wide (but at a speed cost).  
 
 Features that are too eccentric don't get properly considered.
+
 =item sep (default 3)
 
 Maximum separation between two features for them to be considered 
@@ -144,6 +145,8 @@ use Carp;
 use strict;
 
 sub frag_hist {
+    my ($berr,$derr)=0;
+
     my ($opt,$tabs,$ids) = find_opt(@_);
     
     my ($frag_ct, $frame_ct) = $tabs->dims;
@@ -159,7 +162,6 @@ sub frag_hist {
     # frame gets the frame number for all frames with features of nonzero size.
     my $frame =  (yvals($frag_ct,$frame_ct)+ones($frag_ct)) * ($tabs->(:,:,(1)) != 0) ;
     
-    
     # starts and ends get the max and min frame number for each feature.
     # (long-named collapse operators collapse in 0th dim only)
     # the -=1 accounts for adding the ones($frag_ct) in the $frame def
@@ -169,7 +171,7 @@ sub frag_hist {
     $starts(1:-1)-=1;
     $hist->(:,(0)) .= $starts;
     $hist->(:,(3)) .= $ends;
-    $hist->(:,(6)) .= $ends - $starts +1;
+    $hist->(1:-1,(6)) .= $ends(1:-1) - $starts(1:-1) +1;
     
     $hist->(:,7:8) .= $tabs->(:,:,2:3)->range(yvals(1,$frag_ct)->glue(0,$starts->(*1)));
     $hist->(:,9:10).= $tabs->(:,:,2:3)->range(yvals(1,$frag_ct)->glue(0,$ends->(*1)));
@@ -357,6 +359,7 @@ sub frag_hist {
 		    print "F" if($opt->{verbose});
 		    $h->(1:2) .= pdl(3,@fr[0]);
 		} else {
+		    $berr+=sign($t->(0))*sign($tabs(($interactions[0]),($starts->($interactions[0])),0));
 		    print "BIRTH ERROR" if($opt->{verbose});
 		}
 	    } ##end 'else' block to determine emergence & fragmentation
@@ -464,6 +467,7 @@ sub frag_hist {
 		    print "M" if($opt->{verbose});
 		    $h->(4:5) .=pdl(3,@mg[0]);
 		} else {
+		    $derr+=sign($t->(0))*sign($tabs(($interactions[0]),($ends->($interactions[0])),0));
 		    print "DEATH ERROR" if($opt->{verbose});
 		}
 		
@@ -471,5 +475,6 @@ sub frag_hist {
 	} ##end 'elsif' block to determine ALL death events
 	print "\n\n" if($opt->{verbose});
     } #end feature loop
+    print "\nberr: $berr\t derr: $derr\n";
     return $hist;
 }
