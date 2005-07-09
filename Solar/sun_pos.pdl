@@ -1,0 +1,157 @@
+=head2 sun_pos - Calculate solar ephemeris parameters.
+
+=for usage
+
+    $pos = sun_pos($mod_jday);
+
+=for ref 
+
+Calculates the solar ephemeris, allowing for planetary and lunar 
+perturbations in the calculation of solar longitude &c. 
+
+Cribbed mercilessly from the CDS/IDL routine by C.D. Pike, 17-May-94,
+which in turn comes from the Fortran routine by B Emerson.
+
+This is intended to be a true functional copy of sun_pos.pro, which 
+"is a truncated version of Newcomb's Sun and is designed to give apparent
+angular cordinates (T.E.D.) to a precision of one second of time".
+
+
+=head2 INPUTS
+
+=over 4
+    
+=item $mod_jday
+
+Fractional number of days since JD 2415020.0
+
+=back
+
+=head2 RETURNS
+    
+    A 5xn PDL whose columns contain:
+
+over 4
+
+=item 0 
+
+Longitude of the Sun for the mean equinox of given date(s) (deg)
+
+=item 1 
+
+Apparent RA for true equinox of given date(s) (deg)
+    
+=item 2
+
+Apparent declination for true equinox of given date(s) (deg)
+    
+=item 3
+
+Apparent longitude of the Sun (degs)
+
+=item 4
+
+True obliquity (degs)
+
+=back
+
+BUGS
+
+The Julian Day -> Century conversion assumes a leap year every four
+years.  This may cause problems in A.D. 2100 but if so, it's
+bug-for-bug compatible with sun_pos.pro.
+
+=cut
+use strict;
+
+my($dtor) = 3.1415926535897932384626433383279502 / 180;
+
+sub sun_pos {
+    my($day) = pdl(@_);
+
+    my($out) = zeroes(5,$day->dims);
+
+    my($longitude) = $out->((0));
+    my($ra)        = $out->((1));
+    my($dec)       = $out->((2));
+    my($l)         = $out->((3));
+    my($oblt)      = $out->((4));
+
+    # Form time in Julian centuries from 1900.0
+    my($cent) = $day/36525.0;
+    # Form Sun's mean longitude
+    $l .= (279.696678+((36000.768925 * $cent) % 360)) * 3600;
+    
+    # Allow for ellipticity of the orbit (equation of center) using
+    # the Earth's mean anomaly ME
+    my($me) = 358.475844 + ((35999.049750 * $cent) % 360);
+    my($ellcorr) = (6910.1 - 17.2 * $cent) * sin( $me * $dtor )
+	+ 72.3 * sin(2.0 * $me * $dtor);
+
+    # Allow for the Venus perturbations using the mean anomaly of Venus ($mv)
+    my($mv) = 212.603219 + ((58517.803875 * $cent) % 360);
+    my($vencorr) = (4.8 * cos((299.1017 +        $mv -        $me) * $dtor) + 
+		    5.5 * cos((148.3133 +  2.0 * $mv -  2.0 * $me) * $dtor) + 
+		    2.5 * cos((315.9433 +  2.0 * $mv -  3.0 * $me) * $dtor) + 
+		    1.6 * cos((345.2533 +  3.0 * $mv -  4.0 * $me) * $dtor) + 
+		    1.0 * cos((318.15   +  3.0 * $mv -  5.0 * $me) * $dtor));
+
+    # Allow for the Mars perturbations using the mean anomaly of Mars ($mm)
+    my($mm) = 319.59425 + ((19139.858500 * $cent) % 360);
+    my($marscorr) = (2.0 * cos((343.8883 - 2.0*$mm + 2.0*$me) * $dtor) +
+		     1.8 * cos((200.4017 - 2.0*$mm +     $me) * $dtor));
+
+
+    # Allow for the Jupiter perturbations 
+    my($mj) = 225.328328 + ((3034.6920239 * $cent) % 360);
+    my($jupcorr) = (7.2 * cos((179.5317 - $mj + $me) * $dtor) +
+		    2.6 * cos((263.2167 - $mj) * $dtor) +
+		    2.7 * cos(( 87.1450 - 2.0*$mj + 2.0*$me) * $dtor) +
+		    1.6 * cos((109.4933 - 2.0*$mj + $me) * $dtor));
+
+    # Allow for the Moon's perturbations using the mean elongation of the 
+    # Moon from the Sun
+    my($d) = 350.7376814 + ((445267.11422 * $cent) % 360);
+    my($mooncorr) = 6.5 * sin($d * $dtor);
+
+    # Allow for long period terms
+    my($longterm) = 6.4 * sin((231.19 + 20.20 * $cent) * $dtor);
+   
+
+    $l += $ellcorr + $vencorr + $marscorr + $jupcorr + $mooncorr + $d + $longterm;
+    $l .= ($l + 2592000) % (1296000);
+    $longitude .= $l/3600;
+
+    $l -= 20.5;
+
+    # Allow for Nutation
+    my($omega) = 259.183275 - ((1934.142008 * $cent) % 360);
+    $l -= 17.2 * sin($omega * $dtor);
+    
+    # Form the True Obliquity
+    $oblt .= 23.452294 - 0.0130125*$cent + (9.2 * cos($omega*$dtor))/3600.0;
+    
+    # RA / DEC
+    $l /= 3600;
+    $ra .= atan2(  sin( $l * $dtor ) * cos( $oblt * $dtor)
+		      ,cos( $l * $dtor ) ) / $dtor;
+    $ra += 360 * ($ra < 0);
+
+    $dec .= asin ( sin( $l * $dtor) * sin( $oblt * $dtor ) ) / $dtor;
+    
+    return $out;
+}
+
+			 
+    
+
+
+
+	
+	    
+
+	
+
+
+
+    
