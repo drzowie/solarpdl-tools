@@ -36,9 +36,7 @@ local-linearization resampler rather than direct bilinear interpolation.
 You feed in a list of FITS images complete with dates, a central date
 for the average, a FWHM of the time-average for Gaussian weighting, a
 PDL containing the longitude and latitude of the viewpoint you want to
-hover over, and a timestamp from the image with that time.  You also feed
-in
-
+hover over, and a timestamp from the image with that time.
 
 AUTHOR & HISTORY
 
