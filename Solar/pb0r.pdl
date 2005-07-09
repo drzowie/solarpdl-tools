@@ -1,0 +1,233 @@
+=head2 pb0r - return Earth-based solar observing info for a given date
+
+=for usage
+
+   $a = pb0r($date);
+   $a = pb0r(\@dates);
+   $a = pb0r($dates);
+
+=for ref
+
+You hand in a date, and you get back the solar 'P' angle, 'B0' angle, solar
+apparent radius, and the distance to the Sun.  The angles are measured
+in degrees, and the distance is measured in solar radii.  
+
+The datestamp can be in your favorite date system -- most of them are
+supported.  If you hand in an integer, it's regarded as a UNIX GMT time.
+
+You can get multiple dates by feeding in a PDL (containing a list of 
+numerical dates) or by feeding in a list ref containing a collection of 
+dates
+
+INPUTS
+
+The date(s) to process
+
+RETURNS
+
+A PDL whose 0th dimension contains:
+
+=over 3
+
+=item 0: P angle (degrees)
+
+=item 1: B angle (degrees)
+
+=item 2: solar apparent radius (arcminutes)
+
+=item 3: Earth-Sun distance (solar radii)
+
+=back
+
+Higher dimensions thread over the input dimensions.
+
+BUGS
+
+Time is currently handled very simplistically.  TAI?  UTC vs. GMT?  
+
+The code is pretty much a straight port of pb0r, with one exception
+(arcsin versus reciprocal for the apparent semidiameter calculation).
+The units were chosen for historical reasons.  
+
+=cut
+
+use Time::ParseDate;
+use Time::JulianDay;
+use strict;
+
+my $dtor = 3.141592653589793238 / 180;
+
+sub pb0r {
+    my ($date) = @_;
+    my($jd);
+
+    my $out;
+
+    if(ref $date eq 'PDL') {
+	## If a PDL is passed in, it has to be treated as a list of
+	## individual dates as far as the external time routines are 
+	## concerned.  We do some tedious looping to straighten it all
+	## out.  (Ideally, someone will write PDL::gmtime and the world
+	## will be a better place).
+
+	my($date1) = $date->clump(-1)->copy;
+	$date1 = $date1->dummy(0,1) unless ($date1->dims);
+
+	my($i);
+
+	$jd = zeroes($date1->nelem);
+	my($s,$m,$h);	
+
+	for($i=0;$i<$date1->nelem;$i++) {
+	    ($s,$m,$h) = gmtime($date1->at($i));
+	    $jd->set($i,gm_julian_day($date1->at($i)) + 
+		     (($h + ($m + $s/60)/60)/24)  - 2415020);
+
+	}
+
+	$out = zeroes(4,$date1->nelem);
+      } elsif( ref $date eq 'ARRAY' ) {
+	my @out = ();
+	my $elt;
+	foreach $elt(@$date) {
+	  push(@out,pb0r($elt));
+	}
+	$elt = shift @out;
+	return $elt->glue(1,@out);
+      
+    } elsif(!(ref $date)) {
+	## A single number came in, so we can send it straight to 
+	## gmtime.  But it might be a date string instead of a 
+	## unixlike time number -- so we have to check and parse it.
+        ## (Handle the "T" divider that's common among solar instruments,
+        ##  too...)
+        $date =~ s/T/ /;
+	my($time) = ($date =~ m/^\s*-?\s*\d+\s*$/) ? $date : parsedate($date);
+	my($sec,$min,$hours) = gmtime($time);
+
+	## Julian day since 2415020 (as per pb0r)
+	$jd = gm_julian_day($time) + (($hours + ($min + $sec/60)/60)/24) - 2415020;
+	$out = zeroes(4,1);
+    } else {
+	barf "pb0r:  can't process items of type '".(ref $date)."'";
+    }
+
+    my($p)  = $out->((0));
+    my($b0) = $out->((1));
+    my($sd) = $out->((2));
+    my($r0) = $out->((3));
+
+
+    ##############################
+    # Calculation starts here
+
+    ##########
+    ## Get longitude of the Sun, etc.
+    my($sun_pos) = sun_pos($jd);
+
+    ##########
+    ## Form aberrated longitude
+
+    my($longmed) = $sun_pos->((1));
+    my($lambda) = $longmed - (20.5 / 3600);
+
+    ##########
+    ## Form longitude of ascending node of Sun's equator on the ecliptic
+
+    my($de) = $sun_pos->((0));
+    my($node) = 73.666666 + (50.25/3600) * ( ($de / 365.25 ) + 50 );
+
+    my($arg) = $lambda - $node;
+
+
+    ##########
+    ## Calculate P, the position angle of the pole (which is also the tilt 
+    ## angle of the Earth!
+
+    my($oblt)    = $sun_pos->((4));
+    my($app_lon) = $sun_pos->((3));
+    
+    $p .= (atan ( -tan( $oblt * $dtor) * cos( $app_lon * $dtor))
+	      + atan( -0.127220 * cos( $arg * $dtor ) ) )
+	/ $dtor;
+    
+    ##########
+    ## Calculate B0, the apparent tilt of the axis
+    
+    $b0 .= asin( 0.12620 * sin($arg * $dtor) ) / $dtor;
+    
+    ##########
+    ## Calculate mean anomalies of Venus ($mv), Earth ($me),
+    ## Mars ($mm), Jupiter ($mj), and mean elongation of the Moon
+    ## from the Sun ($d).  
+
+    my($t) = $de / 36525.0;   ## Form time from declination
+
+    my $mv = 212.6   + ( (58517.80   * $t) % 360.0 );
+    my $me = 358.476 + ( (35999.0498 * $t) % 360.0 );
+    my $mm = 319.5   + ( (19139.86   * $t) % 360.0 );
+    my $mj = 225.3   + ( ( 3034.69   * $t) % 360.0 );
+    my $d = 350.7    + ( (445267.11  * $t) % 360.0 );
+
+    ##########
+    ## Calculate the geocentric distance (r0) and the 
+    ## solar apparent semi-diameter (sd)
+    ##
+    ## Here I differ from the IDL version of pb0r!  pb0r.pro uses 
+    ## 1/r for the semidiameter which uses the sin(theta)==theta 
+    ## approximation.  It looks to me as though the magic number at the 
+    ## end (0.2665685) is actually 1.0/$dtor * ( solar-radii / A.U. ), 
+    ## which implies that the anomalies are in fact measured in A.U. 
+    ## (Why is Saturn excluded from the calculation?).
+    ##
+    ## Anyhow, I'm using an arcsin calculation rather than a simple
+    ## reciprocal.  The calculation is so expensive anyhow, that it
+    ## machs nicht if we do one more trig step.
+    ## 
+
+    $r0 .= (1.000141 - (0.016748 - 0.0000418 * $t ) * cos( $me * $dtor)
+	    - 0.000140 * cos((                    2.0 * $me) * $dtor) 
+	    
+	    + 0.000016 * cos(( 58.3 + 2.0 * $mv - 2.0 * $me) * $dtor)
+	    + 0.000005 * cos((209.1 +       $mv -       $me) * $dtor)
+	    
+	    + 0.000005 * cos((253.8 - 2.0 * $mm + 2.0 * $me) * $dtor)
+	    
+	    + 0.000016 * cos(( 89.5 -       $mj +       $me) * $dtor)
+	    + 0.000009 * cos((357.1 - 2.0 * $mj + 2.0 * $me) * $dtor)
+	    
+	    + 0.000031 * cos( $d * $dtor)
+	    );
+
+    ## THIS magic number is solar radii per A.U.
+    $r0 *= 213.625;
+
+#    $sd .= (0.2665685 / $r0) * 60.0
+
+    ##  Return in arcminutes.
+    $sd .= asin( 1.0 / $r0 ) * 60.0 / $dtor;
+    
+
+    if(ref $date eq 'PDL') {
+	return $out->reshape(4,$date->dims);
+    }
+
+    $out = $out->(:,(0))
+      unless($out->dim(1) > 1);
+
+    return $out;
+}
+
+
+    
+
+
+    
+
+	    
+    
+
+    
+    
+    
+    
