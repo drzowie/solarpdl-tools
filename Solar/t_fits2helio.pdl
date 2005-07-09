@@ -1,0 +1,52 @@
+=head2 t_fits2helio
+
+=for usage
+
+  $f = t_fits2helio($t,<options>);
+
+=for ref
+
+PDL::Transform to convert FITS scientific image-plane coords to
+heliographic coords
+
+Prods the input FITS header and guesses where it's from (SOHO or Earth 
+at present), then returns a PDL::Transform object that converts image pixels
+to heliographic coordinates (Earth observer lon,lat).  
+
+This is currently just a wrapper for t_perspective; more work perhaps
+needs to be done on incorporating the Greisen & Calabretta work on 
+represented coordinate systems.
+
+The center of the camera focal-plane coordinate system is thus taken
+as the CRPIX1/CRPIX2 datum of the image. That might be a wrong guess but
+it will be fixed later.
+
+AUTHOR
+
+Craig DeForest, 22-Jun-2004
+
+=cut
+use strict;
+
+sub t_fits2helio {
+  my $hdr = shift;
+  my $opt = shift;
+
+  $hdr = $hdr->fhdr()  if(UNIVERSAL::isa($hdr,'PDL'));
+
+  my $u = PDL::Transform::_opt($opt,['u','unit','Unit'],'arcsec');
+
+  $hdr = hdrunit($hdr,$u);
+  $hdr = fits_obs_pos($hdr);
+  $FOO::hdr = $hdr;
+  return ! t_perspective( ptg=>[$hdr->{CRVAL1}*units($hdr->{CUNIT1},'degrees'),
+			      $hdr->{CRVAL2}*units($hdr->{CUNIT2},'degrees'),
+			      $hdr->{CROTA2}],
+			r0=>$hdr->{DSUN_OBS}*units('meters','r_sun'),
+			o=>[$hdr->{HGLN_OBS},$hdr->{HDLT_OBS}],
+			iu=>'arcsec'
+			);
+}
+
+			
+			
