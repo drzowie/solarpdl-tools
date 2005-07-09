@@ -1,0 +1,18 @@
+=head2 variance - find variance along the 0th dimension
+
+=for usage
+
+  $v = variance($data);
+
+=for ref
+
+Collapses the 0th dimension, returning the statistical variance along
+the 0th dimension.
+
+=cut
+
+sub variance {
+  my($X) = shift;
+  my($mX) = $X->sumover / $X->dim(0);
+  return sqrt (    ( ($X * $X)->sumover/ $X->dim(0)) - $mX * $mX   );
+}

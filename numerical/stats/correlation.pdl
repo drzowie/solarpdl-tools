@@ -1,0 +1,18 @@
+=head2 correlation - correlation coefficient between two PDLs
+
+=for usage
+
+  $corr = correlation($x,$y);
+
+=for ref
+
+This is the covariance of the two variables, divided by their individual
+variances.
+
+=cut
+
+sub correlation {
+  my($X) = shift->double;
+  my($Y) = shift->double;
+  return covariance($X,$Y) / variance($X) / variance($Y);
+}

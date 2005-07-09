@@ -1,0 +1,18 @@
+=head2 covariance - find covariance of two identically sized PDLs
+
+=for usage
+
+  $cov = covariance($x,$y);
+
+=for ref
+
+The covariance of two random variables X and Y is given by 
+Cov(X,Y)= mean(XY) - mean(X)mean(Y).
+
+=cut
+
+sub covariance {
+  my($X) = shift;
+  my($Y) = shift;
+  return ( (  ($X * $Y)->sumover - ($X->sumover * $Y->sumover)/$X->dim(0) ) / $X->dim(0) );
+}

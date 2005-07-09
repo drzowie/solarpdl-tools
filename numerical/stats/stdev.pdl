@@ -1,0 +1,14 @@
+=head2 stdev - standard deviation along the 0th dimension
+
+=for ref
+
+The standard deviation is mean( | X - mean(X) | ).
+
+=cut
+
+sub stdev{
+    my($input)=@_;
+$input=$input->flat;
+    my $variance=average($input*$input)-average($input)**2;
+    return sqrt($variance);
+}
