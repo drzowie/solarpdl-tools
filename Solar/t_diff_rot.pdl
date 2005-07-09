@@ -1,0 +1,132 @@
+=head2 t_diff_rot
+
+=for usage
+
+  $f = t_diff_rot($t,<options>);
+
+=for ref
+
+PDL::Transform for solar differential rotation 
+
+Computes the differential rotation of the Sun, using I<a priori> calculations
+from Allen et al. (Astrophysical Quantities) for large features or Howard 
+et al. (Howard, Harvey & Forgach, Solar Physics 130, 295, 1990) for small
+magnetic features.  
+
+You supply the delta-time in C<$t>; longitude is the 0th dimension and 
+latitude is the 1st dimension of the input.
+
+OPTIONS 
+
+=over 3
+
+=item u, unit, Unit (default 'degree')
+
+The unit in which longitude and latitude are delivered.
+
+=item tu, t_unit, TimeUnit (default 'days')
+
+The unit in which time is delivered.
+
+=item m, method, Method (default 'howard')
+
+The derived rotation formula to be used (allowed values are 'h[oward]' and
+'a[llen]').
+
+=item r, rate, Rate (default 'synodic')
+
+The type of rotation rate to be used (default 'synodic' is relative to 
+the earth-Sun line; 'sidereal' is relative to the fixed stars).
+
+=back
+
+=cut
+
+use PDL::Transform;
+use PDL::Transform::Cartography;
+use strict;
+
+sub t_diff_rot {
+  my $t = shift;
+  my $opt = shift;
+
+  my $me = new PDL::Transform;
+  $me->{idim} = 2;
+  $me->{odim} = 2;
+  $me->{name} = "solar differential rotation";
+  $me->{itype} = ['solar longitude','solar latitude'];
+  $me->{otype} = ['solar longitude','solar latitude'];
+
+  my $p = $me->{params};
+  $p->{u} = PDL::Transform::_opt($opt,['u','unit','Unit'],'degree');
+  $me->{iunit} = [$p->{u},$p->{u}];
+  $me->{ounit} = [$p->{u},$p->{u}];
+
+  $p->{tu} = PDL::Transform::_opt($opt,['tu','t_unit','TimeUnit'],'day');
+  $p->{meth} = PDL::Transform::_opt($opt,['m','method','Method'],'howard');
+  $p->{rate} = PDL::Transform::_opt($opt,['r','rate','Rate'],'synodic');
+
+  $p->{method} = 'howard';
+
+
+  $p->{conv} = PDL::Transform::Cartography::_uconv($p->{u});
+  local($_) = $p->{tu};
+  $p->{tconv} = ( m/^s/i ? 1.0/24/3600 : 
+		  m/^mi/i ? 1.0/24/60 :
+		  m/^h/i ? 1.0/24 :
+		  m/^d/i ? 1.0 :
+		  m/^mo/i ? 30 : 
+		  m/^y/i ? 365.25 :
+		  undef
+		  );
+  barf("undefined time unit '$p->{tu}'\n")
+    unless (defined($p->{tconv}));
+
+  $p->{t} = $t * $p->{tconv};
+  
+  $p->{sub} = sub {
+    my($d,$o,$t) = @_;
+    my($out) = $d->is_inplace ? $d : $d->copy;
+    $out->((0)) *= $o->{conv};
+    my $o1 = $out->((1)) * $o->{conv}; 
+
+    # Synodic-to-sidereal conversion: Earth moves 0.9856 deg / day.
+    my $msd = ($o->{rate} =~ m/^sy/i) ? 0.9856 : 0;
+    
+    local($_) = $o->{meth};
+#D.Lamb: changed from $o->{m} to $o->{meth}
+    if(m/^a/i) {
+      # Allen case
+      my $sin2l = sin($o1);
+      $sin2l *= $sin2l;
+      $out->((0)) += $t * ( (3.1415926 / 180) * 
+				 ((14.44 - $msd) - 3.0 * $sin2l)
+				 );
+    } elsif(m/^h/i) {
+      # Howard, Harvey, & Forgach case
+      my $sin2l = sin($o1);
+      $sin2l *= $sin2l;
+      my $sin4l = $sin2l * $sin2l;
+      $out->((0)) += $t * ( ( 1.0e-6 * 24 * 3600 ) *
+				 (2.894 - 0.428 * $sin2l - 0.37 * $sin4l)
+				-$msd*3.1415926/180 );
+    } else {print "unmatched method for t_diff_rot.\n";}
+
+    $out->((0)) /= $o->{conv};
+    $out;
+  }
+  ;
+  
+  $me->{func} = sub {
+    my($d,$o) = @_;
+    &{$o->{sub}}($d, $o, $o->{t});
+  };
+
+  $me->{inv} = sub {
+    my($d,$o) = @_;
+    &{$o->{sub}}($d, $o, - $o->{t});
+  };
+
+  $me;
+}
+  
