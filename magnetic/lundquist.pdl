@@ -1,0 +1,46 @@
+=head2 lundquist
+
+=for usage
+
+$field = lundquist($a,$k,$b0,$origin);
+
+=for ref
+
+Return a code ref that accepts a location and returns a field vector, for the Lundquist 
+linear force-free field solution: B_{r}=0, B_{\theta}= A J_1(kr), B_{z} = A J_{0}(kr)
+
+=cut
+use PDL::GSLSF::BESSEL;
+
+sub lundquist {
+    my($a,$k,$b0,$origin) = @_;
+    
+    $origin = zeroes(3) unless(defined $origin);
+
+    return sub {
+	my $xyz = shift() - $origin;
+	my $xy = $xyz->(0:1);
+
+	my $th = atan2($xyz->((1)),$xyz->((0)));
+	my $r = sqrt(sumover($xy*$xy));
+	
+	$br = 0;
+	my $e;
+
+	print "a";
+	$J1 = null;
+	$J0 = null;
+	my $e = null;
+	gsl_sf_bessel_Jn($r * $k , $J0, $e, 0);
+	$e = null;
+	gsl_sf_bessel_Jn($r * $k , $J1, $e, 1);
+	print "b";
+	$b_rthz = pdl(zeroes($J0), $a * $J0,  $a * $J1 );
+	print "c";
+	my $m = pdl([ cos($th), -sin($th), 0],[sin($th),cos($th),0],[0,0,1]);
+	$b = $b_rthz->(:,*1) x $m;
+	print "d";
+	return $b;
+    };
+
+}

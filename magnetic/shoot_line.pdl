@@ -63,9 +63,9 @@ sub shoot_line {
       $dy = ($dy*$dy)->sum;
       $ddy = ($y3-$y2);
       $ddy = ($ddy*$ddy)->sum;
-#      print "\ndt=$dt\ny0=$y0\ny1=$y1\ny2=$y2\ny3=$y3\ndy=$dy\nddy=$ddy\n";
+      print "\ndt=$dt\ny0=$y0\ny1=$y1\ny2=$y2\ny3=$y3\ndy=$dy\nddy=$ddy\n";
     } while( $epsilon > 1e-15 and  ( ( ($ddy/($dy+0.001)) > $epsilon or ((defined $max_step) ? sqrt(sum(($y2-$y0)*($y2-$y0))) >= $max_step : 0)) ? $dt /= 2 : 0 )  );
-#    barf("foo\n");
+    barf("foo\n");
     $y0 = $y2;
     $t += $dt;
     $dt *= 1.4;
