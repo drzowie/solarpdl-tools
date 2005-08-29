@@ -4,7 +4,7 @@
 
 =for ref
 
-Return the intersection of two piddles.
+Return the intersection of two piddles.  If there is no intersection, returns the string 'Empty'.
 
 =for usage
 
@@ -16,14 +16,16 @@ History
 
 Derek Lamb May 12 2005.
 
+Jul 13 2005 Fixed bug whereby it was impossible to differentiate between no intersection and '0' being the only intersection, such as with intersection(sequence(3),-sequence(3)); and intersection(sequence(3),sequence(3)+6);
+
 =cut
 
 sub intersection{
     my ($one,$two)=@_;
-    my @intersection=();
+    my @intersection;
     
     foreach $o($one->list){
 	push(@intersection,$o) if (($two==$o)->any);
     }
-    return pdl(@intersection);
+    return scalar(@intersection)?pdl(@intersection):'Empty';
 }
