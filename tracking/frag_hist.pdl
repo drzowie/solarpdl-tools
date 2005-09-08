@@ -87,8 +87,9 @@ OPTIONS
 =item a,b (default 1,4)
 
 radius for consideration for determining neighbors, measured in
-pixels. radius is given (a+br) where a and b are variable coefficients
-and r is one pixel.  'a' sets a minimum size for consideration; 'b' is
+pixels. radius is given (a+br+sep) where a and b are variable coefficients
+and r is the radius (in pixels) of the feature if it were circular.
+'a' sets a minimum size for consideration; 'b' is
 an effective maximum eccentricity to consider -- e.g. b=1 only works
 if all features are circular, b=5 can work for features up to 5x
 longer than wide (but at a speed cost).  
@@ -98,7 +99,7 @@ Features that are too eccentric don't get properly considered.
 =item sep (default 3)
 
 Maximum separation between two features for them to be considered 
-to be interacting.  Measured in pixels.
+to be interacting.  Measured in pixels. 
 
 =item ratio (default 0.75) 
 
