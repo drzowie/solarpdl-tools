@@ -118,8 +118,8 @@ strict, and ratio < 0 is unphysical, with ratio = -1 being the most lenient.
 =item pre, post (default 1,1)
 
 Number of frames before (after) a birth/death in which to look for an 
-interaction.  Note that it only looks at the frame "pre" behind 
-("post" ahead), not at all the frames in between.
+interaction.  Note that this only looks in the frame +post, -pre (not in any
+intermediate frames).
 
 =back
 
@@ -199,7 +199,7 @@ sub frag_hist {
     ## Set up variables
     ##
     my $i;
-    my $frame_offsets = xvals($opt->{post}+$opt->{pre}+1)-$opt->{pre};
+    my $frame_offsets = xvals($post + $pre + 1)-$pre;
     print "frame_offsets is $frame_offsets...\n" if($opt->{verbose});
     
     # The circmask is a precalculated circular mask for convolution to find
@@ -315,6 +315,7 @@ sub frag_hist {
 		    my $ending=( ($ends->($other) <= $h->(0) + $post) &&
 				 ($ends->($other) >= $h->(0) - $pre)
 				 )->at(0);
+
 ##$starting ($ending)isn't used anywhere!  It is a boolean that answers "Does $other start (end) in the frame range we're considering?"  We probably need to use this somewhere, especially if the frame range is large.  On the other hand it's not clear yet exactly how to properly handle a larger frame range.
     
 ##this is where all the origin decision-making takes place
@@ -324,12 +325,11 @@ sub frag_hist {
 
 		    my $df_other = $tabs->(($other),(pdl($h->((0))-$pre ,    0      )->max),(0)) - 
 			           $tabs->(($other),(pdl($h->((0))+$post,$frame_ct-1)->min),(0)) ;
-
     		    my $df_this = $tabs->(($i),(pdl($h->((0))+$post,$frame_ct-1)->min),(0));
 		    my $ratio=pdl($df_other/$df_this,$df_this/$df_other)->min;
 		    my $consistent;
 
-		    if ($opt->{ratio}>=0 || $ratio>=0){ ##works when we have approximate conservation, whether or not it is required.
+		    if ($opt->{ratio}>=0 || $ratio>0){ ##works when we have approximate conservation, whether or not it is required.
 			$consistent = ( $ratio   >=   $opt->{ratio} ); 
 		    }
 		    elsif($ratio<0){ ##works when we don't have conservation, if it isn't required.
@@ -447,7 +447,6 @@ sub frag_hist {
 			barf "Death consistency check failed for this=$i, other=$other";
 		    }
 
-#		    my $consistent = (pdl($df_other/$df_this,$df_this/$df_other)->min >= $opt->{ratio});
 		    print "df_this:  ".$df_this->long."  df_other: ".$df_other->long."  consistent: $consistent     " if($opt->{verbose} > 1);
 		    
 		    if($sign < 0 && $consistent) {
@@ -477,5 +476,8 @@ sub frag_hist {
 	print "\n\n" if($opt->{verbose});
     } #end feature loop
     print "\nberr: $berr\t derr: $derr\n";
+
+##put the options in the header for saving when writing out as a FITS file
+    $hist->hdr->{OPT}=$opt;
     return $hist;
 }
