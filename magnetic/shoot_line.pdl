@@ -55,6 +55,9 @@ sub shoot_line {
     $f0 = &$dydt(0,$y0);
     $fmag = sqrt(sum($f0*$f0));
     my($y1,$y2,$y3,$dy,$ddy);
+
+    $dt = $max_step if($epsilon<0);
+
     do {
       $y1 = rk4( $t, $dt/2, $dydt, $y0, $f0 )->(:,(0));
       $y2 = rk4( $t+$dt/2, $dt/2, $dydt, $y1 )->(:,(0));
@@ -63,15 +66,17 @@ sub shoot_line {
       $dy = ($dy*$dy)->sum;
       $ddy = ($y3-$y2);
       $ddy = ($ddy*$ddy)->sum;
-      print "\ndt=$dt\ny0=$y0\ny1=$y1\ny2=$y2\ny3=$y3\ndy=$dy\nddy=$ddy\n";
     } while( $epsilon > 1e-15 and  ( ( ($ddy/($dy+0.001)) > $epsilon or ((defined $max_step) ? sqrt(sum(($y2-$y0)*($y2-$y0))) >= $max_step : 0)) ? $dt /= 2 : 0 )  );
-    barf("foo\n");
+
     $y0 = $y2;
+
     $t += $dt;
-    $dt *= 1.4;
-#    print "step ",$n++,": t=$t, dt=$dt\n";
-  } until($dt*$fmag < $e2 || &$term($y0,$t) || $n++ > 1000);
+    $dt *= 1.1;
+
+    print "step=$n; t=$t; y0=$y0\n" unless($n%500);
+  } until(($epsilon >0 and $dt*$fmag < $e2)   or   &$term($y0,$t) or   $n++ > 10000);
   push(@locations,$y0->(:,(0)));
+  print "\n" if($n>500);
   return pdl(@locations);
 }
   
