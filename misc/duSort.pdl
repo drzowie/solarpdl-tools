@@ -1,0 +1,49 @@
+=pod
+
+=head2 duSort
+
+=for ref
+
+Sort and print the sizes of subdirectories.
+
+=for usage
+
+dir_size($directory);
+
+$directory should be a fully qualified path name (not '~/' or '.').
+
+=for example
+
+dir_size('/home/derek/'); 
+
+=for method
+
+du is a great shell tool, but you can't easily see what the largest 
+directories are because it doesn't sort the result.  This program 
+sorts the output by ascending size.
+
+=author
+
+Derek Lamb, March 30 2006
+
+=cut
+
+sub duSort{
+    my $indir=shift;
+    my @sizearr=();
+    my @dirarr=();
+    my @in=`du --max-depth=1 $indir`;
+    my ($size,$dir,$sizelist);
+    for my $i(0..scalar @in-2){
+	($size,$dir) = split /$indir/, $in[$i];
+	push(@sizearr,$size);
+	push(@dirarr,$dir);
+    }
+#if these two lines weren't here it could be pure perl.
+    $size=pdl(@sizearr);
+    $sizelist=$size->qsorti;
+
+    foreach my $s($sizelist->list){
+	print $size(($s))."\t".$dirarr[$s];
+    }
+}
