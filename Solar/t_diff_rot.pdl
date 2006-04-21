@@ -65,6 +65,7 @@ sub t_diff_rot {
   $p->{tu} = PDL::Transform::_opt($opt,['tu','t_unit','TimeUnit'],'day');
   $p->{meth} = PDL::Transform::_opt($opt,['m','method','Method'],'howard');
   $p->{rate} = PDL::Transform::_opt($opt,['r','rate','Rate'],'synodic');
+  $p->{lat} = PDL::Transform::_opt($opt,['l','lat','latitude'],undef);
 
   $p->{method} = 'howard';
 
@@ -97,14 +98,15 @@ sub t_diff_rot {
 #D.Lamb: changed from $o->{m} to $o->{meth}
     if(m/^a/i) {
       # Allen case
-      my $sin2l = sin($o1);
+      my $sin2l;
+      $sin2l = (defined $o->{lat}) ? sin($o->{lat}/$o->{conv}) : sin($o1);
       $sin2l *= $sin2l;
       $out->((0)) += $t * ( (3.1415926 / 180) * 
 				 ((14.44 - $msd) - 3.0 * $sin2l)
 				 );
     } elsif(m/^h/i) {
       # Howard, Harvey, & Forgach case
-      my $sin2l = sin($o1);
+      my $sin2l = (defined $o->{lat}) ? sin($o->{lat}/$o->{conv}) : sin($o1);
       $sin2l *= $sin2l;
       my $sin4l = $sin2l * $sin2l;
       $out->((0)) += $t * ( ( 1.0e-6 * 24 * 3600 ) *
