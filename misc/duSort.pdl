@@ -8,13 +8,13 @@ Sort and print the sizes of subdirectories.
 
 =for usage
 
-dir_size($directory);
+duSort($directory);
 
 $directory should be a fully qualified path name (not '~/' or '.').
 
 =for example
 
-dir_size('/home/derek/'); 
+duSort('/home/derek/'); 
 
 =for method
 
