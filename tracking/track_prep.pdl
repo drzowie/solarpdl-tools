@@ -1,0 +1,198 @@
+=pod
+
+=head2 track_prep
+
+=for ref
+
+Prepare a sequence of MDI magnetograms for processing.
+
+=for usage
+
+track_prep([%options]);
+
+OPTIONS
+
+=over 3
+
+=item rawdir (default 'raw')
+
+The directory to recursively search for magnetogram FITS files.
+
+=item dirs (default ('00-data','01-despiked','02-comp','03-av') )
+
+The directories for the processing steps.
+
+=item delay (default 1)
+
+The cadence (in minutes) of the derotated and averaged magnetograms.
+
+=item fwhm (default 5)
+
+The Full Width at Half Maximum (in minutes) of the temporal Gaussian averaging kernel.
+
+=item steps (default pdl(1,2,3,4) )
+
+Which steps in the preprocessing to perform.  The steps in order are 
+Ingesting, Despiking, Deprojecting, Derotating & Averaging.
+
+=back
+
+AUTHOR
+
+Craig DeForest (date ??) wrote nearly all of the original code.
+
+Derek Lamb made some modifications and turned it into a stand-alone PDL subroutine.
+
+=cut
+
+use Time::Local; ##need this for the &timegm call in step 4
+use PDL::DiskCache;
+use PDL::Transform;
+use PDL::Transform::Cartography;
+
+sub track_prep{
+##############################################
+## Part 0: create directories for the processed data, parse options
+    my $opt=shift;
+    my $rawdir=$opt->{rawdir} || 'raw';
+    my $delay =$opt->{delay} || 1;
+    my $fwhm  =$opt->{fwhm} || 5;
+    my @dirs  = defined @{$opt->{dirs}} ? @{$opt->{dirs}} : ('00-data','01-despiked','02-comp','03-av');
+    `mkdir @dirs`;
+    my $steps=$opt->{steps} || pdl(1,2,3,4);
+       
+    my @rawfnames=<$rawdir/*/??_M_*.????.fits>;
+    
+    
+=pod
+
+=begin comment
+
+To get the largest (lat,long) and size, we need to figure out what
+portion of the first image is going to be outside the FOV at the end
+of the sequence, and what portion of the last image is going to be
+outside the FOV at the beginning of the sequence.  Thankfully, once we
+have one, the other should come easy.
+
+=end
+
+=cut
+
+    if (($steps==4)->any){
+	
+	my @a =mrfits($rawfnames[0]); 
+	my @c = mrfits($rawfnames[-2]);
+	
+	my $dt=date2int($c[0]->hdr->{DATE_OBS}) - date2int($a[0]->hdr->{DATE_OBS});
+	$dt/=24*3600;
+	my $w=pgwin(xw,size=>[10,10]);
+	
+	my $mockhdr=$a[0]->hdr_copy;
+	$mockhdr->{DATE_OBS}=int2date('%yyyy-mm-ddTHH:MM:SSZ',date2int($a[0]->hdr->{DATE_OBS}) + $dt*24*3600/2);
+	my $outa=dr_mean(\@a,$a[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr});
+	my $outc=dr_mean(\@c,$c[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr});
+	
+	$w->fits_imag($outa,-500,500,{title=>"Click the upper-left corner of the good area"});
+	my ($x1,$y1)=$w->cursor({type=>'crosshair'});
+	
+	$w->fits_imag($outc,-500,500,{title=>"Click the lower-right corner of the good area"});
+	my ($x2,$y2)=$w->cursor({type=>'crosshair'});
+	
+	my $origin_xy=pdl(($x1+$x2)/2,($y1+$y2)/2);
+	my $sizex=floor($x2-$x1)/($a[0]->hdr->{CDELT1}); ##these are the sizes
+	my $sizey=floor($y1-$y2)/($a[0]->hdr->{CDELT2}); ## in pixels
+	$w->close;
+    }
+#######################################################
+## Part 1: copy the files and standardize filenames
+
+    mdi_ingest("$rawdir","$dirs[0]") if (($steps == 1)->any);
+    my @fnames=<$dirs[0]/*>; 
+    
+#############################
+## Part 2: Despike images
+
+    my @dspfnames = @fnames;
+    map { s/^$dirs[0]/$dirs[1]/; } @dspfnames;
+    my $datacube = diskcache(\@fnames,{ro=>1});
+    my $dspcube  = diskcache(\@dspfnames,{rw=>1});
+    zspike($datacube,{clean=>1,m=>$dspcube,th=>40,nfr=>4,vth=>[7.9,0.9]}) if (($steps == 2)->any);
+    (tied @$dspcube)->purge(-1); 
+    (tied @$datacube)->purge(-1);
+
+############################################
+## Part 3: Compensate for projection effects;
+## we assume that pointing doesn't change considerably over the observation
+
+    my $a = rfits($fnames[0]);
+    $a->hdrcpy(1);
+    $a=float($a);
+    $a->hdrcpy(0);
+    my $rsun=$a->hdr->{R_SUN};
+    my $rvals=rvals($a,{Center=>[$a->hdr->{CRPIX1},$a->hdr->{CRPIX2}]});
+    my $in_sun=($rvals<=$rsun);
+    my $circ=$rvals*$in_sun/$rsun;
+    my $comp=sqrt(1-$circ*$circ); ##divide by this to correct for projection
+    
+    my @fcomp=@dspfnames;
+    map { s/^$dirs[1]/$dirs[2]/ } @fcomp;
+    if (($steps == 3)->any){
+	for $i(0..scalar(@fcomp)-1){
+	    my $input=rfits($dspfnames[$i]);
+	    my $compensated=$in_sun*$input/$comp;
+	    $compensated->sethdr($input->hdr_copy);
+	    wfits($compensated,$fcomp[$i]);
+	    p "\t\t\t\t\t\t\t$i /",scalar(@fcomp)-1,"\n";
+	}
+    }
+    
+##################################
+## Part 4: Create derotated frames
+    
+    return 1 unless (($steps == 4)->any);
+	my @times=map{
+	    m/(\d{4})\-(\d{2})\-(\d{2})_(\d{2})\:(\d{2})/;
+	    ($yr,$mo,$dy,$hr,$min) = ($1,$2,$3,$4,$5);
+	    timegm(0,$min,$hr,$dy,--$mo,$yr);
+	} @fnames;
+	my $times=pdl(@times);
+	
+	
+##b is just an empty frame with the header set appropriately for dr_mean
+	
+	my $b = zeroes($sizex,$sizey); $b->sethdr($a->hdr_copy);
+	$b->hdr->{CRPIX1} = ($sizex+1)/2;	##center the image at the, um, center
+	$b->hdr->{CRPIX2} = ($sizey+1)/2;	##ditto
+	$b->hdr->{NAXIS1} = $sizex;		##number of pixels in x direction
+	$b->hdr->{NAXIS2} = $sizey;		##  "	 "	"  "  y   "
+	$b->hdr->{CRVAL1} = 0;			##the value of CRPIX1 in sci. coords.
+	$b->hdr->{CRVAL2} = 0;			##the value of CRPIX2 in sci. coords
+	$b->hdr->{CUNIT1} = 'arcsec';
+	$b->hdr->{CUNIT2} = 'arcsec';
+	$b->hdr->{DATE_OBS}= int2date('ut all',$times->at($times->nelem/2));
+	
+	
+#######change this to put whatever field you want to center on. 
+##This is exactly as you would see it by just 
+##displaying the image [using $w->fits_imag($a), not $w->imag($a)].
+	my $origin_lonlat = $origin_xy->apply(t_fits2helio($a));
+	
+	my $t;   
+	for($t=$times->((0))+$fwhm/2*60; $t<$times->((-1)); $t+=$delay*60){
+	    my $fr=which(($times >=$t-($fwhm*60))&
+		      ($times <=$t+($fwhm*60))
+		      );
+	    
+	    my @cube = mrfits(@fcomp[$fr->list]);
+	    my $tt = int2date('soho ut all',$t);
+	    my $frname = "03-av/".int2date('%yyyymmdd__HH:MM:ss',$t).".fits";
+	    print "frame centered on $tt\n";
+	    my $out2 = dr_mean(\@cube,$tt,$delay,{hdr=>$b->hdr,o=>$origin_lonlat,method=>'g'}) if $fd;
+	    next unless defined($out2);
+	    print "Writing $frname...";
+	    $out2->hdr->{COMMENT}="";
+	    wfits($out2,$frname);
+	    print "ok\n\n";
+	}
+    return 1;
+}
