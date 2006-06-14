@@ -32,8 +32,10 @@ The Full Width at Half Maximum (in minutes) of the temporal Gaussian averaging k
 
 =item steps (default pdl(1,2,3,4) )
 
-Which steps in the preprocessing to perform.  The steps in order are 
-Ingesting, Despiking, Deprojecting, Derotating & Averaging.
+Which steps in the preprocessing to perform.  The steps in order are
+Ingesting, Despiking, Deprojecting, Derotating & Averaging. Useful if
+you did something stupid in, say, step 4 and don't want to do
+everything over again, not that that happened a lot or anything...
 
 =back
 
@@ -78,6 +80,7 @@ have one, the other should come easy.
 
 =cut
 
+    my ($sizex,$sizey,$origin_xy);
     if (($steps==4)->any){
 	
 	my @a =mrfits($rawfnames[0]); 
@@ -98,9 +101,9 @@ have one, the other should come easy.
 	$w->fits_imag($outc,-500,500,{title=>"Click the lower-right corner of the good area"});
 	my ($x2,$y2)=$w->cursor({type=>'crosshair'});
 	
-	my $origin_xy=pdl(($x1+$x2)/2,($y1+$y2)/2);
-	my $sizex=floor($x2-$x1)/($a[0]->hdr->{CDELT1}); ##these are the sizes
-	my $sizey=floor($y1-$y2)/($a[0]->hdr->{CDELT2}); ## in pixels
+        $origin_xy=pdl(($x1+$x2)/2,($y1+$y2)/2);
+	$sizex=floor($x2-$x1)/($a[0]->hdr->{CDELT1}); ##these are the sizes
+	$sizey=floor($y1-$y2)/($a[0]->hdr->{CDELT2}); ## in pixels
 	$w->close;
     }
 #######################################################
@@ -180,14 +183,14 @@ have one, the other should come easy.
 	my $t;   
 	for($t=$times->((0))+$fwhm/2*60; $t<$times->((-1)); $t+=$delay*60){
 	    my $fr=which(($times >=$t-($fwhm*60))&
-		      ($times <=$t+($fwhm*60))
+			 ($times <=$t+($fwhm*60))
 		      );
 	    
 	    my @cube = mrfits(@fcomp[$fr->list]);
 	    my $tt = int2date('soho ut all',$t);
-	    my $frname = "03-av/".int2date('%yyyymmdd__HH:MM:ss',$t).".fits";
+	    my $frname = "$dirs[3]/".int2date('%yyyymmdd__HH:MM:ss',$t).".fits";
 	    print "frame centered on $tt\n";
-	    my $out2 = dr_mean(\@cube,$tt,$delay,{hdr=>$b->hdr,o=>$origin_lonlat,method=>'g'}) if $fd;
+	    my $out2 = dr_mean(\@cube,$tt,$delay,{hdr=>$b->hdr,o=>$origin_lonlat,method=>'g'});
 	    next unless defined($out2);
 	    print "Writing $frname...";
 	    $out2->hdr->{COMMENT}="";
