@@ -1,3 +1,5 @@
+=pod 
+
 =head2 t_fits2helio
 
 =for usage
@@ -26,7 +28,10 @@ AUTHOR
 Craig DeForest, 22-Jun-2004
 
 =cut
+
 use strict;
+use PDL::Transform;
+use PDL::Transform::Cartography;
 
 sub t_fits2helio {
   my $hdr = shift;
