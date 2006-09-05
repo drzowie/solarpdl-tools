@@ -1,0 +1,84 @@
+=pod
+
+=head2 shutter
+
+=for ref
+
+Provide shutter noise information about a magnetogram sequence
+
+=for usage
+
+($offsets, $sigma) = shutter(@files[,\%opt]);
+
+=for method
+
+Assumes that the center of a magnetogram histogram is approximately 
+gaussian.  Takes the log of the histogram, and fits a parabola to 
+the core. Returns the value of the center of the parabola fit and 
+the variance (sigma) of the gaussian.
+
+For some reason this doesn't produce the same average sigma as indicated
+in Hagenaar's thesis. That work showed <sigma> ~ 2.5, here I get 2.5**2=6.4.
+Perhaps there was an extra square root?
+
+OPTIONS
+
+=over 3
+
+=item examine
+
+If set to a true value, inspect a plot of the histogram and the resultant parabolic fit. 
+
+=back
+
+BUGS
+
+=over 3
+
+Doesn't work well for discrete data, like raw MDI magnetograms.
+
+=back
+
+=for Author
+
+Derek Lamb, based on Hagenaar's thesis, pg 128.
+
+=cut
+
+use PDL::Fit::Polynomial;
+
+sub shutter{
+    my $opt=pop;
+    my @in = @_;
+
+    #push the last value back if it isn't a (presumably options) hash
+    push(@in,$opt) unless UNIVERSAL::isa($opt,'HASH'); 
+
+    my $offsets = zeroes(scalar @in);
+    my $sigma = zeroes(scalar @in);
+    my $w;
+    for my $i(0..scalar @in -1){
+	my $image=rfits("$in[$i]");
+	my ($b,$n)=hist($image,-10,10,1);
+	my $brange=which($b >= -5 & $b <= 5);
+
+	my ($fit,$coeffs)=fitpoly1d($b($brange),$n($brange)->log10,3);
+	$offsets(($i)).=-$coeffs((1))/2/$coeffs((2));
+	$sigma(($i)).=sqrt(-0.5/$coeffs((2)) );
+	if ($opt->{examine}) {
+	    $w=pgwin(xs,size=>7) unless UNIVERSAL::isa($w,'PDL::Graphics::PGPLOT::Window');
+	    my $x=$b(1:-2);
+	    $w->line($x,$n(1:-2)->log10,{axis=>logy,title=>"i=$i. Click to Continue"});
+	    $w->hold;
+	    my $y=$coeffs((2))*$x*$x + $coeffs((1))*$x + $coeffs((0));
+	    $w->line($x,$y,{color=>red});
+	    $w->release;
+	    $w->cursor();
+	}
+    }
+    if(defined $w){
+	$w->close;
+	undef $w;
+    }
+    return ($offsets,$sigma);
+}
