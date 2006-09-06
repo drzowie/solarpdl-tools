@@ -18,7 +18,7 @@ OPTIONS
 
 The directory to recursively search for magnetogram FITS files.
 
-=item dirs (default ('00-data','01-despiked','02-comp','03-av') )
+=item dirs (default ('00-data','01-despiked','02-comp','03-av','04-smooth') )
 
 The directories for the processing steps.
 
@@ -26,11 +26,15 @@ The directories for the processing steps.
 
 The cadence (in minutes) of the derotated and averaged magnetograms.
 
-=item fwhm (default 5)
+=item fwhm_t (default 5)
 
 The Full Width at Half Maximum (in minutes) of the temporal Gaussian averaging kernel.
 
-=item steps (default pdl(1,2,3,4) )
+=item fwhm_s (default 3)
+
+The Full Width at Half Maximum (in pixels) of the spatial Gaussian averaging kernel.
+
+=item steps (default pdl(1,2,3,4,5) )
 
 Which steps in the preprocessing to perform.  The steps in order are
 Ingesting, Despiking, Deprojecting, Derotating & Averaging. Useful if
@@ -47,10 +51,11 @@ Derek Lamb made some modifications and turned it into a stand-alone PDL subrouti
 
 =cut
 
-use Time::Local; ##need this for the &timegm call in step 4
+use Time::Local;
 use PDL::DiskCache;
 use PDL::Transform;
 use PDL::Transform::Cartography;
+use PDL::ImageND;
 
 sub track_prep{
 ##############################################
@@ -58,13 +63,15 @@ sub track_prep{
     my $opt=shift;
     my $rawdir=$opt->{rawdir} || 'raw';
     my $delay =$opt->{delay} || 1;
-    my $fwhm  =$opt->{fwhm} || 5;
-    my @dirs  = defined @{$opt->{dirs}} ? @{$opt->{dirs}} : ('00-data','01-despiked','02-comp','03-av');
+    my $fwhm_t=$opt->{fwhm_t} || 5;
+    my $fwhm_s=$opt->{fwhm_s} || 3;
+    my @dirs  = defined @{$opt->{dirs}} ? @{$opt->{dirs}} : ('00-data','01-despiked','02-comp','03-av','04-smooth');
     `mkdir @dirs`;
-    my $steps=$opt->{steps} || pdl(1,2,3,4);
-       
-    my @rawfnames=<$rawdir/*/??_M_*.????.fits>;
-    
+    my $steps=defined $opt->{steps} ? $opt->{steps} :  pdl(1,2,3,4,5);
+
+
+    my @rawfnames=<$rawdir/??_M_*.????.fits>;
+    print "rawfnames: @rawfnames\n";
     
 =pod
 
@@ -84,7 +91,7 @@ have one, the other should come easy.
     if (($steps==4)->any){
 	
 	my @a =mrfits($rawfnames[0]); 
-	my @c = mrfits($rawfnames[-2]);
+	my @c = mrfits($rawfnames[-1]);
 	
 	my $dt=date2int($c[0]->hdr->{DATE_OBS}) - date2int($a[0]->hdr->{DATE_OBS});
 	$dt/=24*3600;
@@ -110,8 +117,9 @@ have one, the other should come easy.
 ## Part 1: copy the files and standardize filenames
 
     mdi_ingest("$rawdir","$dirs[0]") if (($steps == 1)->any);
-    my @fnames=<$dirs[0]/*>; 
-    
+
+     my @fnames=<$dirs[0]/*>;        
+   
 #############################
 ## Part 2: Despike images
 
@@ -152,7 +160,7 @@ have one, the other should come easy.
 ##################################
 ## Part 4: Create derotated frames
     
-    return 1 unless (($steps == 4)->any);
+    if (($steps == 4)->any){
 	my @times=map{
 	    m/(\d{4})\-(\d{2})\-(\d{2})_(\d{2})\:(\d{2})/;
 	    ($yr,$mo,$dy,$hr,$min) = ($1,$2,$3,$4,$5);
@@ -184,7 +192,7 @@ have one, the other should come easy.
 	for($t=$times->((0))+$fwhm/2*60; $t<$times->((-1)); $t+=$delay*60){
 	    my $fr=which(($times >=$t-($fwhm*60))&
 			 ($times <=$t+($fwhm*60))
-		      );
+			 );
 	    
 	    my @cube = mrfits(@fcomp[$fr->list]);
 	    my $tt = int2date('soho ut all',$t);
@@ -197,5 +205,27 @@ have one, the other should come easy.
 	    wfits($out2,$frname);
 	    print "ok\n\n";
 	}
+    }
+
+############################
+##Part 5: Spatial smoothing
+
+    if (($steps==5)->any){
+	my @dr_mean_names=<$dirs[3]/*>;
+	my @smooth_names=@dr_mean_names;
+	map{s/^$dirs[3]/$dirs[4]/;}@smooth_names;
+	my $r=rvals(2*$fwhm_s+1,2*$fwhm_s+1);
+	my $kernel=exp(-4*$r*$r/($fwhm_s*$fwhm_s)*log(2));
+##it is important to have the kernel integral be unity.
+	$kernel/=$kernel->sum;
+
+	for $i(0..scalar @dr_mean_names -1){
+	    my $in=rfits("$dr_mean_names[$i]");
+	    $in->hdrcpy(1);
+	    my $out=convolveND($in,$kernel);
+	    $out->wfits("$smooth_names[$i]");
+	}
+
+    }
     return 1;
 }
