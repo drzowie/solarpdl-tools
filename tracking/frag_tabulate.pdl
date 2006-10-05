@@ -74,6 +74,7 @@ Derek Lamb 02-Jun-2005 added documentation.
 
 use Carp;
 use strict;
+use PDL::NiceSlice;
 
 sub frag_tabulate {
     my($opt,$id_list,$im_list) = find_opt(@_);

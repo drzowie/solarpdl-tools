@@ -56,6 +56,7 @@ use PDL::DiskCache;
 use PDL::Transform;
 use PDL::Transform::Cartography;
 use PDL::ImageND;
+use strict;
 
 sub track_prep{
 ##############################################
@@ -95,7 +96,7 @@ have one, the other should come easy.
 	
 	my $dt=date2int($c[0]->hdr->{DATE_OBS}) - date2int($a[0]->hdr->{DATE_OBS});
 	$dt/=24*3600;
-	my $w=pgwin(xw,size=>[10,10]);
+	my $w=pgwin('xw',size=>[10,10]);
 	
 	my $mockhdr=$a[0]->hdr_copy;
 	$mockhdr->{DATE_OBS}=int2date('%yyyy-mm-ddTHH:MM:SSZ',date2int($a[0]->hdr->{DATE_OBS}) + $dt*24*3600/2);
@@ -148,12 +149,12 @@ have one, the other should come easy.
     my @fcomp=@dspfnames;
     map { s/^$dirs[1]/$dirs[2]/ } @fcomp;
     if (($steps == 3)->any){
-	for $i(0..scalar(@fcomp)-1){
+	for my $i(0..scalar(@fcomp)-1){
 	    my $input=rfits($dspfnames[$i]);
 	    my $compensated=$in_sun*$input/$comp;
 	    $compensated->sethdr($input->hdr_copy);
 	    wfits($compensated,$fcomp[$i]);
-	    p "\t\t\t\t\t\t\t$i /",scalar(@fcomp)-1,"\n";
+	    print "\t\t\t\t\t\t\t$i /",scalar(@fcomp)-1,"\n";
 	}
     }
     
@@ -163,7 +164,7 @@ have one, the other should come easy.
     if (($steps == 4)->any){
 	my @times=map{
 	    m/(\d{4})\-(\d{2})\-(\d{2})_(\d{2})\:(\d{2})/;
-	    ($yr,$mo,$dy,$hr,$min) = ($1,$2,$3,$4,$5);
+	    my ($yr,$mo,$dy,$hr,$min) = ($1,$2,$3,$4,$5);
 	    timegm(0,$min,$hr,$dy,--$mo,$yr);
 	} @fnames;
 	my $times=pdl(@times);
@@ -189,9 +190,9 @@ have one, the other should come easy.
 	my $origin_lonlat = $origin_xy->apply(t_fits2helio($a));
 	
 	my $t;   
-	for($t=$times->((0))+$fwhm/2*60; $t<$times->((-1)); $t+=$delay*60){
-	    my $fr=which(($times >=$t-($fwhm*60))&
-			 ($times <=$t+($fwhm*60))
+	for($t=$times->((0))+$fwhm_t/2*60; $t<$times->((-1)); $t+=$delay*60){
+	    my $fr=which(($times >=$t-($fwhm_t*60))&
+			 ($times <=$t+($fwhm_t*60))
 			 );
 	    
 	    my @cube = mrfits(@fcomp[$fr->list]);
@@ -219,11 +220,11 @@ have one, the other should come easy.
 ##it is important to have the kernel integral be unity.
 	$kernel/=$kernel->sum;
 
-	for $i(0..scalar @dr_mean_names -1){
-	    my $in=rfits("$dr_mean_names[$i]");
+	for my $j(0..scalar @dr_mean_names -1){
+	    my $in=rfits("$dr_mean_names[$j]");
 	    $in->hdrcpy(1);
 	    my $out=convolveND($in,$kernel);
-	    $out->wfits("$smooth_names[$i]");
+	    $out->wfits("$smooth_names[$j]");
 	}
 
     }

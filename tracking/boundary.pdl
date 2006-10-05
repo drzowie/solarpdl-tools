@@ -1,11 +1,17 @@
+=pod
+
 =head2 boundary
 
 Given a fragment ID, a tab line and an id image, returns out outline
 (in pixel coordinates) of the associated fragment.
 
 =cut
+
+use PDL::NiceSlice;
+use strict;
+
 sub boundary {
-  ($fragid,$tabline,$id,$opt) = @_;
+  my ($fragid,$tabline,$id,$opt) = @_;
 
   return null() unless($fragid);
 
@@ -26,7 +32,7 @@ sub boundary {
   unless($xy->nelem) {
     print "\nboundary: got non-overlapping frag! ($fragid)";
     print ($id->range($offset,$radius*2+1,'t'),$offset);
-    return null;
+    return 'null';
   }
 
   $xy = $xy->(:,(0)); 
@@ -55,7 +61,7 @@ sub boundary {
   my $foo;
   push(@out,$xy->copy);
   
-  my $startdir,$lastdir;
+  my ($startdir,$lastdir);
 
   do {
     $startdir = $dir;

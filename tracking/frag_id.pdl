@@ -68,7 +68,7 @@ intact.
 use Carp;
 use strict;
 use PDL::Graphics::PGPLOT::Window;
-
+use PDL::NiceSlice;
 
 sub frag_id {
     my($opt, $images, $masks) = find_opt(@_);

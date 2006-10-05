@@ -44,6 +44,11 @@ used as an index).  For each feature, the elements are:
 
 =back
 
+Items 2 and 5, the associated IDs for birth and death, can have some
+special values. In the case of an Error, the associated ID will be
+-1. In the case of a Survival or an Appearance, it will be 0. Thus
+there is no ID #0 feature.
+
 METHODS
 
 These are:

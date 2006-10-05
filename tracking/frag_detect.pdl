@@ -87,8 +87,10 @@ Parnell.
 01-June-2005 Derek Lamb implemented "behind" option
 
 =cut
-  use Carp;
-  use strict vars;
+
+use Carp;
+use strict;
+use PDL::NiceSlice;
 
  $main::VERSION{"frag_detect"} = '2.0-b';
 

@@ -92,6 +92,7 @@ Derek Lamb April 2005--bug finding and fixing, added documentation
 
 use Carp;
 use strict;
+use PDL::NiceSlice;
 
 sub emergence_movie {
     my($hist,$tabs,$data,$ids,$opt) = @_;

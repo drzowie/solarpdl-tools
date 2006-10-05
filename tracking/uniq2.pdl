@@ -1,6 +1,9 @@
 ## Return a unique list, sorted in decreasing order of number
 ## of repetitions
 
+use strict;
+use PDL::NiceSlice;
+
 sub uniq2 {
   my ($arr) = @_;
   my ($a1) = $arr->uniq;

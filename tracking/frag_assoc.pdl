@@ -43,6 +43,7 @@ ARD 04/10/04 Removed feature history processing from frag_assoc.
 
 use Carp;
 use strict;
+use PDL::NiceSlice;
 
 sub frag_assoc {
   my($opt,$ids) = find_opt(@_);
@@ -171,7 +172,7 @@ sub frag_assoc {
     if($opt->{monitor}){
      $win->imag($curr);
      }
-p "Next ID: $nextid\n";
+print "Next ID: $nextid\n";
     }
   print "frag_assoc completed successfully\n";  
   $win->close if $opt->{monitor};
