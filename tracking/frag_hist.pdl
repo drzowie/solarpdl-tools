@@ -147,8 +147,9 @@ Derek Lamb 06/01/05 more minor debugging
 
 =cut
 
-use Carp;
 use strict;
+use PDL;
+use PDL::NiceSlice;
 
 sub frag_hist {
     my ($berr,$derr)=0;
@@ -359,11 +360,11 @@ sub frag_hist {
 		    $h->(1:2) .= pdl(4,-1);
 		    print "*" if($opt->{verbose});
 		} elsif(@em) {
-		    $h->(1:2) .= pdl(2,@em[0]); ##using the first in the list for the direct object is arbitrary
+		    $h->(1:2) .= pdl(2,$em[0]); ##using the first in the list for the direct object is arbitrary
 		    print "E" if($opt->{verbose});
 		} elsif(@fr) {
 		    print "F" if($opt->{verbose});
-		    $h->(1:2) .= pdl(3,@fr[0]);
+		    $h->(1:2) .= pdl(3,$fr[0]);
 		} else {
 		    $berr+=sign($t->(0))*sign($tabs(($interactions[0]),($starts->($interactions[0])),0));
 		    print "BIRTH ERROR" if($opt->{verbose});
@@ -466,11 +467,11 @@ sub frag_hist {
 		    $h->(4:5) .= pdl(4,-1);
 		    print "%" if($opt->{verbose});
 		} elsif(@ca) {
-		    $h->(4:5) .= pdl(2,@ca[0]);
+		    $h->(4:5) .= pdl(2,$ca[0]);
 		    print "C" if($opt->{verbose});
 		} elsif(@mg) {
 		    print "M" if($opt->{verbose});
-		    $h->(4:5) .=pdl(3,@mg[0]);
+		    $h->(4:5) .=pdl(3,$mg[0]);
 		} else {
 		    $derr+=sign($t->(0))*sign($tabs(($interactions[0]),($ends->($interactions[0])),0));
 		    print "DEATH ERROR" if($opt->{verbose});

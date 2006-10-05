@@ -92,7 +92,9 @@ Derek Lamb April 2005--bug finding and fixing, added documentation
 
 use Carp;
 use strict;
+use PDL;
 use PDL::NiceSlice;
+use PDL::Transform;
 
 sub emergence_movie {
     my($hist,$tabs,$data,$ids,$opt) = @_;
@@ -139,7 +141,7 @@ sub emergence_movie {
     
     my $i;
     my $im;
-    use PDL::Transform;
+
     my $framename;
     for $i(1..$#$data) {
 	print "Frame $i...";
@@ -154,7 +156,7 @@ sub emergence_movie {
 	print "...";
 	##############################
 	# Identify start events and locations
-	my $st = which($hist->(:,(0)) >= $i-$post & $hist->(:,(0)) <= $i+$pre);
+	my $st = which(($hist->(:,(0)) >= $i-$post) & ($hist->(:,(0)) <= $i+$pre));
 	print " ".$st->nelem." events...";
 	my $event;
 	foreach $event($st->list) {

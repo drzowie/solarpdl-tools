@@ -110,8 +110,8 @@ sub frag_id {
 	    print "Frame No.",$frame," undefined.  Skipping...\n";
 	    next;
 	}
-	print ("Frame $frame: ",$mpos->sum," pos. and ",$mneg->sum,
-	       " neg. pixels in mask..\n") 
+	print "Frame $frame: ",$mpos->sum," pos. and ",$mneg->sum,
+	       " neg. pixels in mask..\n" 
 	    if($opt->{verbose});
 	
 	my($im) = $images->[$frame];

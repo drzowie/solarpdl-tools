@@ -146,7 +146,7 @@ sub frag_detect {
   ## 
   
   my( @ploci, @nloci, $null, $i );
-  my $null = pdl([[-10,-10]]);
+  $null = pdl([[-10,-10]]);
   map { push(@ploci,$null); push(@nloci,$null); } (0..$#$cube);
   
   ##############################
@@ -219,7 +219,7 @@ sub frag_detect {
 	  
 	  my $pcpix = $cube->[$frame]->range($pchk,0,'t')->sever;
 	  my $pmpix = $masks->[$frame]->range($pchk,0,'t');
-	  $pfound = which( $pmpix == 0 & $pcpix > $lthresh );
+	  $pfound = which(($pmpix == 0) & ($pcpix > $lthresh));
 	  $ploc = ($pfound->nelem ? 
 		   $pchk->xchg(0,1)->range($pfound(*1),0,'f')->xchg(0,1) : 
 		   $null
@@ -228,7 +228,7 @@ sub frag_detect {
 	  
 	  my $ncpix = $cube->[$frame]->range($nchk,0,'t')->sever;
 	  my $nmpix = $masks->[$frame]->range($nchk,0,'t');
-	  $nfound = which( $nmpix == 0 & $ncpix < -$lthresh );
+	  $nfound = which(($nmpix == 0) & ($ncpix < -$lthresh));
 	  $nloc = ($nfound->nelem ? $nchk->xchg(0,1)->($nfound)->xchg(0,1) : $null);
 	  $nmpix->indexND($nfound(*1)) .= -1;
 	  
