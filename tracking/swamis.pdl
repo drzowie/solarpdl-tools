@@ -25,8 +25,7 @@ sub swamis{
     my $mask = diskcache(\@maskfiles,{rw=>1});
     
     $mask = frag_detect($data, {diag=>2,masks=>$mask,thresh=>[30,20]});
-    
-    
+
 ### Set up and execute ID run
     my @idfiles   = map { ($a=$_)=~s/00-data/02-id/;   $a } @datafiles;
     `rm -rf 02-id; mkdir 02-id`;

@@ -22,7 +22,7 @@ OPTIONS
 
 =over 3
 
-=item dir (default 'movie')
+=item dir (default 'movie/')
 
 directory in which to write the movie frames.  If it exists, all contents are removed.  If it does not exist, it is created.
 
@@ -52,8 +52,11 @@ Constant to adjust the decay timescale.  Should always be <1.0, smaller means fa
 
 =item evmask (default [1,1,1,1,1,1])
 
-The types of events to highlight.  This needs to be a 6-element array, and each element references the corresponding birth mechanism identified in frag_hist.  The tricky thing is that ERROR (-1) is the last element in evmask, so the order goes:
-[Survival, Appearance, Emergence, Fragmentation, Complex, Error]
+The types of events to highlight.  This needs to be a 6-element array,
+and each element references the corresponding birth mechanism
+identified in frag_hist.  The tricky thing is that ERROR (-1) is the
+last element in evmask, so the order goes: [Survival, Appearance,
+Emergence, Fragmentation, Complex, Error]
 
 =item options (default {} )
 
@@ -65,22 +68,30 @@ Radius (in pixels) of the event circle
 
 =item id_frags (default 0)
 
-Whether to label the concentrations or not.  Setting this to 1 will result in the features being labeled and encircled.  The value of the contour option determines whether the encircling is done with an ellipse (fast, but not accurate) or with the boundary code (slow, but better).
+Whether to label the concentrations or not.  Setting this to 1 will
+result in the features being labeled and possibly encircled.  The value of the
+contour option determines whether the encircling is done with an
+ellipse (fast, but not accurate) or with the boundary code (slow, but
+better), or not at all.
 
 =item contour (default 0)
 
-Whether to draw a boundary around the features (2) or just use a circle (1), or not draw any delimiter at all (0).  This only works if id_frags is 1, otherwise nothing is drawn.
+Whether to draw a boundary around the features (2) or just use a
+circle (1), or not draw any delimiter at all (0).  This only works if
+id_frags is 1, otherwise nothing is drawn.
 
 =item anti (default 1)
 
-If greater than 1, divide the image size by this factor before producing the output image.  Also is an adjustment factor in character size of the feature ids.
+If greater than 1, divide the image size by this factor before
+producing the output image.  Also is an adjustment factor in character
+size of the feature ids.
 
 =back
 
 BUGS
 
-1) What is the correct syntax for the option 'option'?  And why doesn't fits_imag produce a wedge by default?  The documentation says it should.  Think it has something to do with passing in an (x,y,3) piddle--so maybe
-
+1) What is the correct syntax for the option 'option'?
+2) It would be nice to be able to use the contour option without the id_frags option.
 
 HISTORY
 
@@ -145,7 +156,8 @@ sub emergence_movie {
     my $framename;
     for $i(1..$#$data) {
 	print "Frame $i...";
-	my $w = pgwin(dev=> $framename=sprintf("%s%s%3.3d.ppm/ppm",$dir,$fname,$i),size=>$size);
+#	my $w=pgwin('xw',size=>$size);
+	my $w = pgwin(dev=> $framename=sprintf("%s%s%3.3d.ps/vcps",$dir,$fname,$i),size=>$size);
 	# RGB-ify data and scale to [0,1].
 	$im = $data->[$i]->float->clip(@$range)->dummy(2,3)->copy;
 	$im->sethdr($data->[$i]->hdr_copy);
@@ -166,18 +178,18 @@ sub emergence_movie {
 	    
 #     my $grab = ($i<$h->(0)?$h->(7:8):$tabs->(($event),($i),2:3));
 	    my $grab = $h->(7:8);
-	    
+
 	    my $imr = $im->range($grab-$radius,$radius*2+1,'t');
 	    
 	    $imr += $cmask * $colors[$h->at(1)]->(*1,*1) * pow($decay,$i+$pre-$h->at(0)) if($evmask->[$h->at(1)]) ;
 	    
-	    
+
 	}
-	
+
 	$w->fits_imag($im->clip(0.01,0.99),0,1,{j=>1,title=>sprintf("MDI Tracked Rgn %s",$im->hdr->{DATE_OBS},$i),dr=>0,charsize=>0.99,%$imag_options});
 	$w->hold;
-	
-	if($id_frags) {
+
+	if($id_frags || $contour) {
 	    my $id;
 	    
 	    my $t = t_fits($im);
@@ -196,7 +208,7 @@ sub emergence_movie {
 		    $w->ellipse($xy->at(0),$xy->at(1),$r,$r,{fill=>2,color=>3});
 		}
 		
-		$w->text($id,$xy->at(0)+$r*1.05,$xy->at(1),{charsize=>0.67*$anti_alias,color=>3});
+		$w->text($id,$xy->at(0)+$r*1.05,$xy->at(1),{charsize=>0.67*$anti_alias,color=>3}) if $id_frags;
 		print ".";
 	    }
 	    
