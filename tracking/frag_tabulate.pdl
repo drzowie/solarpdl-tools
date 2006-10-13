@@ -201,7 +201,8 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
     my ($xmin,$xmax,$ymin,$ymax,$pixarray,$sizes);
    
 ##something is happening when it's incrementing frames that causes it to really slow down at the point--it's nice and quick within each frame loop.
-
+##try defining some more things as 'my' outside the loop so there's less garbage collection.
+    my ($subfield,$idsub,$xok,$yok,$xyok,$xid,$yid,$xyid);
     for my $fr(0..$#{$im_list})
     {
 	print "frame: $fr\n";
@@ -215,9 +216,9 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
             ##set up a bounding box
 	    ($xmin,$xmax)=minmax($loci->[$fr]->{$id}->pdl % $xsize);
 	    ($ymin,$ymax)=minmax(floor($loci->[$fr]->{$id}->pdl / $xsize));
-	    my $subfield=$id_list->[$fr]->range([$xmin-1,$ymin-1],[$xmax-$xmin+2,$ymax-$ymin+2],'t');
+	    $subfield=$id_list->[$fr]->range([$xmin-1,$ymin-1],[$xmax-$xmin+2,$ymax-$ymin+2],'t');
             ##find out what other ids are in this subfield
-	    my $idsub=$subfield->uniq;
+	    $idsub=$subfield->uniq;
 	    $sizes=zeroes($idsub);
 	    ##just loop over those
 
@@ -229,12 +230,12 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 		next unless (sign($summary($id_ok,$fr,(0)))==sign($summary($id,$fr,(0)))); ##only reassociate if it's the same sign
 		$pixarray=zeroes($subfield->dims,4);
                 ##set pixarray = 1 where the reconsidered id is
-		my ($xok,$yok)=whichND($subfield->abs==$id);
-		my $xyok=cat($xok,$yok)->mv(-1,0);
+		($xok,$yok)=whichND($subfield->abs==$id);
+		$xyok=cat($xok,$yok)->mv(-1,0);
 		$pixarray->indexND($xyok).=1;
 ##increment pixarray by 1 where the ok id is, but offset by 1 in each direction
-		my ($xid,$yid)=whichND($subfield==$id_ok);
-		my $xyid=cat($xid,$yid,pdl(0))->mv(-1,0);
+		($xid,$yid)=whichND($subfield==$id_ok);
+		$xyid=cat($xid,$yid,pdl(0))->mv(-1,0);
 		$pixarray->indexND($xyid+pdl(1,0,0),'t')+=1;
 		$pixarray->indexND($xyid+pdl(-1,0,1),'t')+=1;
 		$pixarray->indexND($xyid+pdl(0,1,2),'t')+=1;
@@ -249,7 +250,7 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
             ##reassociate it with the largest one that it touches
 	    if (any($sizes))
 	    {
-		my $idreassoc=$idsub(which($sizes==$sizes->max)->(0)); ##->(0) just in case two of same size
+	        my $idreassoc=$idsub(which($sizes==$sizes->max)->(0)); ##->(0) just in case two of same size
 		$idreassoc=$idreassoc->((0));
 ##for some reason that doesn't need to be done with $id, but it's necessary here for accessing the keys of the $loci hashes
 
@@ -266,7 +267,8 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 		$summary(($idreassoc),($fr),(2)).=$centroid((0));
 		$summary(($idreassoc),($fr),(3)).=$centroid((1));
 
-		print "found",++$reassoc,"to reassociate\n" if $opt->{verbose};
+		$reassoc++;
+		print "found",$reassoc,"to reassociate\n" if $opt->{verbose};
 	    }
 	    elsif ($opt->{keep}){
 		print "Keeping $id anyway\n" if $opt->{verbose};
