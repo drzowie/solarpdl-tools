@@ -23,6 +23,14 @@ The center of the camera focal-plane coordinate system is thus taken
 as the CRPIX1/CRPIX2 datum of the image. That might be a wrong guess but
 it will be fixed later.
 
+OPTIONS
+
+=over 3
+
+=item Unit, unit, u (default 'arcsec')
+
+=back
+
 AUTHOR
 
 Craig DeForest, 22-Jun-2004
@@ -43,12 +51,12 @@ sub t_fits2helio {
 
   $hdr = hdrunit($hdr,$u);
   $hdr = fits_obs_pos($hdr);
-  $FOO::hdr = $hdr;
+  $FOO::hdr = $hdr; 
   return ! t_perspective( ptg=>[$hdr->{CRVAL1}*units($hdr->{CUNIT1},'degrees'),
 			      $hdr->{CRVAL2}*units($hdr->{CUNIT2},'degrees'),
 			      $hdr->{CROTA2}],
 			r0=>$hdr->{DSUN_OBS}*units('meters','r_sun'),
-			o=>[$hdr->{HGLN_OBS},$hdr->{HDLT_OBS}],
+			o=>[$hdr->{HGLN_OBS},$hdr->{HGLT_OBS}],
 			iu=>'arcsec'
 			);
 }
