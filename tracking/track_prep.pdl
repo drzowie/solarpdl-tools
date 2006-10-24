@@ -67,11 +67,11 @@ sub track_prep{
     my $fwhm_t=$opt->{fwhm_t} || 5;
     my $fwhm_s=$opt->{fwhm_s} || 3;
     my @dirs  = defined @{$opt->{dirs}} ? @{$opt->{dirs}} : ('00-data','01-despiked','02-comp','03-av','04-smooth');
-    `mkdir @dirs`;
+#    `mkdir @dirs`;
     my $steps=defined $opt->{steps} ? $opt->{steps} :  pdl(1,2,3,4,5);
 
 
-    my @rawfnames=<$rawdir/??_M_*.????.fits>;
+    my @rawfnames=<$rawdir/*.fits>;#??_M_*.????.fits>;
     print "rawfnames: @rawfnames\n";
     
 =pod
@@ -88,7 +88,7 @@ have one, the other should come easy.
 
 =cut
 
-    my ($sizex,$sizey,$origin_xy);
+    my ($sizex,$sizey,$origin_xy,$outa);
     if (($steps==4)->any){
 	
 	my @a =mrfits($rawfnames[0]); 
@@ -100,7 +100,7 @@ have one, the other should come easy.
 	
 	my $mockhdr=$a[0]->hdr_copy;
 	$mockhdr->{DATE_OBS}=int2date('%yyyy-mm-ddTHH:MM:SSZ',date2int($a[0]->hdr->{DATE_OBS}) + $dt*24*3600/2);
-	my $outa=dr_mean(\@a,$a[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr});
+	 $outa=dr_mean(\@a,$a[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr});
 	my $outc=dr_mean(\@c,$c[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr});
 	
 	$w->fits_imag($outa,-500,500,{title=>"Click the upper-left corner of the good area"});
@@ -114,6 +114,7 @@ have one, the other should come easy.
 	$sizey=floor($y1-$y2)/($a[0]->hdr->{CDELT2}); ## in pixels
 	$w->close;
     }
+    return $outa;
 #######################################################
 ## Part 1: copy the files and standardize filenames
 

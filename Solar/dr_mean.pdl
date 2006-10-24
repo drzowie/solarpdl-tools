@@ -133,9 +133,9 @@ sub dr_mean {
     my $motion = $origin_lonlat->apply(
 				       t_diff_rot(($rtime-$imtime)/24/3600)
 				       );
-    print "rot: ".sprintf("%.1g",pdl((($rtime-$imtime)/60))->at(0))." min...";
+    print "rot: ".sprintf("%.0f",pdl((($rtime-$imtime)/60))->at(0))." min...";
     $motion -= $origin_lonlat;
-
+    print "motion=$motion...";
 
     my $tx = ( !t_fits2helio( $opt->{hdr} )
 	       x t_rot_sphere(origin=>[$origin_lonlat->list])
