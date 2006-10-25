@@ -72,7 +72,6 @@ Derek Lamb 02-Jun-2005 added documentation.
 
 =cut
 
-use Carp;
 use strict;
 use PDL::NiceSlice;
 

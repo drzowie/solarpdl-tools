@@ -167,14 +167,14 @@ sub frag_hist {
     ## frame for each one.  This is cheesy but oh so sweet.
     
     # frame gets the frame number for all frames with features of nonzero size.
-     $frame =  (yvals($frag_ct,$frame_ct)+ones($frag_ct)) * ($tabs->(:,:,(1)) != 0) ;
+    my $frame =  (yvals($frag_ct,$frame_ct)+ones($frag_ct)) * ($tabs->(:,:,(1)) != 0) ;
 
     # starts and ends get the max and min frame number for each feature.
     # (long-named collapse operators collapse in 0th dim only)
     # the -=1 accounts for adding the ones($frag_ct) in the $frame def
-     $ends =   $frame->xchg(0,1)->maximum;
+    my $ends =   $frame->xchg(0,1)->maximum;
     $ends(1:-1)-=1;
-     $starts = ( $frame + ($ends * ($frame==0)))->xchg(0,1)->minimum;
+    my $starts = ( $frame + ($ends * ($frame==0)))->xchg(0,1)->minimum;
     $starts(1:-1)-=1;
     $hist->(:,(0)) .= $starts;
     $hist->(:,(3)) .= $ends;

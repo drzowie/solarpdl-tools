@@ -18,9 +18,9 @@ OPTIONS
 
 The directory to recursively search for magnetogram FITS files.
 
-=item dirs (default ('00-data','01-despiked','02-comp','03-av','04-smooth') )
+=item dirs (default ['00-data','01-despiked','02-comp','03-av','04-smooth'] )
 
-The directories for the processing steps.
+The directories for the processing steps. Enter your own like: dirs=>['dir1','dir2',...]
 
 =item delay (default 1)
 
@@ -41,6 +41,10 @@ Ingesting, Despiking, Deprojecting, Derotating & Averaging. Useful if
 you did something stupid in, say, step 4 and don't want to do
 everything over again, not that that happened a lot or anything...
 
+=item int (default 0)
+
+Set to true if you want to do the region selection interactively.  Set to false if you want the code to try to pick the largest region possible.
+
 =back
 
 AUTHOR
@@ -56,6 +60,7 @@ use PDL::DiskCache;
 use PDL::Transform;
 use PDL::Transform::Cartography;
 use PDL::ImageND;
+use PDL::NiceSlice;
 use strict;
 
 sub track_prep{
@@ -66,18 +71,17 @@ sub track_prep{
     my $delay =$opt->{delay} || 1;
     my $fwhm_t=$opt->{fwhm_t} || 5;
     my $fwhm_s=$opt->{fwhm_s} || 3;
-    my @dirs  = defined @{$opt->{dirs}} ? @{$opt->{dirs}} : ('00-data','01-despiked','02-comp','03-av','04-smooth');
-#    `mkdir @dirs`;
+    my $int=$opt->{int} || 0;
+    my @dirs  = defined $opt->{dirs} ? @{$opt->{dirs}} : ('00-data','01-despiked','02-comp','03-av','04-smooth');
+    `mkdir @dirs`;
     my $steps=defined $opt->{steps} ? $opt->{steps} :  pdl(1,2,3,4,5);
-
-
+    
     my @rawfnames=<$rawdir/*.fits>;#??_M_*.????.fits>;
-    print "rawfnames: @rawfnames\n";
     
 =pod
 
 =begin comment
-
+	
 To get the largest (lat,long) and size, we need to figure out what
 portion of the first image is going to be outside the FOV at the end
 of the sequence, and what portion of the last image is going to be
@@ -87,34 +91,73 @@ have one, the other should come easy.
 =end
 
 =cut
-
-    my ($sizex,$sizey,$origin_xy,$outa);
+	
+    my ($sizex,$sizey,$origin_xy);
+    
     if (($steps==4)->any){
 	
 	my @a =mrfits($rawfnames[0]); 
-	my @c = mrfits($rawfnames[-1]);
+	my @c = mrfits($rawfnames[-2]);
 	
 	my $dt=date2int($c[0]->hdr->{DATE_OBS}) - date2int($a[0]->hdr->{DATE_OBS});
-	$dt/=24*3600;
-	my $w=pgwin('xw',size=>[10,10]);
 	
 	my $mockhdr=$a[0]->hdr_copy;
-	$mockhdr->{DATE_OBS}=int2date('%yyyy-mm-ddTHH:MM:SSZ',date2int($a[0]->hdr->{DATE_OBS}) + $dt*24*3600/2);
-	 $outa=dr_mean(\@a,$a[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr});
-	my $outc=dr_mean(\@c,$c[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr});
-	
-	$w->fits_imag($outa,-500,500,{title=>"Click the upper-left corner of the good area"});
-	my ($x1,$y1)=$w->cursor({type=>'crosshair'});
-	
-	$w->fits_imag($outc,-500,500,{title=>"Click the lower-right corner of the good area"});
-	my ($x2,$y2)=$w->cursor({type=>'crosshair'});
-	
-        $origin_xy=pdl(($x1+$x2)/2,($y1+$y2)/2);
-	$sizex=floor($x2-$x1)/($a[0]->hdr->{CDELT1}); ##these are the sizes
-	$sizey=floor($y1-$y2)/($a[0]->hdr->{CDELT2}); ## in pixels
-	$w->close;
+	$mockhdr->{DATE_OBS}=int2date('%yyyy-mm-ddTHH:MM:SSZ',date2int($a[0]->hdr->{DATE_OBS}) + $dt/2);
+	my $outa=dr_mean(\@a,$a[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr});
+
+	if ($int) {
+	    ##let the user pick the size of the box.
+	    my $w=pgwin('xw',size=>[10,10]);
+	    
+	    my $outc=dr_mean(\@c,$c[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr});
+	    
+	    $w->fits_imag($outa,-500,500,{title=>"Click the upper-left corner of the good area"});
+	    my ($x1,$y1)=$w->cursor({type=>'crosshair'});
+	    
+	    $w->fits_imag($outc,-500,500,{title=>"Click the lower-right corner of the good area"});
+	    my ($x2,$y2)=$w->cursor({type=>'crosshair'});
+	    $w->close;
+            #origin_xy needs to be in arcseconds (solar-x, solar-y).
+            #But sizex and sizey need to be in pixels.
+	    $origin_xy=pdl(($x1+$x2)/2,($y1+$y2)/2);
+	    $sizex=floor($x2-$x1)->at(0)/($mockhdr->{CDELT1}); 
+	    $sizey=floor($y1-$y2)->at(0)/($mockhdr->{CDELT2});
+	    print "\nInteractive boundary results:\nsizex = $sizex\nsizey = $sizey\norigin_xy = $origin_xy\n";
+	}    
+
+	else {
+	    ##try to get the largest box we can automatically (thus
+	    ##reproducibly) without user intervention
+	    my $badcoords=whichND($outa->isbad);
+	    my $xbc=$badcoords((0))->uniq;
+	    my $off=$xbc-$xbc->rotate(1);
+	    my $j_ind=where($xbc,$off>1); #j_ind is the left-most x coord of the block
+	    my $xcurv_max=where($xbc,$xbc<$j_ind)->max;
+	    my $x1=$xcurv_max+1;
+	    my $x2=$outa->dim(0)-1-$x1;
+	    
+	    my $yblock=where($badcoords((1)),$badcoords((0))>$j_ind)->uniq;
+
+            #need to figure out if the block is on the top or bottom
+            #might depend on if SOHO is upside-down.
+	    my ($y1,$y2);
+	    
+	    if (rint($yblock->float/$outa->dim(1))){
+		$y1=$yblock->min;
+		$y2=0;
+	    }
+	    else{
+		$y1=$outa->dim(1);
+		$y2=$yblock->max;
+	    }
+
+	    $origin_xy=pdl(($x1+$x2)/2,($y1+$y2)/2)->apply(t_fits($a[0]));
+	    $sizex=floor($x2-$x1)->at(0);
+	    $sizey=floor($y1-$y2)->at(0);
+	    print "\nNon-interactive boundary results:\nsizex = $sizex\nsizey = $sizey\norigin_xy = $origin_xy\n";
+	}
     }
-    return $outa;
+
 #######################################################
 ## Part 1: copy the files and standardize filenames
 
@@ -149,6 +192,7 @@ have one, the other should come easy.
     
     my @fcomp=@dspfnames;
     map { s/^$dirs[1]/$dirs[2]/ } @fcomp;
+
     if (($steps == 3)->any){
 	for my $i(0..scalar(@fcomp)-1){
 	    my $input=rfits($dspfnames[$i]);
@@ -161,7 +205,6 @@ have one, the other should come easy.
     
 ##################################
 ## Part 4: Create derotated frames
-    
     if (($steps == 4)->any){
 	my @times=map{
 	    m/(\d{4})\-(\d{2})\-(\d{2})_(\d{2})\:(\d{2})/;
@@ -169,7 +212,6 @@ have one, the other should come easy.
 	    timegm(0,$min,$hr,$dy,--$mo,$yr);
 	} @fnames;
 	my $times=pdl(@times);
-	
 	
 ##b is just an empty frame with the header set appropriately for dr_mean
 	
@@ -185,11 +227,13 @@ have one, the other should come easy.
 	$b->hdr->{DATE_OBS}= int2date('ut all',$times->at($times->nelem/2));
 	
 	
-#######change this to put whatever field you want to center on. 
-##This is exactly as you would see it by just 
+##change this to put whatever field you want to center on. 
+##$origin_xy is exactly as you would see it by just 
 ##displaying the image [using $w->fits_imag($a), not $w->imag($a)].
+
 	my $origin_lonlat = $origin_xy->apply(t_fits2helio($a));
-	
+	print "\nAfter t_fits2helio:\norigin_xy = $origin_xy\norigin_lonlat = $origin_lonlat\n";
+	return;
 	my $t;   
 	for($t=$times->((0))+$fwhm_t/2*60; $t<$times->((-1)); $t+=$delay*60){
 	    my $fr=which(($times >=$t-($fwhm_t*60))&
@@ -200,7 +244,7 @@ have one, the other should come easy.
 	    my $tt = int2date('soho ut all',$t);
 	    my $frname = "$dirs[3]/".int2date('%yyyymmdd__HH:MM:ss',$t).".fits";
 	    print "frame centered on $tt\n";
-	    my $out2 = dr_mean(\@cube,$tt,$delay,{hdr=>$b->hdr,o=>$origin_lonlat,method=>'g'});
+	    my $out2 = dr_mean(\@cube,$tt,$fwhm_t,{hdr=>$b->hdr,o=>$origin_lonlat,method=>'g'});
 	    next unless defined($out2);
 	    print "Writing $frname...";
 	    $out2->hdr->{COMMENT}="";

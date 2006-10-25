@@ -35,7 +35,7 @@ BUGS
 
 =over 3
 
-Doesn't work well for discrete data, like raw MDI magnetograms.
+Doesn't work well for discrete data, like raw MDI magnetograms. Probably the bin size of the histogram should be dynamically adjusted to get around that.
 
 =back
 
@@ -59,10 +59,14 @@ sub shutter{
     my $w;
     for my $i(0..scalar @in -1){
 	my $image=rfits("$in[$i]");
-	my ($b,$n)=hist($image,-10,10,1);
-	my $brange=which($b >= -5 & $b <= 5);
+	my ($b,$n)=hist($image,-30,30,1);
+	my $brange=which($b >= -7 & $b <= 7);
 
-	my ($fit,$coeffs)=fitpoly1d($b($brange),$n($brange)->log10,3);
+#	my $bfolding =10; #Gauss
+#	my $weights=exp(-$b($brange)->abs/$bfolding);
+	my $weights=ones($brange);
+	my ($fit,$coeffs)=fitpoly1d($b($brange),$n($brange)->log10,3,{Weights=>$weights});
+
 	$offsets(($i)).=-$coeffs((1))/2/$coeffs((2));
 	$sigma(($i)).=sqrt(-0.5/$coeffs((2)) );
 	if ($opt->{examine}) {
