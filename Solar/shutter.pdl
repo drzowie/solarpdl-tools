@@ -12,30 +12,36 @@ Provide shutter noise information about a magnetogram sequence
 
 =for method
 
-Assumes that the center of a magnetogram histogram is approximately 
-gaussian.  Takes the log of the histogram, and fits a parabola to 
-the core. Returns the value of the center of the parabola fit and 
-the variance (sigma) of the gaussian.
+Assumes that the center of a magnetogram histogram is approximately
+gaussian.  Takes the natural log of the histogram, and fits a parabola
+to the core. Returns the value of the center of the parabola fit and
+the variance (sigma) of the gaussian. Optionally displays the
+histogram and the resulting parabolic fit in log10-space.
 
-For some reason this doesn't produce the same average sigma as indicated
-in Hagenaar's thesis. That work showed <sigma> ~ 2.5, here I get 2.5**2=6.4.
-Perhaps there was an extra square root?
+For some reason this doesn't produce the same average sigma as
+indicated in Hagenaar's thesis. That work showed <sigma> ~ 2.5, here I
+get 2.5**2=6.4.  Perhaps there was an extra square root?
 
 OPTIONS
 
 =over 3
 
-=item examine
+=item examine (default 0)
 
-If set to a true value, inspect a plot of the histogram and the resultant parabolic fit. 
+If set to a true value, inspect a plot of the histogram and the
+resultant parabolic fit.
 
-=back
+=item bfit (default 7) 
 
-BUGS
+The fit is performed over a range in magnetic field from -bfit to
++bfit.
 
-=over 3
+=item bdelta (default 1)
 
-Doesn't work well for discrete data, like raw MDI magnetograms. Probably the bin size of the histogram should be dynamically adjusted to get around that.
+The bin size of the histogram.  The default is fine for resampled or
+averaged data, but for discrete data like raw MDI magnetograms, this
+should be set to something greater than BSCALE (in the FITS header) to
+get around the discretization.
 
 =back
 
@@ -46,36 +52,43 @@ Derek Lamb, based on Hagenaar's thesis, pg 128.
 =cut
 
 use PDL::Fit::Polynomial;
+use strict;
 
 sub shutter{
     my $opt=pop;
     my @in = @_;
-
+    
     #push the last value back if it isn't a (presumably options) hash
-    push(@in,$opt) unless UNIVERSAL::isa($opt,'HASH'); 
-
+    push(@in,$opt) and undef $opt unless UNIVERSAL::isa($opt,'HASH'); 
+    
+    my $examine = $opt->{examine} || 0;
+    my $bfit = $opt->{bfit} || 7;
+    my $bdelta = $opt->{bdelta} || 1;
+    
+    my $bhist = pdl(30,2*$bfit)->max;
+    
     my $offsets = zeroes(scalar @in);
     my $sigma = zeroes(scalar @in);
     my $w;
     for my $i(0..scalar @in -1){
 	my $image=rfits("$in[$i]");
-	my ($b,$n)=hist($image,-30,30,1);
-	my $brange=which($b >= -7 & $b <= 7);
-
+	my ($b,$n)=hist($image,-$bhist,$bhist,$bdelta);
+	my $brange=which($b >= -$bfit & $b <= $bfit);
+	
 #	my $bfolding =10; #Gauss
 #	my $weights=exp(-$b($brange)->abs/$bfolding);
 	my $weights=ones($brange);
-	my ($fit,$coeffs)=fitpoly1d($b($brange),$n($brange)->log10,3,{Weights=>$weights});
-
+	
+	my ($fit,$coeffs)=fitpoly1d($b($brange),$n($brange)->log,3,{Weights=>$weights});
 	$offsets(($i)).=-$coeffs((1))/2/$coeffs((2));
 	$sigma(($i)).=sqrt(-0.5/$coeffs((2)) );
 	if ($opt->{examine}) {
-	    $w=pgwin(xs,size=>7) unless UNIVERSAL::isa($w,'PDL::Graphics::PGPLOT::Window');
+	    $w=pgwin('xs',size=>7) unless UNIVERSAL::isa($w,'PDL::Graphics::PGPLOT::Window');
 	    my $x=$b(1:-2);
-	    $w->line($x,$n(1:-2)->log10,{axis=>logy,title=>"i=$i. Click to Continue"});
+	    $w->bin($x,$n(1:-2)->log10,{axis=>'logy',title=>"i=$i. Click to Continue"});
 	    $w->hold;
-	    my $y=$coeffs((2))*$x*$x + $coeffs((1))*$x + $coeffs((0));
-	    $w->line($x,$y,{color=>red});
+	    my $y=($coeffs((2))*$x*$x + $coeffs((1))*$x + $coeffs((0)))/log(10);
+	    $w->line($x,$y,{color=>'red'});
 	    $w->release;
 	    $w->cursor();
 	}
