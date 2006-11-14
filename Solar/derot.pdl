@@ -1,0 +1,153 @@
+=pod
+
+=head2 derot
+
+Derorate a sequence of images
+
+=for usage
+
+$out= derot(\@inlist,$time,%hdr, \%options);
+
+@inlist is a list (DiskCache Object) of FITS images containing solar
+data. $time is a timestamp string to rotate to. %hdr is a FITS header
+to which the output image should be matched, after derotation.
+
+OPTIONS HASH
+
+=over 3
+
+=item o, origin (default (0,0) )
+
+Longitude and latitude of the subsolar point you want in the resampled
+coordinate system
+
+=item method (default g)
+
+Resampling option for PDL::Transform::map
+
+=item out
+
+ARRAY REF to fill with derotated cropped images.  If you do not pass
+this in, you get all your masks contained in memory.  You can pass in
+a tied DiskCache list here (matched in size to the image_list and set
+to rw mode), and all the images will be put in it, saving virtual
+memory.
+
+=back
+
+=for ref
+
+This (together with smooth_xyt.pdl) is a sort-of clone of John Beck's
+DR_MEAN module for the MDI data pipeline.  Advantages over the MDI
+pipeline module: (1) it works in floating point rather than integer;
+and (2) it uses the PDL::Transform local-linearization resampler
+rather than direct bilinear interpolation.
+
+You feed in a list of FITS images complete with dates, an output FITS
+header, an optional PDL containing the longitude and latitude of the
+viewpoint you want to hover over, and a timestamp from the image with
+that time.
+
+AUTHOR & HISTORY
+
+Craig DeForest, 29-Jun-2004 
+Derek Lamb, 07-Mar-2005: Decoupled differential rotation and weighted
+averaging
+
+=cut
+
+use PDL::Transform::Cartography;
+use strict;
+
+sub derot {
+  my($list,$rtime,$hdr,$opt) = @_;
+
+##  barf("derot output header needs DATE_OBS field...\n")
+##    unless defined($hdr->{DATE_OBS});
+
+##rtime is the time to which all images are rotated.
+##  my $rtime = date2int($hdr->{DATE_OBS});
+
+  print "rotating to ",int2date('soho ut all',date2int($rtime)),"\n";
+
+  $opt = {} unless defined $opt;
+
+  my $origin_lonlat = pdl PDL::Transform::_opt($opt,['o','origin'],undef);
+
+  my $out = (defined($opt->{out})) ? $opt->{out} : [];
+
+##  print "Changing inplace!\n" unless defined($opt->{out});
+##  $out= defined($opt->{out}) ? $list : $opt->{out};
+
+##if we didn't provide an origin, see if we can pull one out of the hdr, otherwise just use (0,0).
+  print "Checking origin...";
+  unless(defined($origin_lonlat)) {
+    if($hdr) {
+      print "header...";
+      my $t = t_fits2helio($hdr);
+      print "fits2helio\n";
+      $origin_lonlat = (pdl($hdr->{CRVAL1},$hdr->{CRVAL2})
+			->apply( $t ) );
+      
+      print "Using $origin_lonlat for rotation origin (from hdr)\n";
+
+    } else {
+      print "Using (0,0) for rotation origin\n";
+      $origin_lonlat = zeroes(2);
+    }
+  }
+
+  my $b0_rot = pb0r($rtime)->at(1);
+  $origin_lonlat -= pdl(0,$b0_rot);
+
+  my $im;
+  my $i=0;
+  
+  print "starting loop....";
+  for $im(@$list) {
+    print "\n\tImage ".$i." of ".(@$list-1)." is ".join('x',$im->dims)."\n";
+
+    my $imtime = date2int($im->hdr->{DATE_OBS});
+    print "imtime is $imtime"." (".int2date('ut all',$imtime).")\n";
+
+    my $o_ll_rot = $origin_lonlat->apply(
+				       t_diff_rot(($rtime-$imtime)/24/3600)
+				       );
+  ##  print "rot: ".sprintf("%.1g",pdl((($time-$imtime)/60))->at(0))." min...";
+    my $motion = $o_ll_rot - $origin_lonlat;
+    print "motion=$motion\t";
+    print "o=$origin_lonlat...";
+
+##remember the transforms happen last to first
+    my $tx = ( !t_fits2helio( $hdr )
+	       x t_rot_sphere(origin=>[$origin_lonlat->list])
+	       x t_linear(pre=>[$motion->list],dim=>2)
+	       x t_fits2helio($im->hdr)
+	       );
+    
+    print "map...";
+
+    print "(method=".($opt->{method}||'g').")...";
+    $im->hdrcpy(1);
+    $im = badmask($im,zeroes($im));
+    $im->hdrcpy(0);
+    if (defined $DEBUG::w){
+	$DEBUG::w->fits_imag($im,-100,100);
+    }
+    $out->[$i] = $im->map($tx,$hdr,{m=>($opt->{method}||'g')});
+    if (defined $DEBUG::w){
+	$out->[$i]->inplace->setvaltobad(0);
+	my $badnum = $out->[$i]->nbad;
+	$DEBUG::w->fits_imag($out->[$i],-100,100,{j=>1,title=>"$badnum bad. click to continue"});
+	$DEBUG::w->cursor();
+	$out->[$i]->inplace->setbadtoval(0);
+    }
+    print "ok.";
+    $out->[$i]->hdr->{COMMENT} = "";
+#just do the first frame for now--cheesy way to test
+#    last; 
+    $i++;
+  }
+
+  return $out;
+}
