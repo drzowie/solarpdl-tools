@@ -183,7 +183,7 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
     
     print "ok\n" if($opt->{verbose});
 
-    my($ok_id) = which ($frag_ok);
+    my($ok_ids) = which ($frag_ok);
 ##note that anything based on which($frag_ok) is only going to have positive ID numbers!
 
 ## IF a concentration is going to get discarded
@@ -197,17 +197,17 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
     print "reconsidering",$ids_recon->nelem,"ids.\n" if $opt->{verbose};
     my $loci_recon=[];
     my $xsize=$im_list->[0]->dim(0);
-    my ($xmin,$xmax,$ymin,$ymax,$pixarray,$sizes);
+    my ($xmin,$xmax,$ymin,$ymax,$pixarray,$subfield_sizes);
    
 ##something is happening when it's incrementing frames that causes it to really slow down at the point--it's nice and quick within each frame loop.
 ##try defining some more things as 'my' outside the loop so there's less garbage collection.
-    my ($subfield,$idsub,$xok,$yok,$xyok,$xid,$yid,$xyid);
+    my ($subfield,$subfield_ids,$xok,$yok,$xyok,$xid,$yid,$xyid); #didn't really help
     for my $fr(0..$#{$im_list})
     {
 	print "frame: $fr\n";
 	next unless (defined($im_list->[$fr]) && defined($id_list->[$fr]));
 
-	for my $id($ids_recon->list)
+	for my $id($ids_recon->list) #id is one of the ids to reconsider
 	{
 	    next unless any(pdl(keys %{$loci->[$fr]})==$id);
             ##the id to be reconsidered actually exists in this frame
@@ -217,23 +217,29 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 	    ($ymin,$ymax)=minmax(floor($loci->[$fr]->{$id}->pdl / $xsize));
 	    $subfield=$id_list->[$fr]->range([$xmin-1,$ymin-1],[$xmax-$xmin+2,$ymax-$ymin+2],'t');
             ##find out what other ids are in this subfield
-	    $idsub=$subfield->uniq;
-	    $sizes=zeroes($idsub);
+	    $subfield_ids=$subfield->uniq;
+	    $subfield_sizes=zeroes($subfield_ids);
 	    ##just loop over those
 
-	    for my $id_ok($idsub->list){
-		next unless $id_ok; ##don't do the zero background
-		next unless any($ok_id == $id_ok); 
-                ##sorry about the names--only consider it if it's not discarded itself
-                ##this also prevents the trivial case.
-		next unless (sign($summary($id_ok,$fr,(0)))==sign($summary($id,$fr,(0)))); ##only reassociate if it's the same sign
-		$pixarray=zeroes($subfield->dims,4);
-                ##set pixarray = 1 where the reconsidered id is
-		($xok,$yok)=whichND($subfield->abs==$id);
-		$xyok=cat($xok,$yok)->mv(-1,0);
-		$pixarray->indexND($xyok).=1;
+	    for my $id_in_sub($subfield_ids->list){
+		next unless ($id_in_sub || 
+			     any($ok_ids == $id_in_sub) || 
+			     (sign($summary($id_in_sub,$fr,(0)))==sign($summary($id,$fr,(0))))
+			     );
+#don't do the zero background. Only consider it if it's not discarded
+#itself (also prevents the trivial case). Only reassociate if it's the
+#same sign.
+#		next unless $id_in_sub;
+#		next unless any($ok_ids == $id_in_sub); 
+#		next unless (sign($summary($id_in_sub,$fr,(0)))==sign($summary($id,$fr,(0))));
+#		$pixarray=zeroes($subfield->dims,4);
+#set pixarray = 1 where the reconsidered id is
+#		($xok,$yok)=whichND($subfield->abs==$id);
+#		$xyok=cat($xok,$yok)->mv(-1,0);
+#		$pixarray->indexND($xyok).=1;
+		$pixarray=($subfield->abs==$id)->dummy(2,4)->sever;
 ##increment pixarray by 1 where the ok id is, but offset by 1 in each direction
-		($xid,$yid)=whichND($subfield==$id_ok);
+		($xid,$yid)=whichND($subfield==$id_in_sub);
 		$xyid=cat($xid,$yid,pdl(0))->mv(-1,0);
 		$pixarray->indexND($xyid+pdl(1,0,0),'t')+=1;
 		$pixarray->indexND($xyid+pdl(-1,0,1),'t')+=1;
@@ -242,14 +248,14 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 
                 ##if these ids touch, pixarray will be two somewhere
 		if (any($pixarray>1)){
-		    $sizes(which($idsub==$id_ok)).=$summary($id_ok,$fr,(1));
+		    $subfield_sizes(which($subfield_ids==$id_in_sub)).=$summary($id_in_sub,$fr,(1));
 		}
 	    }
             ##end loop over already ok ids to match to
             ##reassociate it with the largest one that it touches
-	    if (any($sizes))
+	    if (any($subfield_sizes))
 	    {
-	        my $idreassoc=$idsub(which($sizes==$sizes->max)->(0)); ##->(0) just in case two of same size
+	        my $idreassoc=$subfield_ids(which($subfield_sizes==$subfield_sizes->max)->(0)); ##->(0) just in case two of same size
 		$idreassoc=$idreassoc->((0));
 ##for some reason that doesn't need to be done with $id, but it's necessary here for accessing the keys of the $loci hashes
 
@@ -279,15 +285,15 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
     }##end loop over frames
 
 ##need to remake this because we might have (if $opt->{keep}) re-ok'd some features
-    $ok_id = which($frag_ok);
+    $ok_ids = which($frag_ok);
 
     # Generate forward and backward conversions for IDs.  The +1s are to 
     # make the new IDs starts at 1 not 0.
     my($a,$id_conv);
-    for $a(0..$ok_id->nelem-1) {
-	$id_conv->{$ok_id->at($a)} = $a+1;
+    for $a(0..$ok_ids->nelem-1) {
+	$id_conv->{$ok_ids->at($a)} = $a+1;
     }
-    my($newids) = xvals($ok_id)+1;
+    my($newids) = xvals($ok_ids)+1;
     
     # Compress all the IDs in the images.
     for $fr(0..$#{$im_list}) {
@@ -308,7 +314,7 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 	print "\n" if($opt->{verbose});
     }
     print "Copying summary...\n";
-    my($sum2) = $summary->(append(pdl(0),$ok_id),:,:)->copy;
+    my($sum2) = $summary->(append(pdl(0),$ok_ids),:,:)->copy;
     print "cleaning up...\n";
     undef $summary;
     print "$reassoc concentrations reassociated\n";
