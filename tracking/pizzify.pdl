@@ -1,0 +1,70 @@
+use PDL::NiceSlice;
+
+=head2 pizzify -- plot tracked movies.
+
+=for usage
+
+pizzify([$from_file_names],[$to_file_names],title_template,{pgwin_options},{plot_options})
+
+=for ref
+
+Given a collection of FITS files that contain tracked data, pizzify plots them using a variant of 
+Clare Parnell's "pizza plot" algorithm. The pgwin_options and plot_options are passed 
+directly to the corresponding routines; the title_template is a piece of perl code that 
+generates the title string for the plot.  The file name is in $fname and the file being 
+pizzified is in $image, in the context in which the title_template is executed.
+
+=cut
+
+sub pizzify {
+  my $from = shift;
+  my $to = shift;
+  my $title_template = shift;
+  my $pgwin_options = shift;
+  my $plot_options = shift;
+  my $raw_from = shift;
+
+  for my $i(0..$#$from) {
+    my $f_from = $from->[$i];
+    my $f_to = $to->[$i];
+
+    my $image = rfits($f_from);
+    my $w = pgwin(dev=>$f_to."/ppm",%{$pgwin_options});
+
+    my $raw_im = undef;
+
+    if($raw_from && $raw_from->[$i]) {
+     $raw_im =rfits( $raw_from->[$i], {hdrcpy=>1} )->clip(-20,20);
+     $image *= ($raw_im <=> 0);
+   }
+
+    my $im2 = floor($image->(:,:,*3)->copy);
+
+    $im2->sethdr($image->hdr_copy);
+
+    $rr = $im2->(:,:,((0)));
+    $gg = $im2->(:,:,((1)));
+    $bb = $im2->(:,:,((2)));
+
+    $rr .= floor( ($image<0)*( 0.25 + 0.7 * (0.5 * (1 + sin($image*34000))) )*255);
+    $gg .= floor( ($image!=0) * (0.25 + 0.4 * (0.5 * (1 + sin($image*54392+54))) )*255);
+    $bb .= floor( ($image>0) * (0.25 + 0.7 * (0.5 + (1 + sin($image*23233-103))))*255);
+
+    if(defined $raw_im) {
+      my $idx = whichND($gg==0);
+
+      $raw_im += 20;
+      $raw_im *= (255/40);
+
+      $im2->indexND($idx) .= $raw_im->indexND($idx);
+    }
+
+    $w->fits_rgbi($im2,{title=>eval $title_template, %$plot_options});
+    $w->close;
+  }
+}
+
+
+     
+      
+    
