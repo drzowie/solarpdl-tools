@@ -22,7 +22,7 @@ OPTIONS
 
 =over 3
 
-=item dir (default 'movie/')
+=item dir (default 'movie')
 
 directory in which to write the movie frames.  If it exists, all contents are removed.  If it does not exist, it is created.
 
@@ -60,25 +60,21 @@ Emergence, Fragmentation, Complex, Error]
 
 =item options (default {} )
 
-Any extra options to pass to fits_imag
+Any extra options to pass to fits_imag. Setting 'dr' or 'DrawWedge'
+will force drawing of the color table wedge (not implemented yet!).
 
 =item radius (default 20)
 
 Radius (in pixels) of the event circle
 
-=item id_frags (default 0)
+=item id_feats (default 0)
 
-Whether to label the concentrations or not.  Setting this to 1 will
-result in the features being labeled and possibly encircled.  The value of the
-contour option determines whether the encircling is done with an
-ellipse (fast, but not accurate) or with the boundary code (slow, but
-better), or not at all.
+Whether to label the features with their ID number or not.
 
 =item contour (default 0)
 
 Whether to draw a boundary around the features (2) or just use a
-circle (1), or not draw any delimiter at all (0).  This only works if
-id_frags is 1, otherwise nothing is drawn.
+circle (1), or not draw any delimiter at all (0).
 
 =item anti (default 1)
 
@@ -86,12 +82,39 @@ If greater than 1, divide the image size by this factor before
 producing the output image.  Also is an adjustment factor in character
 size of the feature ids.
 
+=item format (default 'ppm')
+
+The image format to output.  Currently accepted options are
+
+=over 2
+
+=item ppm
+
+Portable Pixmap
+
+=item vps
+
+Vertical Postscript
+
+=item vcps,cvps
+
+Vertical Color Postscript
+
+=item xw
+
+X-window
+
+=item xs
+
+Persistent X-window
+
+=back
+
 =back
 
 BUGS
 
-1) What is the correct syntax for the option 'option'?
-2) It would be nice to be able to use the contour option without the id_frags option.
+Implement the 'draw wedge' feature mentioned in the 'options' option.
 
 HISTORY
 
@@ -112,7 +135,8 @@ sub emergence_movie {
     
     $opt = {} unless defined($opt);
     
-    my $dir   = $opt->{dir} || "movie/";   # Dir for movies
+    my $dir   = $opt->{dir} || "movie";   # Dir for movies
+    $dir = $dir . "/" unless $dir=~m/\/$/;
     my $fname = $opt->{fname} || "frame";  # Frame name template
     my $size  = $opt->{size}  || [10,10];  # Frame size (inches)
     
@@ -126,7 +150,7 @@ sub emergence_movie {
     
     my $radius = $opt->{radius} || 20;    # Radius (in pixels) of marks
     
-    my $id_frags = $opt->{id_frags} || 0; # whether to label and circle each feature
+    my $id_feats = $opt->{id_feats} || 0; # whether to label and circle each feature
     my $contour = $opt->{contour} || 0;   # whether to circle each feature
     
     my $ap_color =   pdl(-0.3,0.3,0.6);   # Appearances are bluish
@@ -137,7 +161,17 @@ sub emergence_movie {
     my $err_color = pdl(0.2,-0.1,-0.1); # Errors are faint red
     
     my $anti_alias = $opt->{anti} || 1;
-    
+
+    my $format = $opt->{format} || 'ppm';
+    my %format_string = ('ppm'=>'ppm/ppm',
+			 'vps'=>'ps/vps',
+			 'vcps'=>'ps/vcps',
+			 'cvps'=>'ps/vcps',
+			 'xw'=>'xw',
+			 'xs'=>'xs',
+			 );
+    barf "Unsupported format option $format" unless defined $format_string{$format};
+
     my @colors = (zeroes(3), $ap_color, $em_color, $frag_color, $cmplx_color, $err_color);
     
     
@@ -154,10 +188,10 @@ sub emergence_movie {
     my $im;
 
     my $framename;
-    for $i(1..$#$data) {
+    for $i(0..$#$data) {
 	print "Frame $i...";
 #	my $w=pgwin('xw',size=>$size);
-	my $w = pgwin(dev=> $framename=sprintf("%s%s%3.3d.ps/vcps",$dir,$fname,$i),size=>$size);
+	my $w = pgwin(dev=> $framename=sprintf("%s%s%3.3d.%s",$dir,$fname,$i,$format_string{$format}),size=>$size);
 	# RGB-ify data and scale to [0,1].
 	$im = $data->[$i]->float->clip(@$range)->dummy(2,3)->copy;
 	$im->sethdr($data->[$i]->hdr_copy);
@@ -186,10 +220,10 @@ sub emergence_movie {
 
 	}
 
-	$w->fits_imag($im->clip(0.01,0.99),0,1,{j=>1,title=>sprintf("MDI Tracked Rgn %s",$im->hdr->{DATE_OBS},$i),dr=>0,charsize=>0.99,%$imag_options});
+	$w->fits_imag($im->clip(0.01,0.99),0,1,{j=>1,title=>sprintf("MDI Tracked Rgn %s %s",$im->hdr->{'DATE-OBS'},$im->hdr->{'TIME-OBS'}),dr=>0,charsize=>0.99,%$imag_options});
 	$w->hold;
 
-	if($id_frags || $contour) {
+	if($id_feats || $contour) {
 	    my $id;
 	    
 	    my $t = t_fits($im);
@@ -208,7 +242,7 @@ sub emergence_movie {
 		    $w->ellipse($xy->at(0),$xy->at(1),$r,$r,{fill=>2,color=>3});
 		}
 		
-		$w->text($id,$xy->at(0)+$r*1.05,$xy->at(1),{charsize=>0.67*$anti_alias,color=>3}) if $id_frags;
+		$w->text($id,$xy->at(0)+$r*1.05,$xy->at(1),{charsize=>0.67*$anti_alias,color=>3}) if $id_feats;
 		print ".";
 	    }
 	    
