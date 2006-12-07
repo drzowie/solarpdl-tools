@@ -220,14 +220,17 @@ sub frag_id {
 			my($im0) = $imp->($xmin:$xmax,$ymin:$ymax);
 			my($imd) = $imp->slice($slstr);
 			$new = ((($md * $id0) > 0) 	# New rgn exists and has same sign
-				& ($idd != $id0)	# New rgn isn't same as current
+	                        & ($idd==0));
+# Older discriminator allows older regions to paint over newer ones.  Wrong.
+#################		& ($idd != $id0)	# New rgn isn't same as current
 #################   & (($id0 * $im0) > ($idd * $md))
-				& ( (abs($imd) < abs($im0)) 
-				    & (abs($idd) < abs($id0) )) #New rgn has lower id no.
+#################	& ( (abs($imd) < abs($im0)) 
+#################     & (abs($idd) < abs($id0) )) #New rgn has lower id no.
 # |
 #			((abs($imd) == abs($im0)) & (abs($idd) < abs($id0)))
 #			)
-				);
+#                       );
+
 		    } else {
 			croak('Unknown method!');
 		    }
