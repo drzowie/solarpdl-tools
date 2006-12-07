@@ -69,7 +69,9 @@ Radius (in pixels) of the event circle
 
 =item id_feats (default 0)
 
-Whether to label the features with their ID number or not.
+Whether to label the features with their ID number or not.  If 1, put
+a text label next to the feature.  If 2, make a Pizza-plot (mask out
+the feature with a color unique to that feature.
 
 =item contour (default 0)
 
@@ -150,7 +152,7 @@ sub emergence_movie {
     
     my $radius = $opt->{radius} || 20;    # Radius (in pixels) of marks
     
-    my $id_feats = $opt->{id_feats} || 0; # whether to label and circle each feature
+    my $id_feats = $opt->{id_feats} || 0; # whether to label each feature
     my $contour = $opt->{contour} || 0;   # whether to circle each feature
     
     my $ap_color =   pdl(-0.3,0.3,0.6);   # Appearances are bluish
@@ -170,16 +172,14 @@ sub emergence_movie {
 			 'xw'=>'xw',
 			 'xs'=>'xs',
 			 );
+
     barf "Unsupported format option $format" unless defined $format_string{$format};
 
     my @colors = (zeroes(3), $ap_color, $em_color, $frag_color, $cmplx_color, $err_color);
     
-    
-    
     my $rr = rvals(2*$radius+1,2*$radius+1);
     my $cmask = $rr*$rr*$rr*($rr<=$radius);
     $cmask /= $cmask->max;
-    
     
     `rm -r $dir`;
     `mkdir $dir`;
@@ -190,7 +190,6 @@ sub emergence_movie {
     my $framename;
     for $i(0..$#$data) {
 	print "Frame $i...";
-#	my $w=pgwin('xw',size=>$size);
 	my $w = pgwin(dev=> $framename=sprintf("%s%s%3.3d.%s",$dir,$fname,$i,$format_string{$format}),size=>$size);
 	# RGB-ify data and scale to [0,1].
 	$im = $data->[$i]->float->clip(@$range)->dummy(2,3)->copy;
@@ -216,11 +215,9 @@ sub emergence_movie {
 	    my $imr = $im->range($grab-$radius,$radius*2+1,'t');
 	    
 	    $imr += $cmask * $colors[$h->at(1)]->(*1,*1) * pow($decay,$i+$pre-$h->at(0)) if($evmask->[$h->at(1)]) ;
-	    
-
 	}
-
-	$w->fits_imag($im->clip(0.01,0.99),0,1,{j=>1,title=>sprintf("MDI Tracked Rgn %s %s",$im->hdr->{'DATE-OBS'},$im->hdr->{'TIME-OBS'}),dr=>0,charsize=>0.99,%$imag_options});
+	my $title = sprintf("MDI Tracked Rgn %s %s",$im->hdr->{'DATE-OBS'},$im->hdr->{'TIME-OBS'});
+	$w->fits_imag($im->clip(0.01,0.99),0,1,{j=>1,title=>$title,dr=>0,charsize=>0.99,%$imag_options});
 	$w->hold;
 
 	if($id_feats || $contour) {
@@ -247,7 +244,7 @@ sub emergence_movie {
 	    }
 	    
 	    if($contour==2) {
-		$w->lines( $boundaries->apply($t),{color=>3});
+		$w->lines( $boundaries->apply($t),{color=>1});
 	    }
 	    
 	}
