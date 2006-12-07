@@ -5,6 +5,22 @@
 Given a fragment ID, a tab line and an id image, returns out outline
 (in pixel coordinates) of the associated fragment.
 
+OPTIONS
+
+=over 3
+
+=item b (default 5)
+
+looks like an allowed eccentricity or something
+
+=item color (default based on ID number)
+
+If you don't pass in a color, it will use a color based on the ID
+number of the feature.  There are only 12 colors available like this,
+so there's a chance of having some similar colors nearby.
+
+=back
+
 =cut
 
 use PDL::NiceSlice;
@@ -16,12 +32,12 @@ sub boundary {
   return null() unless($fragid);
 
   my $b = $opt->{b} || 5;
-  my $color = $opt->{color} || 3;
+  my $color = $opt->{color} || ($fragid%12 +2);
 
 ##might be better if we grabbed the lowest and highest x and y to get $subim
   my $radius = pdl(sqrt($tabline->(1)/3.14159)*$b)->ceil * 10;
   my $offset = $tabline->(2:3)->ceil-$radius;  
-##added a 'ceil' to avoid wierd fractions of numbers when adding at the end.
+##added a 'ceil' to avoid weird fractions of numbers when adding at the end.
 
   my $subim = $id->range($offset, $radius*2+1, 't')->sever->abs == abs($fragid);
   
