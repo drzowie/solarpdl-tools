@@ -16,8 +16,8 @@ sub pizzify {
   my $to = shift;
   my $raw_from = shift;
   my $raw_range = shift;
-  my $unsigned_ids;
-
+  my $unsigned_ids = shift;
+  print "pizzify: unsigned_ids=$unsigned_ids\n";
 #	$w=pgwin(xs);
   
   for my $i(0..$#$from) {
@@ -30,6 +30,7 @@ sub pizzify {
       my $raw_im = undef;
 
       if(defined $raw_from && defined $raw_from->[$i]) {
+	print "loading raw image....\n";
 	  $raw_from->[$i]->hdrcpy(1);	
 	  if(defined $raw_range) {
 	      $raw_in = $raw_from->[$i]->($raw_range->at(0,0):$raw_range->at(0,1),
@@ -37,7 +38,9 @@ sub pizzify {
 	  } else {
 	      $raw_in = $raw_from->[$i]->clip(-20,20);
 	  }
+
 	  if($unsigned_ids) {
+	    print "unsigned ids -- multiplying...\n";
 	      $image *= ($raw_in <=> 0);
 	  }
       }
