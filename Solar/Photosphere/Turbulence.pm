@@ -205,8 +205,8 @@ sub single_flow {
   my($vy) = $out->((1));
 
   my($v) = $strength / 3.14159 / $r;
-  $x *= $v / $r;
-  $y *= $v / $r;
+  $vx *= $v / $r;
+  $vy *= $v / $r;
   
   return $v;
 }
