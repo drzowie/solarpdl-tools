@@ -24,14 +24,14 @@ sub swamis{
     my $data = diskcache(\@datafiles,{ro=>1});
     my $mask = diskcache(\@maskfiles,{rw=>1});
     
-    $mask = frag_detect($data, {diag=>2,masks=>$mask,thresh=>[33,25]});
+    $mask = frag_detect($data, {diag=>2,masks=>$mask,thresh=>[6,8]});
 
 ### Set up and execute ID run
     my @idfiles   = map { ($a=$_)=~s/00-data/02-id/;   $a } @datafiles;
     `rm -rf 02-id; mkdir 02-id`;
     
     my $id = diskcache(\@idfiles,{rw=>1});
-    my $ids = frag_id($data,$mask,{method=>'downhill',diag=>1,ids=>$id});
+    my $ids = frag_id($data,$mask,{method=>'downhill',diag=>1,ids=>$id,verbose=>1});
     
 ### Set up and execute association run
     my @assocfiles = map { ($a=$_)=~s/00-data/03-assoc/;   $a } @datafiles;
@@ -45,11 +45,12 @@ sub swamis{
     `rm -rf 04-tab; mkdir 04-tab`;
     my $tab=diskcache(\@tabfiles,{rw=>1});
     
-    my $tabs = frag_tabulate($assoc,$data,{verbose=>1,tab=>$tab});
+    my $tabs = frag_tabulate($assoc,$data,{verbose=>1,tab=>$tab,sz_min=>4,t_min=>3,v_min=>12});
     wfits($tabs,'tabs.fits');
     (tied @$tab)->purge(-1);
-    
-    my $hist = frag_hist($tabs,$tab,{verbose=>1,sep=>5,ratio=>0.5});
+    my $tabs = rfits('tabs.fits');   
+    my $hist = frag_hist($tabs,$tab,$data,{verbose=>1,sep=>5,ratio=>0.5});
     $hist->wfits('hist.fits');
-   
+
+emergence_movie($hist,$tabs,$data,$tab,{dir=>'swamis_movie',size=>[6,6],range=>[-100,100],evmask=>[0,0,0,0,0,0],id_feats=>0,contour=>2,format=>'ppm'});   
 }
