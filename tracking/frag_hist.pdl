@@ -8,12 +8,14 @@ Generate history for feature ids.
 
 =for usage
 
-$hist = frag_hist($frag_detail, $frag_ids, { options })
+$hist = frag_hist($frag_detail, $frag_ids, $data, { options })
 
-$frag_detail is the output from frag_tabulate. This will be a list
-of unique ids with information on flux, size, and position.
-$frag_ids is the frag id of each pixel. This will be regularized by
-frag_tabulate.
+$frag_detail is the output from frag_tabulate. This will be a list of
+unique ids with information on flux, size, and position.  $frag_ids is
+an array ref or DiskCache object that contains the ID of each pixel in
+each frame (the output of frag_assoc, regularized by
+frag_tabulate). $data is an array ref or DiskCache object that
+contains the magnetograms that were tracked.
 
 $hist gets an Nx11 PDL that lists feature history versus ID (which is
 used as an index).  For each feature, the elements are:
@@ -89,18 +91,6 @@ OPTIONS
 
 =over 3
 
-=item a,b (default 1,4)
-
-radius for consideration for determining neighbors, measured in
-pixels. radius is given (a+br+sep) where a and b are variable coefficients
-and r is the radius (in pixels) of the feature if it were circular.
-'a' sets a minimum size for consideration; 'b' is
-an effective maximum eccentricity to consider -- e.g. b=1 only works
-if all features are circular, b=5 can work for features up to 5x
-longer than wide (but at a speed cost).  
-
-Features that are too eccentric don't get properly considered.
-
 =item sep (default 3)
 
 Maximum separation between two features for them to be considered 
@@ -145,16 +135,20 @@ Derek Lamb 05/02/05 Implemented death events
 
 Derek Lamb 06/01/05 more minor debugging
 
+Derek Lamb 01/11/07 Added pixel-overlap sensitivity to
+                    fragmentation/mergers
+
 =cut
 
 use strict;
 use PDL;
 use PDL::NiceSlice;
+use PDL::ImageND;
 
 sub frag_hist {
     my ($berr,$derr)=0;
 
-    my ($opt,$tabs,$ids) = find_opt(@_);
+    my ($opt,$tabs,$ids,$data) = find_opt(@_);
     
     my ($frag_ct, $frame_ct) = $tabs->dims;
     
@@ -188,8 +182,6 @@ sub frag_hist {
     ##############################
     ## Set up options
     
-    $opt->{a} = 1 unless defined ($opt->{a}); 
-    $opt->{b} = 4 unless defined ($opt->{b}); 
     $opt->{sep} = 3 unless defined($opt->{sep});
     $opt->{sep} = $opt->{sep}->at(0) if(UNIVERSAL::isa($opt->{sep},'PDL'));
     $opt->{pre} = 1 unless defined($opt->{pre});
@@ -197,10 +189,11 @@ sub frag_hist {
     $opt->{ratio} = 0.75 unless defined($opt->{ratio});
     barf "Ratio should be >= -1 and <= 1" if (abs($opt->{ratio}) > 1);
 
+    my $sep = $opt->{sep};
     my $pre = $opt->{pre};
     my $post = $opt->{post};
     
-    print "Separation is ".$opt->{sep}."\n" if($opt->{verbose});
+    print "Separation is ".$sep."\n" if($opt->{verbose});
     ##############################
     ## Set up variables
     ##
@@ -210,7 +203,7 @@ sub frag_hist {
     
     # The circmask is a precalculated circular mask for convolution to find
     # separation distances between features.
-    my $circmask = (rvals($opt->{sep}*2+1,$opt->{sep}*2+1)<=$opt->{sep});
+    my $circmask = (rvals($sep*2+1,$sep*2+1)<=$sep);
     
     ##############################
     ## Loop over features and characterize each one.
@@ -227,54 +220,52 @@ sub frag_hist {
 ##
 #################################################
 #################################################	
-	
+	my $bframe = $h->at(0);
 	$h->(1:2) .= -1; # Default is ERROR.
 	print "-";
 	##########
 	# SURVIVAL: easiest to check.
-	if( $h->(0) == 0 ) {  
+	if( $bframe == 0 ) {  
 	    $h->(1:2) .= 0;  # SURVIVAL
 	    print "S" if($opt->{verbose});
 	    
-	} elsif ( $h->(0) <= $frame_ct-2 ) {  ##don't look at any born in the last frame
+	} elsif ( $bframe <= $frame_ct-2 ) {  ##don't look at any born in the last frame
 	    
 	    ##########
 	    # All other cases are a little harder.  
 	    # Do some legwork to assemble an interaction chart.
 	    
-	    print " ".$h->(0)." " if($opt->{verbose} > 1);
-	    my $t = $tabs->(($i),($h->(0)) );
+	    print " ".$bframe." " if($opt->{verbose} > 1);
+	    my $t = $tabs->(($i),($bframe) );
 	    
 	    ##########
 	    # Calculate radius to consider.  $r is the calculated radius of the
 	    # current feature if it were circular.  $radius is assembled from 
 	    # the a and b coefficients, and the allowed separation.
 	    
-	    my $r = floor(sqrt($t->((1))/3.14159)+1);
-	    my $radius = $opt->{a} + $r*$opt->{b} + $opt->{sep};
-	    print "radius=$radius   " if($opt->{verbose});
-	    
+	    my $coords2D = whichND($ids->[$bframe] == $i);
+	    my ($minX,$maxX) = $coords2D((0))->minmax;
+	    my ($minY,$maxY) = $coords2D((1))->minmax;
+
 	    ##########
 	    ## Find pixels of interest for this feature...
 	    ## cut out the relevant portion of the ID image with range, 
 	    ## mask it to find the equal pixels, then convolve the mask 
 	    ## with the circmask to expand it.
 	    
-	    print "  start frame is ".$h->(0)."; \$t->"."(2:3) is ".$t->(2:3)."   " if($opt->{verbose} > 2);
+	    print "  start frame is ".$bframe."; \$t->"."(2:3) is ".$t->(2:3)."   " if($opt->{verbose} > 2);
 	    
-	    my $mask = (( $ids->[$h->at(0)]->range($t->(2:3)->floor-$radius, $radius*2+1,'t')
-			  == $i )->convolveND($circmask) != 0);
-	    
-	    print ("\nrange:".($ids->[$h->at(0)]->range($t->(2:3)->floor- $radius,$radius*2+1,'t')->abs)."\nmask:".$mask."\n") if($opt->{verbose}>3);
-	    
-	    ############
+	    my $mask = (($ids->[$bframe]->range([$minX-$sep,$minY-$sep],[$maxX-$minX+1+2*$sep,$maxY-$minY+1+2*$sep],'t')
+			 == $i)->convolveND($circmask) !=0);
+
+  	    ############
 	    ## Find interacting features for surrounding frames.
 	    ## For each frame, pull out the relevant range and multiply by
 	    ## the localization mask.  Frames vary from current frame minus $pre
 	    ## to current frame plus $pre, clipped to stay in range.
 	    my @vicinity = 
-		map { $ids->[$_]->range($t->(2:3)-$radius,$radius*2+1,'t') * $mask }
-	    (($h->(0) + $frame_offsets)->clip(0,$frame_ct-1)->list);
+		map { $ids->[$_]->range([$minX - $sep,$minY - $sep],[$maxX-$minX+1+2*$sep,$maxY-$minY+1+2*$sep],'t') * $mask}
+	    (($bframe + $frame_offsets)->clip(0,$frame_ct-1)->list);
 	    print "::";
 	    
 	    
@@ -306,46 +297,73 @@ sub frag_hist {
 		my @em=();
 		my @fr=();
 		
-		for $j(0..$#interactions) {
+BIRTH_INT:	for $j(0..$#interactions) {
 		    my $other = $interactions[$j];
 		    barf "Non-valid birth interaction number $other, $j" if($other >= $tabs->dim(0));
 		    print "\nother=$other  " if($opt->{verbose}>1);
 		    my $sign = 1 - ($t->((0)) * $tabs->(($other),($starts->($other)),(0))<0)*2;
-##$sign is 1 if "this" and "other" are the same sign, -1 if different.
+#$sign is 1 if "this" and "other" are the same sign, -1 if different.
 		    
 		    print "flux: ".$t->((0))->long."; other: ".$tabs->(($other),($starts->($other)),(0))->long."; sign is $sign\t" if($opt->{verbose} > 1);
 		    
-		    my $starting = ( ($starts->($other) <= $h->(0) + $post) &&
-				     ($starts->($other) >= $h->(0) - $pre)
-				     )->at(0);
-		    my $ending=( ($ends->($other) <= $h->(0) + $post) &&
-				 ($ends->($other) >= $h->(0) - $pre)
-				 )->at(0);
+#		    my $starting = ( ($starts->($other) <= $bframe + $post) &&
+#				     ($starts->($other) >= $bframe - $pre)
+#				     )->at(0);
+#		    my $ending=( ($ends->($other) <= $bframe + $post) &&
+#				 ($ends->($other) >= $bframe - $pre)
+#				 )->at(0);
 
-##$starting ($ending)isn't used anywhere!  It is a boolean that answers "Does $other start (end) in the frame range we're considering?"  We probably need to use this somewhere, especially if the frame range is large.  On the other hand it's not clear yet exactly how to properly handle a larger frame range.
-    
-##this is where all the origin decision-making takes place
-##df_other is backwards to account for polarity & flux conservation
-##no need to subtract on df_this as flux was 0 at beginning
-##needed to take into account what happens if other/this >1.  Otherwise other/this = 10/2 = 5 was considered consistent, when really it should have been 0.2.
+#$starting ($ending)isn't used anywhere!  It is a boolean that answers
+#"Does $other start (end) in the frame range we're considering?"  We
+#probably need to use this somewhere, especially if the frame range is
+#large.  On the other hand it's not clear yet exactly how to properly
+#handle a larger frame range.
 
-		    my $df_other = $tabs->(($other),(pdl($h->((0))-$pre ,    0      )->max),(0)) - 
-			           $tabs->(($other),(pdl($h->((0))+$post,$frame_ct-1)->min),(0)) ;
-    		    my $df_this = $tabs->(($i),(pdl($h->((0))+$post,$frame_ct-1)->min),(0));
+#This is where all the origin decision-making takes place.
+#df_other is backwards to account for polarity & flux conservation.
+#No need to subtract on df_this as flux was 0 at beginning.
+#Needed to take into account what happens if other/this >1.  Otherwise
+#other/this = 10/2 = 5 was considered consistent, when really it
+#should have been 0.2.
+
+		    my $df_other = $tabs->(($other),(pdl($bframe-$pre ,    0      )->max),(0)) - 
+			           $tabs->(($other),(pdl($bframe+$post,$frame_ct-1)->min),(0)) ;
+    		    my $df_this = $tabs->(($i),(pdl($bframe+$post,$frame_ct-1)->min),(0));
 		    my $ratio=pdl($df_other/$df_this,$df_this/$df_other)->min;
-		    my $consistent;
+		    my ($consistent,$pixel_consistent);
+
+# a new kind of consistency check: of the pixels that are in the new
+# feature in this frame, does most of the flux that was in those
+# pixels in the previous frame belong to another feature?  If so, we
+# consider this to be a fragmentation.  $other is the other ids;
+# $bframe is the current frame; $i is this id;
+
+		    my $other_prev_flux = $data->[$bframe - $pre]->where(($ids->[$bframe] == $i) & ($ids->[$bframe-$pre] == $other))->sum;
+		    print "opf: $other_prev_flux\t" if ($opt->{verbose}>2);		    
+		    my $pixel_ratio = pdl($other_prev_flux / $tabs->(($i),(pdl($bframe)),(0)),$tabs->(($i),(pdl($bframe)),(0))/$other_prev_flux)->min;
+		    print "pr: $pixel_ratio " if ($opt->{verbose}>2);
 
 		    if ($opt->{ratio}>=0 || $ratio>0){ ##works when we have approximate conservation, whether or not it is required.
-			$consistent = ( $ratio   >=   $opt->{ratio} ); 
+			$consistent = ( $ratio   >=   $opt->{ratio} );
+			$pixel_consistent = ($pixel_ratio >= $opt->{ratio});
 		    }
 		    elsif($ratio<0){ ##works when we don't have conservation, if it isn't required.
 			$consistent = ( 1/$ratio >=   $opt->{ratio} );
+			$pixel_consistent = (1/$pixel_ratio >= $opt->{ratio});
 		    }
 		    else{ ##should never get here
 			barf "Birth consistency check failed for this=$i, other=$other";
 		    }
 
-		    print "df_this:  ".$df_this->long."  df_other: ".$df_other->long."  consistent: $consistent     " if($opt->{verbose} > 1);
+		    print "df_this:  ".$df_this->long."  df_other: ".$df_other->long."  consistent: $consistent\t" if($opt->{verbose} > 1);
+
+		    if ($sign > 0 && $pixel_consistent){
+                    #its a fragmentation--end of story
+			@em = (); @fr = ();
+			push(@fr,$other);
+			print "\tFrag by pixels\t" if ($opt->{verbose}>2);
+			last BIRTH_INT;
+		    }
 
 		    if($sign < 0 && $consistent) {
 			push(@em, $interactions[$j]);
@@ -353,8 +371,10 @@ sub frag_hist {
 			push(@fr, $interactions[$j]);
 		    }
 		} ##end loop over birth interactions
-		
-##so now @em and @fr contain the ids of those features that consistently interacted with $i to result in an emergence or fragmentation
+
+#so now @em and @fr contain the ids of those features that
+#consistently interacted with $i to result in an emergence or
+#fragmentation
 		
 		if(@em && @fr) {
 		    $h->(1:2) .= pdl(4,-1);
@@ -382,30 +402,29 @@ sub frag_hist {
 ##
 #################################################
 #################################################
-	
+	my $dframe = $h->at(3);
 	$h->(4:5) .=-1; 
 	
-	if( $h->(3) == $frame_ct-1 ) { 
+	if( $dframe == $frame_ct-1 ) { 
 	    $h->(4:5) .= 0;
 	    print "S" if($opt->{verbose});
-	} elsif ($h->(3) >= 1){ ##don't look at any dying in the 0th frame.
+	} elsif ($dframe >= 1){ ##don't look at any dying in the 0th frame.
 	    
-	    my $t=$tabs->(($i),($h->(3)) );
+	    print " ".$dframe." " if($opt->{verbose} > 1);
+	    my $t=$tabs->(($i),($dframe));
 	    
-	    my $r=floor(sqrt($t->((1))/3.14159)+1);
-	    my $radius = $opt->{a} + $r*$opt->{b} + $opt->{sep};
-	    print "radius=$radius\t" if($opt->{verbose});
+	    my $coords2D = whichND($ids->[$dframe] == $i);
+	    my ($minX,$maxX) = $coords2D((0))->minmax;
+	    my ($minY,$maxY) = $coords2D((1))->minmax;
+
+	    print "  end frame is ".$dframe."; \$t->"."(2:3) is ".$t->(2:3)."   " if($opt->{verbose} > 2);
 	    
-	    print "  end frame is ".$h->(3)."; \$t->"."(2:3) is ".$t->(2:3)."   " if($opt->{verbose} > 2);
-	    
-	    my $mask = (( $ids->[$h->at(3)]->range($t->(2:3)->floor-$radius, $radius*2+1,'t')
-			  == $i )->convolveND($circmask) != 0);
-	    
-	    print ("\nrange:".($ids->[$h->at(3)]->range($t->(2:3)->floor- $radius,$radius*2+1,'t')->abs)."\nmask:".$mask."\n") if($opt->{verbose}>3);
-	    
+	    my $mask = (($ids->[$dframe]->range([$minX-$sep,$minY-$sep],[$maxX-$minX+1+2*$sep,$maxY-$minY+1+2*$sep],'t')
+			 == $i)->convolveND($circmask) !=0);
+
 	    my @vicinity = 
-		map { $ids->[$_]->range($t->(2:3)-$radius,$radius*2+1,'t') * $mask }
-	    (($h->(3) + $frame_offsets)->clip(0,$frame_ct-1)->list);
+		map{ $ids->[$_]->range([$minX-$sep,$minY-$sep],[$maxX-$minX+1+2*$sep,$maxY-$minY+1+2*$sep],'t') * $mask}
+	    (($dframe + $frame_offsets)->clip(0,$frame_ct-1)->list);
 	    print "::";
 	    
 	    my $interactions = zeroes(1)->
@@ -427,7 +446,7 @@ sub frag_hist {
 		my @ca=();
 		my @mg=();
 		
-		for $j(0..$#interactions) {
+DEATH_INT:	for $j(0..$#interactions) {
 		    my $other = $interactions[$j];
 		    barf "Non-valid interaction number $other, $j" if($other >= $tabs->dim(0));
 		    print "\nother=$other " if($opt->{verbose});
@@ -441,20 +460,34 @@ sub frag_hist {
 		    
 		    my $df_this = $tabs->(($i),(pdl($h->((3))-$pre,0)->max),(0));
 		    my $ratio=pdl($df_other/$df_this,$df_this/$df_other)->min;
-		    my $consistent;
+		    my ($consistent,$pixel_consistent);
+
+		    my $other_prev_flux = $data->[$dframe + $post]->where(($ids->[$dframe] == $i) & ($ids->[$dframe+$post] == $other))->sum;
+		    print "opf: $other_prev_flux\t" if ($opt->{verbose}>2);
+		    my $pixel_ratio = pdl($other_prev_flux / $tabs->(($i),(pdl($dframe)),(0)),$tabs->(($i),(pdl($bframe)),(0))/$other_prev_flux)->min;
+		    print "pr: $pixel_ratio " if ($opt->{verbose}>2);
 
 		    if ($opt->{ratio}>=0 || $ratio>=0){
 			$consistent = ( $ratio >= $opt->{ratio} );
+			$pixel_consistent = ($pixel_ratio >= $opt->{ratio});
 		    }
 		    elsif($ratio<0){
 			$consistent = (1/$ratio >= $opt->{ratio} );
+			$pixel_consistent = (1/$pixel_ratio >= $opt->{ratio});
 		    }
 		    else{
 			barf "Death consistency check failed for this=$i, other=$other";
 		    }
 
-		    print "df_this:  ".$df_this->long."  df_other: ".$df_other->long."  consistent: $consistent     " if($opt->{verbose} > 1);
-		    
+		    print "df_this:  ".$df_this->long."  df_other: ".$df_other->long."  consistent: $consistent\t" if($opt->{verbose} > 1);
+
+		    if ($sign > 0 && $pixel_consistent){
+			@ca = (); @mg = ();
+		    push(@mg,$other);
+			print "\tMerge by pixels\t" if ($opt->{verbose}>2);
+			last DEATH_INT;
+		    }		    
+
 		    if($sign < 0 && $consistent) {
 			push(@ca,$interactions[$j]);
 		    } elsif( $sign >0 && $consistent ) {
@@ -484,6 +517,6 @@ sub frag_hist {
     print "\nberr: $berr\t derr: $derr\n";
 
 ##put the options in the header for saving when writing out as a FITS file
-    $hist->hdr->{OPT}=$opt;
+    $hist->sethdr($opt);
     return $hist;
 }
