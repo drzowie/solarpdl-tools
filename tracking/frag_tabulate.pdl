@@ -93,7 +93,7 @@ sub frag_tabulate {
     ##############################
     ## Allocate the features table
     
-    my($maxfrag) = abs($id_list->[-1])->max;  
+    my($maxfrag) = $id_list->[-1]->abs->max;  
     my($summary) = zeroes($maxfrag+1,scalar(@{$id_list}),4);
 ##summary is indexed by (feature number, frame number, (flux, size, centroid x, centroid y)) 
    
@@ -107,8 +107,7 @@ sub frag_tabulate {
     ##############################
     ## Loop over frames and accumulate data.
 
-    my($fr);
-    for $fr(0..$#{$im_list}){
+    for my $fr(0..$#{$im_list}){
 	next unless (defined($im_list->[$fr]) && defined($id_list->[$fr]));
 	
 	print "(1) summarizing f$fr: \n" if($opt->{verbose});
@@ -141,7 +140,7 @@ sub frag_tabulate {
 	    my($centroid) = sumover($locus * $val) / $flux;
 	    
 ##put in a check: if id is bigger than maxfrag, then we need to append a slice to summary. This is an issue if the largest id number in the data set isn't alive in the last frame (i.e., very rarely).
-	    
+
 	    $summary=$summary->append(zeroes(1,scalar(@{$id_list}),4)) if ($id>$maxfrag);
 	    $summary->(($id),($fr),:) .= $flux->append($size)->append($centroid);
 	    
@@ -194,7 +193,7 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
     my $reassoc = 0;
     my $frag_recon = !$frag_ok;
     my $ids_recon = which($frag_recon); 
-    print "reconsidering",$ids_recon->nelem,"ids.\n" if $opt->{verbose};
+    print "reconsidering ",$ids_recon->nelem," ids.\n" if $opt->{verbose};
     my $loci_recon=[];
     my $xsize=$im_list->[0]->dim(0);
     my ($xmin,$xmax,$ymin,$ymax,$pixarray,$subfield_sizes);
@@ -220,11 +219,11 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 	    $subfield_ids=$subfield->uniq;
 	    $subfield_sizes=zeroes($subfield_ids);
 	    ##just loop over those
-
+	    print "ids in subfield: $subfield_ids\n" if $opt->{verbose};
 	    for my $id_in_sub($subfield_ids->list){
 		next unless ($id_in_sub || 
-			     any($ok_ids == $id_in_sub) || 
-			     (sign($summary($id_in_sub,$fr,(0)))==sign($summary($id,$fr,(0))))
+			     any($ok_ids == abs($id_in_sub)) || 
+			     (sign($summary(abs($id_in_sub),$fr,(0)))==sign($summary($id,$fr,(0))))
 			     );
 #don't do the zero background. Only consider it if it's not discarded
 #itself (also prevents the trivial case). Only reassociate if it's the
@@ -248,7 +247,7 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 
                 ##if these ids touch, pixarray will be two somewhere
 		if (any($pixarray>1)){
-		    $subfield_sizes(which($subfield_ids==$id_in_sub)).=$summary($id_in_sub,$fr,(1));
+		    $subfield_sizes(which($subfield_ids==$id_in_sub)).=$summary(abs($id_in_sub),$fr,(1));
 		}
 	    }
             ##end loop over already ok ids to match to
@@ -256,12 +255,14 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 	    if (any($subfield_sizes))
 	    {
 	        my $idreassoc=$subfield_ids(which($subfield_sizes==$subfield_sizes->max)->(0)); ##->(0) just in case two of same size
-		$idreassoc=$idreassoc->((0));
+		$idreassoc=abs($idreassoc->((0)));
 ##for some reason that doesn't need to be done with $id, but it's necessary here for accessing the keys of the $loci hashes
-
+		print "idr: $idreassoc" if $opt->{verbose};
 		$loci->[$fr]->{$idreassoc}=$loci->[$fr]->{$idreassoc}->append($loci->[$fr]->{$id});
-		$summary(($idreassoc),($fr),(0))+=$summary(($id),($fr),(0));
-		$summary(($idreassoc),($fr),(1))+=$summary(($id),($fr),(1));
+
+		$summary(($idreassoc),($fr),0:1)+=$summary(($id),($fr),0:1);
+#		$summary(($idreassoc),($fr),(0))+=$summary(($id),($fr),(0));
+#		$summary(($idreassoc),($fr),(1))+=$summary(($id),($fr),(1));
 
 ## redo the center of gravity calculation
 		my $locus=cat($loci->[$fr]->{$idreassoc}%$xsize,floor($loci->[$fr]->{$idreassoc}/$xsize));
@@ -269,11 +270,13 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 		my $val=index($im_list->[$fr]->flat,$loci->[$fr]->{$idreassoc});
 
 		my $centroid=sumover($locus*$val)/$summary(($idreassoc),($fr),(0));
-		$summary(($idreassoc),($fr),(2)).=$centroid((0));
-		$summary(($idreassoc),($fr),(3)).=$centroid((1));
+		$summary(($idreassoc),($fr),2:3).=$centroid;
+
+#		$summary(($idreassoc),($fr),(2)).=$centroid((0));
+#		$summary(($idreassoc),($fr),(3)).=$centroid((1));
 
 		$reassoc++;
-		print "found",$reassoc,"to reassociate\n" if $opt->{verbose};
+		print "found ",$reassoc," to reassociate\n" if $opt->{verbose};
 	    }
 	    elsif ($opt->{keep}){
 		print "Keeping $id anyway\n" if $opt->{verbose};
@@ -296,12 +299,12 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
     my($newids) = xvals($ok_ids)+1;
     
     # Compress all the IDs in the images.
-    for $fr(0..$#{$im_list}) {
+    for my $fr(0..$#{$im_list}) {
 	print "(2) crunching f$fr: " if($opt->{verbose});
 	my $idmap = zeroes(abs($id_list->[0]));
 	my $floci = $loci->[$fr];
 	
-	print scalar(keys %{$floci}),"ids, of which",sum($frag_ok->(pdl(keys %{$floci})))," are OK " if($opt->{verbose});
+	print scalar(keys %{$floci})," ids, of which ",sum($frag_ok->(pdl(keys %{$floci})))," are OK " if($opt->{verbose});
 	
 	my($n) = 0;
 	for my $old_id(keys %{$floci}) {
