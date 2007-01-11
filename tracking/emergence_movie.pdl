@@ -169,8 +169,8 @@ sub emergence_movie {
 			 'vps'=>'ps/vps',
 			 'vcps'=>'ps/vcps',
 			 'cvps'=>'ps/vcps',
-			 'xw'=>'xw',
-			 'xs'=>'xs',
+			 'xw'=>'/xw',
+			 'xs'=>'/xs',
 			 );
 
     barf "Unsupported format option $format" unless defined $format_string{$format};
@@ -190,7 +190,9 @@ sub emergence_movie {
     my $framename;
     for $i(0..$#$data) {
 	print "Frame $i...";
-	my $w = pgwin(dev=> $framename=sprintf("%s%s%3.3d.%s",$dir,$fname,$i,$format_string{$format}),size=>$size);
+	$framename=sprintf("%s%s%3.3d.%s",$dir,$fname,$i,$format_string{$format});
+	$framename = $format_string{$format} if ($format_string{$format}=~m/xs|xw/);
+	my $w = pgwin(dev=>$framename,size=>$size);
 	# RGB-ify data and scale to [0,1].
 	$im = $data->[$i]->float->clip(@$range)->dummy(2,3)->copy;
 	$im->sethdr($data->[$i]->hdr_copy);
@@ -249,10 +251,10 @@ sub emergence_movie {
 	    
 	}
 	$w->close;
-	if($anti_alias > 1) {
-	    $im = rim($framename);
-	    $im = $im->match([(pdl($im->dims)/$anti_alias)->short->list],{method=>'h'});
-	    wim($im,$framename);
-	}
+#	if($anti_alias > 1) {
+#	    $im = rim($framename);
+#	    $im = $im->match([(pdl($im->dims)/$anti_alias)->short->list],{method=>'h'});
+#	    wim($im,$framename);
+#	}
     } # frame loop
 }
