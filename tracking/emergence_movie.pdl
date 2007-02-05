@@ -124,6 +124,8 @@ Craig DeForest May 2004--original code
 
 Derek Lamb April 2005--bug finding and fixing, added documentation
 
+Derek Lamb January 2007--colorfied the contours. Implemented 'start' option
+
 =cut
 
 use Carp;
@@ -203,20 +205,22 @@ sub emergence_movie {
 	print "...";
 	##############################
 	# Identify start events and locations
-	my $st = which(($hist->(:,(0)) >= $i-$post) & ($hist->(:,(0)) <= $i+$pre));
-	print " ".$st->nelem." events...";
-	my $event;
-	foreach $event($st->list) {
-	    
-	    my $h = $hist->(($event));
-	    next unless( $evmask->[$h->at(1)]);
-	    
+	if ($i>=$start){
+	    my $st = which(($hist->(:,(0)) >= $i-$post) & ($hist->(:,(0)) <= $i+$pre));
+	    print " ".$st->nelem." events...";
+	    my $event;
+	    foreach $event($st->list) {
+		
+		my $h = $hist->(($event));
+		next unless( $evmask->[$h->at(1)]);
+		
 #     my $grab = ($i<$h->(0)?$h->(7:8):$tabs->(($event),($i),2:3));
-	    my $grab = $h->(7:8);
-
-	    my $imr = $im->range($grab-$radius,$radius*2+1,'t');
-	    
-	    $imr += $cmask * $colors[$h->at(1)]->(*1,*1) * pow($decay,$i+$pre-$h->at(0)) if($evmask->[$h->at(1)]) ;
+		my $grab = $h->(7:8);
+		
+		my $imr = $im->range($grab-$radius,$radius*2+1,'t');
+		
+		$imr += $cmask * $colors[$h->at(1)]->(*1,*1) * pow($decay,$i+$pre-$h->at(0)) if($evmask->[$h->at(1)]) ;
+	    }
 	}
 	my $title = sprintf("MDI Tracked Rgn %s %s",$im->hdr->{'DATE-OBS'},$im->hdr->{'TIME-OBS'});
 	$w->fits_imag($im->clip(0.01,0.99),0,1,{j=>1,title=>$title,dr=>0,charsize=>0.99,%$imag_options});
@@ -226,7 +230,7 @@ sub emergence_movie {
 	    my $id;
 	    
 	    my $t = t_fits($im);
-	    
+#	    my $t = t_identity();	    
 	    my($boundaries)=zeroes(3,1);
 	    
 	    for $id(which($tabs->(:,($i),((0))))->list) {
