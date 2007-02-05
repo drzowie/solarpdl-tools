@@ -116,6 +116,10 @@ Number of frames before (after) a birth/death in which to look for an
 interaction.  Note that this only looks in the frame +post, -pre (not in any
 intermediate frames).
 
+=item verbose
+
+Chat.
+
 =back
 
 BUGS
@@ -339,8 +343,9 @@ BIRTH_INT:	for $j(0..$#interactions) {
 # $bframe is the current frame; $i is this id;
 
 		    my $other_prev_flux = $data->[$bframe - $pre]->where(($ids->[$bframe] == $i) & ($ids->[$bframe-$pre] == $other))->sum;
-		    print "opf: $other_prev_flux\t" if ($opt->{verbose}>2);		    
-		    my $pixel_ratio = pdl($other_prev_flux / $tabs->(($i),(pdl($bframe)),(0)),$tabs->(($i),(pdl($bframe)),(0))/$other_prev_flux)->min;
+		    print "opf: $other_prev_flux\t" if ($opt->{verbose}>2);
+		    my $this_birth_flux = $tabs->(($i),($bframe),(0));		    
+		    my $pixel_ratio = pdl($other_prev_flux / $this_birth_flux,$this_birth_flux/$other_prev_flux)->min;
 		    print "pr: $pixel_ratio " if ($opt->{verbose}>2);
 
 		    if ($opt->{ratio}>=0 || $ratio>0){ ##works when we have approximate conservation, whether or not it is required.
@@ -464,7 +469,8 @@ DEATH_INT:	for $j(0..$#interactions) {
 
 		    my $other_prev_flux = $data->[$dframe + $post]->where(($ids->[$dframe] == $i) & ($ids->[$dframe+$post] == $other))->sum;
 		    print "opf: $other_prev_flux\t" if ($opt->{verbose}>2);
-		    my $pixel_ratio = pdl($other_prev_flux / $tabs->(($i),(pdl($dframe)),(0)),$tabs->(($i),(pdl($bframe)),(0))/$other_prev_flux)->min;
+		    my $this_death_flux = $tabs->(($i),($dframe),(0));
+		    my $pixel_ratio = pdl($other_prev_flux / $this_death_flux,$this_death_flux/$other_prev_flux)->min;
 		    print "pr: $pixel_ratio " if ($opt->{verbose}>2);
 
 		    if ($opt->{ratio}>=0 || $ratio>=0){
@@ -513,6 +519,7 @@ DEATH_INT:	for $j(0..$#interactions) {
 	    } ##end 'else' block to determine cancellation and merging
 	} ##end 'elsif' block to determine ALL death events
 	print "\n\n" if($opt->{verbose});
+
     } #end feature loop
     print "\nberr: $berr\t derr: $derr\n";
 
