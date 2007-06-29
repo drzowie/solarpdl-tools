@@ -76,12 +76,15 @@ This $origin_lonlat is
 
 use PDL::Transform::Cartography;
 use strict;
-use Carp;
+use PDL::Bad;
 sub dr_mean {
+
   my($list,$time,$fwhm,$opt) = @_;
   
+#  barf("dr_mean requires bad values\n") unless $PDL::Bad::Status;
+    
   barf("dr_mean needs an output header...\n")
-    unless defined($opt->{hdr}); ##so hdr really is not an option
+	unless defined($opt->{hdr}); ##so hdr really is not an option
 
   print "date2int...";
   $time = date2int($time);
@@ -147,7 +150,9 @@ sub dr_mean {
 
 
     print "(method=".($opt->{method}||'g').")...";
+    $FOO::im = $im;
     $im->hdrcpy(1);
+    $FOO::hdr = $opt->{hdr};
     my $goodmask = isgood($im);
     $im = badmask($im,zeroes($im));
     $goodmask->sethdr($im->gethdr);
