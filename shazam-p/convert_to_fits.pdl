@@ -1,0 +1,70 @@
+=head2 convert_to_fits
+
+Given a list of SHAZAM filenames (minus suffix), read in each one and
+its associated headers, and convert it to a FITS file.  Report on what
+you are doing.
+
+For now, leaves the old files behind -- once debugged, it should delete them.
+
+=cut
+
+use PDL::IO::FastRaw;
+
+
+sub convert_to_fits { 
+    my @list = @_;
+    
+    # hakkity hack - key CAMERA off of the IP address of the current
+    # computer.  Run this on the camera computer that made the data!
+    $hosts = {
+	'hermes' => 'B / hermes',
+	'gabriel' => 'A / gabriel',
+	'default' => 'Unknown (%s)'
+	};
+    $h = `hostname -s`;
+    chomp $h;
+    $host = $hosts->{$h} || sprintf($hosts->{default},$h);
+    
+    
+    foreach $f(@list) {
+	$ok = 1;
+	unless(-e "$f.raw") {
+	    print "*** Couldn't find the raw file for $f\n";
+	    next;
+	}
+
+	
+	$pdl = readfraw("$f.raw");
+	open FOO,"<$f.fhdr";
+	@a = <FOO>;
+	map { chomp; s/\\n/\n/g } @a;
+	@b = map { split /\n/ } @a;
+	map { chomp; } @b;
+	map { s/\s*([a-zA-Z0-9\-\_]*) ?\=\> ?(.*)$/\'$1\' \=\> \'$2\'/ } @b;
+	$s = "\$z= { " . join(",",@b) . "}";
+	$hdr = eval $s;
+	if(ref($hdr) eq 'HASH') {
+	    for $k(keys %$hdr) {
+		$pdl->fhdr->{$k} = $hdr->{$k};
+	    }
+
+	    $pdl->fhdr->{'CAMERA'} = $host;
+
+	} else {
+	    print "*** $f: NO HEADER -- writing anyway\n";
+	    print "ref($hdr) is ".ref($hdr)."\n";
+	    print "hdr is $hdr\n";
+	    print "s is $s\n";
+	    $ok = 0;
+	}
+	wfits($pdl,"$f.fits");
+	print "$f.fits\n";
+	if($ok) {
+	    unlink "$f.raw";
+	    unlink "$f.raw.hdr";
+	    unlink "$f.fhdr";
+	}
+    }
+}
+	
+	
