@@ -1,0 +1,16 @@
+=head2 flatten - given a raw image and a flat-field fit PDL, return the flattened image.
+
+=cut
+
+sub flatten {
+    my $flat = shift;
+    my $image = shift;
+    my $acc = ones($image);
+    my $out = zeroes($image);
+    for my $i(0..$flat->dim(0)-1) {
+	$out += $acc * $flat->(($i));
+	$acc *= $image unless($i==$flat->dim(0)-1);
+    }
+    return $out;
+}
+    

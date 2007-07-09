@@ -14,33 +14,60 @@ Pixels with a normalized brightness less than 0.2 of the
 
 =cut
 
+use PDL::Fit::Polynomial;
+
 sub gen_flat {
     my $flatdir = shift;
-    
-    my $nd0dir = "$flatdir/nd=0.0";
-    my $dkdir  = "$flatdir/nd=inf";
-    
-     @nd0files = <$nd0dir/*>;
-     @dkfiles = <$dkdir/*>;
-    
+    my $order_of_fit = shift || 2; # default to linear
+
+    @densities = ('inf','0.9','0.6','0.3','0.0');
+    @dirs = map { "$flatdir/nd=$_" } @densities;
+
+    # Magic numbers to deal with reflections off the filter glass (0.03/slice)
+    @panecount = (0,2,1,1,0);
+    $pane_nd=0.03;
+    $trans = pdl(map { m/inf/ ? 
+			   0 : 
+			   pow(10,-$densities[$_] - $pane_nd * $panecount[$_]) 
+		       } (0..$#densities));
+    $weights = ones($trans);
+    $weights->((0)) .= $weights->((-1)) .= 10;
+
+    print "Expected transmission coefficients: $trans\n";
+
+
+    @files = map { [<$_/*>] } @dirs;
+
     my $nfiles = 32; # two full modulator rotations...
 
-    $dk = double rfits($dkfiles[0],{hdrcpy=>1});
-    $lt = double rfits($nd0files[0],{hdrcpy=>1});
+    @panes = map { double rfits($_->[0],{hdrcpy=>1}) } @files;
+
     for my $i(1..$nfiles){
-	$dk += rfits($dkfiles[$i]);
-	$lt += rfits($nd0files[$i]);
+	for my $j(0..$#dirs) {
+	    $panes[$j] += rfits($files[$j]->[$i]);
+	}
 	print "$i of $nfiles...\n";
     }
-    $dk /= $nfiles;
-    $lt /= $nfiles;
-    print "dk is ",join("x",$dk->dims),"\n";
-    print "lt is ".join("x",$lt->dims),"\n";
-    $out = zeroes($dk->dims,2);
-    $out->(:,:,(0)) .= $dk;
-    $out->(:,:,(1)) .= $lt - $dk;
-    $out->(:,:,(1)) /= $out->(:,:,(1))->avg;
-    $out->(:,:,(1))->where($out->(:,:,(1))<0.2) .= 1;
-    $out;
+    for my $j(0..$#dirs) {
+	$panes[$j] /= $nfiles;
+    }
+    
+    $stack = cat(@panes);
+    $out = zeroes($stack->dim(0),$stack->dim(1),$order_of_fit);
+
+    $okmask = (($panes[$#panes]-$panes[0])>500);
+    my $ok = whichND($okmask);
+    # Fit only the "ok" pixels.
+    $stack_ok = $stack->range( $ok )->xchg(0,1)->sever ; # ( npanes, npixels )
+    
+    # Execute the fit -- discard the actual fit data...
+#    my ($yfit,$coeffs) = fitpoly1d( $trans, $stack_ok, $order_of_fit, {Weights=>$weights});
+    ($yfit, $coeffs) = fitpoly1d( $stack_ok, $trans, $order_of_fit, {Weights=>$weights});
+    
+    # Stuff the ok pixel fit coefficients back into the output array;
+    $a = $out->range( $ok )->xchg(0,1);
+    $a .= $coeffs;
+    
+    return $out->mv(2,0);
 }
     

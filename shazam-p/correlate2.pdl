@@ -1,0 +1,24 @@
+=head2 correlate2 - find the cross-correlation function of two image patches, using convolution.
+
+=cut
+
+sub correlate2 {
+    my $im1 = shift;
+    my $im2 = shift;
+    my $coords = shift;
+    my $patchsize = shift;
+
+    
+    $patch1 = $im1->range($coords-$patchsize/2,$patchsize,'e');
+
+    $patch2 = $im2->range($coords-$patchsize,$patchsize*2,'e');
+
+
+    $patch1 /= $patch1->avg;
+    $patch2 /= $patch2->avg;
+    
+    return convolveND($patch1,$patch2)->($patchsize/2:$patchsize/2+$patchsize-1,
+					 $patchsize/2:$patchsize/2+$patchsize-1);
+}
+    
+    

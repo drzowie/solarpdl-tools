@@ -12,9 +12,8 @@
 sub rflat {
 	my $flat = shift;
 	my @rfits_params = @_;
-
 	my $im = float rfits(@rfits_params);
-	$im -= $flat->(:,:,(0));
-	$im /= $flat->(:,:,(1));
-	return $im;
+	my $im2 = flatten($flat,$im);
+	$im2->sethdr($im->gethdr);
+	return $im2;
 }
