@@ -7,18 +7,35 @@ sub correlate2 {
     my $im2 = shift;
     my $coords = shift;
     my $patchsize = shift;
-
+    my $range = shift || $patchsize;
     
-    $patch1 = $im1->range($coords-$patchsize/2,$patchsize,'e');
+    $patch1 = $im1->range($coords-$patchsize/2,$patchsize,'e')->copy;
+    $patch2 = $im2->range($coords-$patchsize/2-$range/2,$patchsize+$range,'e')->copy;
 
-    $patch2 = $im2->range($coords-$patchsize,$patchsize*2,'e');
+    $out = zeroes($patchsize+$range,$patchsize+$range);
+    $ndc = ndcoords($range,$range)->mv(0,-1)->clump(2)->mv(-1,0);
 
-
-    $patch1 /= $patch1->avg;
-    $patch2 /= $patch2->avg;
+    $stack = $patch2->range($ndc,[$patchsize,$patchsize])->  # <pixel>, <x-patch>, <y-patch>
+        mv(0,-1);                                            # <x-patch>, <y-patch>, <pixel>
     
-    return convolveND($patch1,$patch2)->($patchsize/2:$patchsize/2+$patchsize-1,
-					 $patchsize/2:$patchsize/2+$patchsize-1);
+    $stack_mean = $stack->clump(2)->average;                  # <pixel>
+    $stack_mm = ($stack->clump(2)->mv(0,-1) - $stack_mean)->  # <pixel>, <x-patch * y-patch>
+        mv(-1,0);                                             # <x-patch * y-patch>, <pixel>
+    $stack_sigma = sqrt( ($stack_mm * $stack_mm)->average );  # <pixel>
+    
+    $patch1_mean = $patch1->avg;
+    $patch1_mm = $patch1-$patch1_mean;
+    $patch1_sigma = sqrt( ($patch1_mm * $patch1_mm)->avg );
+
+    $correlate = (($patch1_mm->clump(2) * $stack_mm)/($stack_sigma->(*1) * $patch1_sigma))->average->reshape($range,$range);
+
+    $maxloc = 0+whichND($correlate == max($correlate));
+    if($maxloc->dim(1) > 1) {
+	print "Couldn't find the peak -- $maxloc\n";
+    }
+    
+    # Cheezorama fitter -- fit the X and Y coordinates independenly using a 
+    
 }
     
     
