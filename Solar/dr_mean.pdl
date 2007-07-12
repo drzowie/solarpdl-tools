@@ -76,25 +76,26 @@ This $origin_lonlat is
 
 use PDL::Transform::Cartography;
 use strict;
+use warnings;
 use PDL::Bad;
 sub dr_mean {
 
   my($list,$time,$fwhm,$opt) = @_;
   
-#  barf("dr_mean requires bad values\n") unless $PDL::Bad::Status;
+  barf("dr_mean requires bad values\n") unless $PDL::Bad::Status;
     
   barf("dr_mean needs an output header...\n")
 	unless defined($opt->{hdr}); ##so hdr really is not an option
 
   print "date2int...";
   $time = date2int($time);
-  print "working at ",int2date('soho ut all',$time),"\n";
+  print "working at ",int2date('%yyyy-mm-dd_HH:MM:ss.fff',$time),"\n";
   $fwhm *= 60;
 
   my $rtime = defined($opt->{hdr}->{DATE_OBS}) ? 
     date2int($opt->{hdr}->{DATE_OBS}) :
     $time;
-  print "rotating to ",int2date('soho ut all',date2int($rtime)),"\n";
+  print "rotating to $rtime ",int2date('%yyyy-mm-dd_HH:MM:ss.fff',$rtime),"\n";
 ##if a DATE_OBS field is not supplied then it rotates to the given time
 
   $opt = {} unless defined $opt;
@@ -126,8 +127,8 @@ sub dr_mean {
     print "\n\tImage ".$i++." of ".(@$list+0)."....";
 
     my $imtime = date2int($im->hdr->{DATE_OBS});
-    print "imtime is $imtime"." (".int2date('ut all',$imtime)."); time is $time
-"." (".int2date('ut all',$time).")...";
+    print "imtime is $imtime"." (".int2date('%yyyy-mm-dd_HH:MM:ss.fff',$imtime)."); time is $time
+"." (".int2date('%yyyy-mm-dd_HH:MM:ss.fff',$time).")...";
     my $dt = $imtime - $time;
     my $wgt = exp(- 4 * ($dt*$dt)/($fwhm*$fwhm) * log(2) );
 
@@ -156,17 +157,17 @@ sub dr_mean {
     my $goodmask = isgood($im);
     $im = badmask($im,zeroes($im));
     $goodmask->sethdr($im->gethdr);
+    $im = $im->double;
     $im->hdrcpy(0);
     my $o2 =          $im->map($tx,$opt->{hdr},{m=>($opt->{method}||'g')});
     $goodmask = $goodmask->map($tx,$opt->{hdr},{m=>'s'}); # good enough
-    print ("goodmask is ".join("x",$goodmask->dims)."...");
 
     $weight = zeroes($o2) unless defined($weight);
-    $weight += $wgt * $goodmask;
+    $weight += float($wgt * $goodmask);
     $FOO::goodmask = $goodmask;
     $out += $o2*$wgt;
     if(defined $DEBUG::w) {
-      $DEBUG::w->fits_imag($o2,-300,300);
+      $DEBUG::w->fits_imag($o2,-100,100);
     }
     
     print "ok.";
@@ -179,7 +180,7 @@ sub dr_mean {
     }
   }
 
-  return undef unless (defined($out) &&defined $weight);
+  return undef unless (defined($out) && defined $weight);
   $weight = $weight->setbadif($weight==0);
   $out /= $weight;
   $out->hdr->{DATE_OBS} = $time;
