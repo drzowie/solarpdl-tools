@@ -103,13 +103,13 @@ have one, the other should come easy.
 	
 	my $mockhdr=$a[0]->hdr_copy;
 	$mockhdr->{DATE_OBS}=int2date('%yyyy-mm-ddTHH:MM:SSZ',date2int($a[0]->hdr->{DATE_OBS}) + $dt/2);
-	my $outa=dr_mean(\@a,$a[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr});
+	my $outa=dr_mean(\@a,$a[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr,method=>'s'});
 
 	if ($int) {
 	    ##let the user pick the size of the box.
 	    my $w=pgwin('xw',size=>[10,10]);
 	    
-	    my $outc=dr_mean(\@c,$c[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr});
+	    my $outc=dr_mean(\@c,$c[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr,method=>'s'});
 	    
 	    $w->fits_imag($outa,-500,500,{title=>"Click the upper-left corner of the good area"});
 	    my ($x1,$y1)=$w->cursor({type=>'crosshair'});
@@ -135,14 +135,14 @@ have one, the other should come easy.
 	    my $xcurv_max=where($xbc,$xbc<$j_ind)->max;
 	    my $x1=$xcurv_max+1;
 	    my $x2=$outa->dim(0)-1-$x1;
-	    
-	    my $yblock=where($badcoords((1)),$badcoords((0))>$j_ind)->uniq;
 
+	    my $yblock=where($badcoords((1)),$badcoords((0))>$j_ind)->uniq;
+print "here3\n";
             #need to figure out if the block is on the top or bottom
             #might depend on if SOHO is upside-down.
 	    my ($y1,$y2);
 	    
-	    if (rint($yblock->float/$outa->dim(1))){
+	    if (rint($yblock->float/$outa->dim(1))->uniq){
 		$y1=$yblock->min;
 		$y2=0;
 	    }
@@ -150,7 +150,7 @@ have one, the other should come easy.
 		$y1=$outa->dim(1);
 		$y2=$yblock->max;
 	    }
-
+print "here2\n";	    
 	    $origin_xy=pdl(($x1+$x2)/2,($y1+$y2)/2)->apply(t_fits($a[0]));
 	    $sizex=floor($x2-$x1)->at(0);
 	    $sizey=floor($y1-$y2)->at(0);
@@ -233,7 +233,7 @@ have one, the other should come easy.
 
 	my $origin_lonlat = $origin_xy->apply(t_fits2helio($a));
 	print "\nAfter t_fits2helio:\norigin_xy = $origin_xy\norigin_lonlat = $origin_lonlat\n";
-	return;
+#	return;
 	my $t;   
 	for($t=$times->((0))+$fwhm_t/2*60; $t<$times->((-1)); $t+=$delay*60){
 	    my $fr=which(($times >=$t-($fwhm_t*60))&
