@@ -2,13 +2,13 @@
 
 =head2 smooth_xyt
 
-= for ref
+=for ref
 
 Weighted temporal and spatial mean of images
 
 =for usage
 
-  $im = smooth_xyt(\@list, $fwhm_t, $delay, $fwhm_s,\%options);
+  smooth_xyt(\@list, $fwhm_t, $delay, $fwhm_s,\%options);
 
 @list is a list of filenames of FITS images containing solar data.
 $fwhm_t is the full-width at half maximum of the temporal weighting
@@ -55,6 +55,7 @@ AUTHOR & HISTORY
 Craig DeForest, 29-Jun-2004
 Derek Lamb, 07-Mar-2005: Decoupled differential rotation and weighted averaging
 Derek Lamb, 08-Nov-2006: Added spatial smoothing.
+Derek Lamb, 29-Jun-2007: Corrected for fractional seconds.
 
 =cut
 
@@ -93,19 +94,19 @@ sub smooth_xyt {
     my $times=zeroes(scalar @$list);
     my $times_index=0;
     for my $in_name(@$list){
-	$in_name =~m/_(\d{4})-(\d{2})-(\d{2})_(\d{2}):(\d{2})/;
-	my ($year,$month,$date,$hour,$minute) = ($1,$2,$3,$4,$5);
-	$times($times_index).=timegm(0,$minute,$hour,$date,$month-1,$year);
+	$in_name =~m/_(\d{4})-(\d{2})-(\d{2})_(\d{2}):(\d{2}):([\d\.]{2,})/;
+	my ($year,$month,$date,$hour,$minute,$sec) = ($1,$2,$3,$4,$5,$6);
+	my $frac = $sec - int($sec);
+	$times($times_index).=timegm(int($sec),$minute,$hour,$date,$month-1,$year)+$frac;
 	$times_index++;
     }
-    my $t0=$times->at(0);
-    $times-=$t0;
-    $times/=60; ##times now in minutes from the beginning (0,1,2,4,5,7,...)
+    my $t0=$times->at(0); ##t0 is in seconds since the epoch
+    $times=($times - $t0)/60; ##times now in minutes from the beginning (0,1,2,4,5,7,...)
 ##############
 ##find the frames and calculate the weights
     my $i=0;
-    my $time_avg = zeroes($in->[0]); ##get the output to be the correct size
-    my $weight_img = zeroes($time_avg);
+    my $time_avg = zeroes($in->[0]->dims); ##get the output to be the correct size
+    my $weight_img = zeroes($time_avg->dims);
 
     open DEBUG,">",$opt->{outdir}."/debug.txt";
 
@@ -113,14 +114,15 @@ sub smooth_xyt {
 	my $fr=which(($times >= $t-$fwhm_t)&
 		     ($times <= $t+$fwhm_t)
 		     );
-	my $out_name = $opt->{outdir} .'/'.int2date('%yyyymmdd__HH:MM:ss',$t*60+$t0).'.fits';
+	my $out_name = $opt->{outdir} .'/'.int2date('%yyyymmdd__HH:MM:SS.ff',$t*60+$t0).'.fits';
+
 	print DEBUG "output file is $out_name\n";
 	print DEBUG "Averaging over ".$fr->nelem." images. They are:\n";
 	foreach my $f(list $fr){
-	    print DEBUG int2date('si ut all',$f*60+$t0) ."\n";
+	    print DEBUG int2date('cds ut',$times->at($f)*60+$t0) ."\n";
 	}
 
-	my $dt=$fr-$t;
+	my $dt=$times($fr)-$t;
 	my $wgt;
 	if($opt->{method} eq 'g'){
 	    $wgt=exp(-4*($dt*$dt)/($fwhm_t*$fwhm_t) * log(2) );
@@ -139,7 +141,7 @@ sub smooth_xyt {
 	    $weight_img      += $frame_weight_img;
 	    $time_avg        += $im * $frame_weight_img;
 	}
-	$time_avg /=$weight_img;	
+	$time_avg /=$weight_img;
 	my $out = convolveND($time_avg,$kernel);
 	$out->sethdr($in->[0]->hdr_copy);
 	$out->hdr->{'DATE-OBS'} = int2date('si ut date',$t*60+$t0);
