@@ -88,6 +88,7 @@ sub shutter{
 	    $w->bin($x,$n(1:-2)->log10,{axis=>'logy',title=>"i=$i. Click to Continue"});
 	    $w->hold;
 	    my $y=($coeffs((2))*$x*$x + $coeffs((1))*$x + $coeffs((0)))/log(10);
+#	    $w->line($x,$n(1:-2)->log10 - $y ,{axis=>'logy',xr=>[-10,10],yr=>[-2,1]});
 	    $w->line($x,$y,{color=>'red'});
 	    $w->release;
 	    $w->cursor();
