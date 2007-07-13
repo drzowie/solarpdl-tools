@@ -51,7 +51,7 @@ sub t_fits2helio {
 
   $hdr = hdrunit($hdr,$u);
   $hdr = fits_obs_pos($hdr);
-  $FOO::hdr = $hdr; 
+  $FOO::tf2h_hdr = $hdr; 
   return ! t_perspective( ptg=>[$hdr->{CRVAL1}*units($hdr->{CUNIT1},'degrees'),
 			      $hdr->{CRVAL2}*units($hdr->{CUNIT2},'degrees'),
 			      $hdr->{CROTA2}],
