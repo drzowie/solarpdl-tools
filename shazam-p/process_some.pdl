@@ -28,7 +28,7 @@ for $i($start..$end) {
           $x = $ix*$patchsize + $patchsize;
           $y = $iy*$patchsize + $patchsize;
           
-          $of = $offsets->(:,($ix),($iy)) .= patch_offset($im0, $im1, pdl($x,$y), int($patchsize*0.7), $patchsize/2);
+          $of = $offsets->(:,($ix),($iy)) .= patch_offset($im0, $im1, pdl($x,$y), int($patchsize), $patchsize/2);
           print "image $i of $#good, ".($iy+$ny*$ix)." of ".($nx*$ny)." finished ($of)...\n";
       }
   }

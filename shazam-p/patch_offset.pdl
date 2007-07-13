@@ -29,11 +29,15 @@ sub patch_offset {
     my $patch1_mm = $patch1-$patch1_mean;
     my $patch1_sigma = sqrt( ($patch1_mm * $patch1_mm)->avg );
 
+    my $ndcoords = ndcoords($patchsize,$patchsize);
+    $ndcoords += $coords - $patchsize/2;
+    
     
     my $heur = sub { 
 	my $vec = shift;
-	my $t = t_linear('post' => - $vec, 'pre'=> - floor($coords - $patchsize/2));
-	my $patch2 = $im2->map( $t, [$patchsize,$patchsize], { m=>'l', pix=>1 });
+#	my $t = t_linear('post' => - $vec, 'pre'=> - floor($coords - $patchsize/2));
+#	my $patch2 = $im2->map( $t, [$patchsize,$patchsize], { m=>'l', pix=>1 });
+	$patch2 = $im2->interpND($ndcoords + $vec);
 	$patch2 -= $patch2->avg;
 	my $patch2_sigma = sqrt( ($patch2 * $patch2)->avg );
 	
@@ -41,7 +45,7 @@ sub patch_offset {
 	return $correlate;
     };
 
-    return amoeba($heur, pdl(-1,-1), 2, 3e-3, 1e-8, 1e3, $range);
+    return amoeba($heur, pdl(-0.25,-0.25), 0.5, 2e-4, 1e-8, 1e3, $range);
 
 }
 	
