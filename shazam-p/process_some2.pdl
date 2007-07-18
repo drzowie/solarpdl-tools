@@ -1,0 +1,32 @@
+sub process_some2 {
+    my $flat = shift;
+    my $ims = shift;
+    my $patchsize = shift;
+    my $stepsize = shift;
+    my $start = shift;
+    my $end = shift || $start+1000;
+
+    my $nx = int(($ims->[0]->dim(0)-$patchsize) / $stepsize)+1;
+    my $ny = int(($ims->[0]->dim(1)-$patchsize) / $stepsize)+1;
+
+    my @offsets = ();
+    push(@offsets, zeroes(2,$nx,$ny));
+
+    for my $i($start+1..$end) {
+	
+	$offsets = zeroes(2,$nx,$ny);
+	
+	for($ix=0;$ix<$nx;$ix++) {
+	    for($iy=0;$iy<$ny; $iy++) {
+		$x = $ix*$stepsize + $patchsize/2;
+		$y = $iy*$stepsize + $patchsize/2;
+		
+		$of = $offsets->(:,($ix),($iy)) .= patch_offset($ims->[$i-1], $ims->[$i], pdl($x,$y), int($patchsize), $patchsize/2, $stepsize);
+		print "image $i of $#good, ".($iy+$ny*$ix)." of ".($nx*$ny)." finished ($of)...\n";
+	    }
+	}
+	push(@offsets,$offsets);
+	fdump([@offsets],"offsets-calc-of$start.pl");
+    }
+    return @offsets;
+}
