@@ -41,6 +41,11 @@ Nonzero if diagonals are considered neighbors.
 This is an array ref for passing in an array to take the ID'ed image planes.
 Helpful if you want to store 'em in a DiskCache object.
 
+=item min_size
+
+If specified, this is a minimimum feature size in pixels, below which the feature
+is ignored.
+
 =back
 
 =for bugs
@@ -262,7 +267,7 @@ sub frag_id {
 		    }
 		    print "."if($opt->{verbose});
 		    
-		} 	  
+		}
 		if($opt->{monitor}) {
 		    my($disp);
 		    $disp = $idp->copy;
@@ -275,12 +280,28 @@ sub frag_id {
 		print "new bounds: ($nxmin,$nxmax; $nymin,$nymax)\n" if($opt->{verbose});
 		
 	    } until ($done);
+
+	    # If we're filtering on feature size, then take care of that...
+	    if($opt->{min_size}) {
+		my ($runs, $vals);
+		$id->flat->qsort->rle($runs = null, $vals = null);
+		my $wh = which( ($runs < $opt->{min_size}) & $vals );
+		my $goners = $vals->($wh);
+		print "Deleting ".($goners->nelem)." small regions: ",join(",",$goners->list)."\n";
+		for my $g($goners->list) {
+		    $id |= ($id != $g);
+		    print ".";
+		}
+		print "\n";
+	    }
 	}
 	
 	$id_out->[$frame] = $id;
     }
     $win->release if($opt->{monitor});
     $win->close if($opt->{monitor});
+
+
     print "frag_id completed sucessfully.\n";
     return $id_out;
 }
