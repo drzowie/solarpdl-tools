@@ -23,7 +23,7 @@ sub mdi_ingest {
     
     for my $f(@files){
       my $hdr = rfits($f,{data=>0});
-      unless($hdr->{DATE_OBS}) {
+      unless(ref $hdr eq 'HASH' and $hdr->{DATE_OBS}) {
 	print "File $f: DATE_OBS not found in header; skipping..\n";
 	next;
       }
