@@ -104,7 +104,7 @@ have one, the other should come easy.
 	my $mockhdr=$a[0]->hdr_copy;
 	$mockhdr->{DATE_OBS}=int2date('%yyyy-mm-ddTHH:MM:SSZ',date2int($a[0]->hdr->{DATE_OBS}) + $dt/2);
 	my $outa=dr_mean(\@a,$a[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr,method=>'s'});
-
+	print "Displaying...\n";
 	if ($int) {
 	    ##let the user pick the size of the box.
 	    my $w=pgwin('xw',size=>[10,10]);
@@ -167,11 +167,12 @@ print "here2\n";
    
 #############################
 ## Part 2: Despike images
-
+	print "\n\nDespiking....\n\n";
     my @dspfnames = @fnames;
     map { s/^$dirs[0]/$dirs[1]/; } @dspfnames;
     my $datacube = diskcache(\@fnames,{ro=>1});
     my $dspcube  = diskcache(\@dspfnames,{rw=>1});
+	print "Calling zspike...\n";
     zspike($datacube,{clean=>1,m=>$dspcube,th=>40,nfr=>4,vth=>[7.9,0.9]}) if (($steps == 2)->any);
     (tied @$dspcube)->purge(-1); 
     (tied @$datacube)->purge(-1);
@@ -224,7 +225,17 @@ print "here2\n";
 	$b->hdr->{CRVAL2} = 0;			##the value of CRPIX2 in sci. coords
 	$b->hdr->{CUNIT1} = 'arcsec';
 	$b->hdr->{CUNIT2} = 'arcsec';
+	$b->hdr->{CROTA1} = 0;
+	$b->hdr->{CROTA2} = 0;
 	$b->hdr->{DATE_OBS}= int2date('ut all',$times->at($times->nelem/2));
+#DATE_OBS is used in the inverse t_fits2helio transform, to bring the
+#derotated heliographic image back to solar-x & solar-y
+
+	$b->sethdr( fits_obs_pos($b->hdr));
+	my $b0 = pb0r($b->hdr->{DATE_OBS})->at(1);
+	print "\n\nb0: $b0\n\n";
+	$b->hdr->{HGLT_OBS} = 0;
+	$b->hdr->{HGLN_OBS} = 0;
 	
 	
 ##change this to put whatever field you want to center on. 
@@ -235,9 +246,9 @@ print "here2\n";
 	print "\nAfter t_fits2helio:\norigin_xy = $origin_xy\norigin_lonlat = $origin_lonlat\n";
 #	return;
 	my $t;   
-	for($t=$times->((0))+$fwhm_t/2*60; $t<$times->((-1)); $t+=$delay*60){
-	    my $fr=which(($times >=$t-($fwhm_t*60))&
-			 ($times <=$t+($fwhm_t*60))
+	for($t=$times->((0)); $t<$times->((-1)); $t+=$delay*60){
+	    my $fr=which(($times >=$t-($fwhm_t*60)*1.1)&
+			 ($times <=$t+($fwhm_t*60)*1.1)
 			 );
 	    
 	    my @cube = mrfits(@fcomp[$fr->list]);
