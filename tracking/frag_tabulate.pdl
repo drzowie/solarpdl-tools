@@ -185,6 +185,20 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
     my($ok_ids) = which ($frag_ok);
 ##note that anything based on which($frag_ok) is only going to have positive ID numbers!
 
+=pod
+## IF a feature is going to get discarded
+## And a simple majority of that feature's pixels overlap another feature at the beginning or end of it's life
+## THEN if only overlap at beginn
+
+    my $reassoc = 0;
+    my $frag_recon = !$frag_ok;
+    my $ids_recon = which($frag_recon);
+    print "reconsidering ",$ids_recon->nelem," ids.\n" if $opt->{verbose};
+    my $loci_recon = [];
+    $xsize = $im_list->[0]->dim(0);
+=cut
+
+
 ## IF a concentration is going to get discarded
 ## AND it is touching another concentration of the same sign
 ## THEN reassociate the small concentration with the bigger one
@@ -228,9 +242,6 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 #don't do the zero background. Only consider it if it's not discarded
 #itself (also prevents the trivial case). Only reassociate if it's the
 #same sign.
-#		next unless $id_in_sub;
-#		next unless any($ok_ids == $id_in_sub); 
-#		next unless (sign($summary($id_in_sub,$fr,(0)))==sign($summary($id,$fr,(0))));
 #		$pixarray=zeroes($subfield->dims,4);
 #set pixarray = 1 where the reconsidered id is
 #		($xok,$yok)=whichND($subfield->abs==$id);
@@ -257,12 +268,10 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 	        my $idreassoc=$subfield_ids(which($subfield_sizes==$subfield_sizes->max)->(0)); ##->(0) just in case two of same size
 		$idreassoc=abs($idreassoc->((0)));
 ##for some reason that doesn't need to be done with $id, but it's necessary here for accessing the keys of the $loci hashes
-		print "idr: $idreassoc" if $opt->{verbose};
+		print "idr: $idreassoc " if $opt->{verbose};
 		$loci->[$fr]->{$idreassoc}=$loci->[$fr]->{$idreassoc}->append($loci->[$fr]->{$id});
 
 		$summary(($idreassoc),($fr),0:1)+=$summary(($id),($fr),0:1);
-#		$summary(($idreassoc),($fr),(0))+=$summary(($id),($fr),(0));
-#		$summary(($idreassoc),($fr),(1))+=$summary(($id),($fr),(1));
 
 ## redo the center of gravity calculation
 		my $locus=cat($loci->[$fr]->{$idreassoc}%$xsize,floor($loci->[$fr]->{$idreassoc}/$xsize));
@@ -271,9 +280,6 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 
 		my $centroid=sumover($locus*$val)/$summary(($idreassoc),($fr),(0));
 		$summary(($idreassoc),($fr),2:3).=$centroid;
-
-#		$summary(($idreassoc),($fr),(2)).=$centroid((0));
-#		$summary(($idreassoc),($fr),(3)).=$centroid((1));
 
 		$reassoc++;
 		print "found ",$reassoc," to reassociate\n" if $opt->{verbose};
