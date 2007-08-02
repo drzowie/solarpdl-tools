@@ -160,7 +160,7 @@ sub frag_detect {
       print "Frame $frame of $#$cube ";
       
       #### If necessary, generate the initial mask from high-threshold values
-      print "def ";
+      print "def\n";
       unless( defined($masks->[$frame])){
 	  
 	  $masks->[$frame] =     ( $cube->[$frame] > $hthresh ) 
