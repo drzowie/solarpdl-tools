@@ -1,6 +1,7 @@
 =pod
 
 =head2 frag_assoc
+
 =for ref
 
 Associate magnetic features in adjacent frames of a sequence of id masks
@@ -22,6 +23,18 @@ sign bit corresponds to the sign of each feature.
 =item start_id
 
 If this gets passed in, IDs start here rather than at +/- 1.
+
+=item assoc
+
+List ref (or PDL::DiskCache object) of the output cross-frame associated IDs.
+
+=item monitor
+
+Display the progress in a PDL::Graphics::PGPLOT::Window object.
+
+=item verbose
+
+Chat.  Levels 0 (minimal), 1 (some), and 2 (more).
 
 =back
 
@@ -77,7 +90,7 @@ sub frag_assoc {
   # main loop
 
   print "frag_assoc: processing $#$ids mask images...\n";
-  my $win=pgwin('xs',size=>[6,6]) if $opt->{monitor};
+  my $win=pgwin('xs',size=>[8,8]) if $opt->{monitor};
   for $frame(0..$#$ids) {
     next unless defined($ids->[$frame]);
 
@@ -91,7 +104,7 @@ sub frag_assoc {
     
     # Start with first valid frame id (1 not 0)!
     my($n)=0;
-    for(my($i)=0;$i<$im_ids->nelem-1;$i++) {
+    for my $i(0..$im_ids->nelem-1){
       my($im_id) = $im_ids($i);
       my($fid);
       
