@@ -84,6 +84,11 @@ If greater than 1, divide the image size by this factor before
 producing the output image.  Also is an adjustment factor in character
 size of the feature ids.
 
+=item plot_range (default [0,0,-1,-1])
+
+Portion of the image (in pixels) to plot.  Default plots the whole
+image.  Format is [llx,lly,urx,ury].
+
 =item format (default 'ppm')
 
 The image format to output.  Currently accepted options are
@@ -163,7 +168,8 @@ sub emergence_movie {
     my $frag_color = pdl(-0.1,0.3,-0.1);  # Fragmentations are green
     my $cmplx_color = pdl(-0.1,-0.1,-0.1); 
     my $err_color = pdl(0.2,-0.1,-0.1); # Errors are faint red
-    
+    my $plot_range = $opt->{plot_range} || [0,0,-1,-1];
+    $plot_range = pdl($plot_range);
     my $anti_alias = $opt->{anti} || 1;
 
     my $format = $opt->{format} || 'ppm';
@@ -223,23 +229,42 @@ sub emergence_movie {
 	    }
 	}
 	my $title = sprintf("MDI Tracked Rgn %s %s",$im->hdr->{'DATE-OBS'},$im->hdr->{'TIME-OBS'});
-	$w->fits_imag($im->clip(0.01,0.99),0,1,{j=>1,title=>$title,dr=>0,charsize=>0.99,%$imag_options});
+	my $t = t_fits($im);
+#       my $t = t_identity();	    
+
+#there's probably an easier way to do this, but I'm too lazy to figure it out. DAL
+	$plot_range->(0)+=$im->dim(0) if $plot_range->at(0) == -1;
+	$plot_range->(1)+=$im->dim(1) if $plot_range->at(1) == -1;
+	$plot_range->(2)+=$im->dim(0) if $plot_range->at(2) == -1;
+	$plot_range->(3)+=$im->dim(1) if $plot_range->at(3) == -1;
+	$plot_range = $plot_range->reshape(2,2)->apply($t)->flat unless $i;
+
+	print "plot_range = $plot_range\n";
+
+	$w->fits_imag($im->clip(0.01,0.99),0,1,{xr=>[$plot_range->at(0),$plot_range->at(2)],yr=>[$plot_range->at(1),$plot_range->at(3)],j=>1,title=>$title,dr=>0,charsize=>0.99,%$imag_options});
 	$w->hold;
 
 	if($id_feats || $contour) {
 	    my $id;
 	    
-	    my $t = t_fits($im);
-#	    my $t = t_identity();	    
 	    my($boundaries)=zeroes(3,1);
 	    
 	    for $id(which($tabs->(:,($i),((0))))->list) {
 		my $xy = $tabs->(($id),($i),2:3)->apply($t);
+#skip if center position is not in our FOV.  Not the best way, but sufficient.
+		next if ($xy->at(0) < $plot_range->at(0) ||
+			 $xy->at(0) > $plot_range->at(2) ||
+			 $xy->at(1) < $plot_range->at(1) ||
+			 $xy->at(1) > $plot_range->at(3) 
+			 );
+
 		my $r = sqrt($tabs->(($id),($i),(1))/3.14159) * $im->hdr->{CDELT1};
 		
 		if($contour==2) {
 		    $boundaries(2,-1) .= 0; # lift up pen
 		    my $l = boundary($id,$tabs->(($id),($i)),$ids->[$i]);
+#		    my $l = boundary2($id,$tabs->(($id),($i)),$ids->[$i]);
+		    $l((2)).=($tabs->(($id),($i),(0))>0)?1:255 if ($format eq 'vps');
 		    $boundaries = $boundaries->glue(1,$l);
 		} elsif($contour==1) {
 		    $w->ellipse($xy->at(0),$xy->at(1),$r,$r,{fill=>2,color=>3});
