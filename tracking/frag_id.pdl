@@ -285,7 +285,7 @@ sub frag_id {
 	    if($opt->{min_size}) {
 		my ($runs, $vals);
 		$id->flat->qsort->rle($runs = null, $vals = null);
-		my $wh = which( ($runs < $opt->{min_size}) & $vals );
+		my $wh = which( ($runs < $opt->{min_size}) & ($vals!=0) );
 		my $goners = $vals->($wh);
 		print "Deleting ".($goners->nelem)." small regions: ",join(",",$goners->list)."\n";
 		for my $g($goners->list) {
