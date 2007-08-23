@@ -49,7 +49,15 @@ Time is currently handled very simplistically.  TAI?  UTC vs. GMT?
 
 The code is pretty much a straight port of pb0r, with one exception
 (arcsin versus reciprocal for the apparent semidiameter calculation).
-The units were chosen for historical reasons.  
+The units were chosen for historical reasons.
+
+Note that in Perl (to ensure compatibility with C) the modulus
+operator (%) rounds positive operands DOWN to the nearest integer
+before performing the modulus.  This is inconsistent with IDL (and
+presumably FORTRAN), which allow floating-point operands.  The frac
+and rem subroutines in this program perform the decimal modulus
+operation.  This does not appear to affect the results of pb0r, but
+is included for correctness.
 
 =cut
 
@@ -58,6 +66,12 @@ use Time::JulianDay;
 use strict;
 
 my $dtor = 3.141592653589793238 / 180;
+
+# get the fractional portion of a number
+sub frac { $_[0]-int($_[0]) }
+
+# find the remainder in a real division
+sub rem { $_[1]*frac($_[0]/$_[1]) }
 
 sub pb0r {
     my ($date) = @_;
@@ -82,8 +96,11 @@ sub pb0r {
 
 	for($i=0;$i<$date1->nelem;$i++) {
 	    ($s,$m,$h) = gmtime($date1->at($i));
+#need to subtract 0.5 since gm_julian_day returns results that are too
+#large by 0.5 (since julian days start at noon, not midnight).  See
+#docs for Time::JulianDay
 	    $jd->set($i,gm_julian_day($date1->at($i)) + 
-		     (($h + ($m + $s/60)/60)/24)  - 2415020);
+		     (($h + ($m + $s/60)/60)/24)  - 2415020 - 0.5);
 
 	}
 
@@ -104,11 +121,13 @@ sub pb0r {
         ## (Handle the "T" divider that's common among solar instruments,
         ##  too...)
         $date =~ s/T/ /;
-	my($time) = ($date =~ m/^\s*-?\s*\d+\s*$/) ? $date : parsedate($date);
+        #remember parsedate assumes localtime by default!!!
+	my($time) = ($date =~ m/^\s*-?\s*\d+\s*$/) ? $date : parsedate($date,GMT=>1);
 	my($sec,$min,$hours) = gmtime($time);
 
 	## Julian day since 2415020 (as per pb0r)
-	$jd = gm_julian_day($time) + (($hours + ($min + $sec/60)/60)/24) - 2415020;
+	## and gm_julian_day returns results that are too large by 0.5.
+	$jd = gm_julian_day($time) + (($hours + ($min + $sec/60)/60)/24) - 2415020 - 0.5;
 	$out = zeroes(4,1);
     } else {
 	barf "pb0r:  can't process items of type '".(ref $date)."'";
@@ -127,17 +146,17 @@ sub pb0r {
     ## Get longitude of the Sun, etc.
     my($sun_pos) = sun_pos($jd);
 
+    my ($longmed,$ra,$dec,$app_lon,$oblt) = $sun_pos->list;
+
     ##########
     ## Form aberrated longitude
 
-    my($longmed) = $sun_pos->((1));
     my($lambda) = $longmed - (20.5 / 3600);
 
     ##########
     ## Form longitude of ascending node of Sun's equator on the ecliptic
 
-    my($de) = $sun_pos->((0));
-    my($node) = 73.666666 + (50.25/3600) * ( ($de / 365.25 ) + 50 );
+    my($node) = 73.666666 + (50.25/3600) * ( ($jd / 365.25 ) + 50 );
 
     my($arg) = $lambda - $node;
 
@@ -146,13 +165,10 @@ sub pb0r {
     ## Calculate P, the position angle of the pole (which is also the tilt 
     ## angle of the Earth!
 
-    my($oblt)    = $sun_pos->((4));
-    my($app_lon) = $sun_pos->((3));
-    
     $p .= (atan ( -tan( $oblt * $dtor) * cos( $app_lon * $dtor))
 	      + atan( -0.127220 * cos( $arg * $dtor ) ) )
 	/ $dtor;
-    
+
     ##########
     ## Calculate B0, the apparent tilt of the axis
     
@@ -163,13 +179,13 @@ sub pb0r {
     ## Mars ($mm), Jupiter ($mj), and mean elongation of the Moon
     ## from the Sun ($d).  
 
-    my($t) = $de / 36525.0;   ## Form time from declination
+    my($t) = $jd / 36525.0;
 
-    my $mv = 212.6   + ( (58517.80   * $t) % 360.0 );
-    my $me = 358.476 + ( (35999.0498 * $t) % 360.0 );
-    my $mm = 319.5   + ( (19139.86   * $t) % 360.0 );
-    my $mj = 225.3   + ( ( 3034.69   * $t) % 360.0 );
-    my $d = 350.7    + ( (445267.11  * $t) % 360.0 );
+    my $mv = 212.6   + rem( (58517.80   * $t) , 360.0 );
+    my $me = 358.476 + rem( (35999.0498 * $t) , 360.0 );
+    my $mm = 319.5   + rem( (19139.86   * $t) , 360.0 );
+    my $mj = 225.3   + rem( ( 3034.69   * $t) , 360.0 );
+    my $d = 350.7    + rem( (445267.11  * $t) , 360.0 );
 
     ##########
     ## Calculate the geocentric distance (r0) and the 
@@ -202,9 +218,9 @@ sub pb0r {
 	    );
 
     ## THIS magic number is solar radii per A.U.
-    $r0 *= 213.625;
+    $r0 *=215.0;
 
-#    $sd .= (0.2665685 / $r0) * 60.0
+#    $sd .= (0.2665685 / $r0) * 60.0;
 
     ##  Return in arcminutes.
     $sd .= asin( 1.0 / $r0 ) * 60.0 / $dtor;
