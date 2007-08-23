@@ -1,3 +1,5 @@
+=pod
+
 =head2 sun_pos - Calculate solar ephemeris parameters.
 
 =for usage
@@ -31,9 +33,9 @@ Fractional number of days since JD 2415020.0
     
     A 5xn PDL whose columns contain:
 
-over 4
+=over 4
 
-=item 0 
+=item 0. 
 
 Longitude of the Sun for the mean equinox of given date(s) (deg)
 
@@ -61,10 +63,25 @@ The Julian Day -> Century conversion assumes a leap year every four
 years.  This may cause problems in A.D. 2100 but if so, it's
 bug-for-bug compatible with sun_pos.pro.
 
+Note that in Perl (to ensure compatibility with C) the modulus
+operator (%) rounds positive operands DOWN to the nearest integer
+before performing the modulus.  This is inconsistent with IDL (and
+presumably FORTRAN), which allow floating-point operands.  The frac
+and rem subroutines in this program perform the decimal modulus
+operation.  This does not appear to affect the results of sun_pos, but
+is included for correctness.
+
 =cut
+
 use strict;
 
 my($dtor) = 3.1415926535897932384626433383279502 / 180;
+
+# get the fractional portion of a number
+sub frac { $_[0]-int($_[0]) }
+
+# find the remainder in a real division
+sub rem { $_[1]*frac($_[0]/$_[1]) }
 
 sub sun_pos {
     my($day) = pdl(@_);
@@ -80,16 +97,16 @@ sub sun_pos {
     # Form time in Julian centuries from 1900.0
     my($cent) = $day/36525.0;
     # Form Sun's mean longitude
-    $l .= (279.696678+((36000.768925 * $cent) % 360)) * 3600;
-    
+    $l .= (279.696678+ rem((36000.768925 * $cent) , 360)) * 3600;
+
     # Allow for ellipticity of the orbit (equation of center) using
     # the Earth's mean anomaly ME
-    my($me) = 358.475844 + ((35999.049750 * $cent) % 360);
+    my($me) = 358.475844 + rem((35999.049750 * $cent) , 360);
     my($ellcorr) = (6910.1 - 17.2 * $cent) * sin( $me * $dtor )
 	+ 72.3 * sin(2.0 * $me * $dtor);
 
     # Allow for the Venus perturbations using the mean anomaly of Venus ($mv)
-    my($mv) = 212.603219 + ((58517.803875 * $cent) % 360);
+    my($mv) = 212.603219 + rem((58517.803875 * $cent) , 360);
     my($vencorr) = (4.8 * cos((299.1017 +        $mv -        $me) * $dtor) + 
 		    5.5 * cos((148.3133 +  2.0 * $mv -  2.0 * $me) * $dtor) + 
 		    2.5 * cos((315.9433 +  2.0 * $mv -  3.0 * $me) * $dtor) + 
@@ -97,13 +114,13 @@ sub sun_pos {
 		    1.0 * cos((318.15   +  3.0 * $mv -  5.0 * $me) * $dtor));
 
     # Allow for the Mars perturbations using the mean anomaly of Mars ($mm)
-    my($mm) = 319.59425 + ((19139.858500 * $cent) % 360);
+    my($mm) = 319.59425 + rem((19139.858500 * $cent) , 360);
     my($marscorr) = (2.0 * cos((343.8883 - 2.0*$mm + 2.0*$me) * $dtor) +
 		     1.8 * cos((200.4017 - 2.0*$mm +     $me) * $dtor));
 
 
     # Allow for the Jupiter perturbations 
-    my($mj) = 225.328328 + ((3034.6920239 * $cent) % 360);
+    my($mj) = 225.328328 + rem((3034.6920239 * $cent) , 360);
     my($jupcorr) = (7.2 * cos((179.5317 - $mj + $me) * $dtor) +
 		    2.6 * cos((263.2167 - $mj) * $dtor) +
 		    2.7 * cos(( 87.1450 - 2.0*$mj + 2.0*$me) * $dtor) +
@@ -111,21 +128,19 @@ sub sun_pos {
 
     # Allow for the Moon's perturbations using the mean elongation of the 
     # Moon from the Sun
-    my($d) = 350.7376814 + ((445267.11422 * $cent) % 360);
+    my($d) = 350.7376814 + rem((445267.11422 * $cent) , 360);
     my($mooncorr) = 6.5 * sin($d * $dtor);
 
     # Allow for long period terms
     my($longterm) = 6.4 * sin((231.19 + 20.20 * $cent) * $dtor);
-   
-
-    $l += $ellcorr + $vencorr + $marscorr + $jupcorr + $mooncorr + $d + $longterm;
-    $l .= ($l + 2592000) % (1296000);
+    $l += $ellcorr + $vencorr + $marscorr + $jupcorr + $mooncorr + $longterm;
+    $l .= rem($l + 2592000 , 1296000);
     $longitude .= $l/3600;
 
     $l -= 20.5;
 
     # Allow for Nutation
-    my($omega) = 259.183275 - ((1934.142008 * $cent) % 360);
+    my($omega) = 259.183275 - rem((1934.142008 * $cent) , 360);
     $l -= 17.2 * sin($omega * $dtor);
     
     # Form the True Obliquity
