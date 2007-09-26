@@ -1,0 +1,6 @@
+=head2 dst_moller - calculate the DST's moller matrix based on observing parameters
+
+=for ref
+
+dst_moller is ported from IDL code by Hector Socas Navarro.  
+

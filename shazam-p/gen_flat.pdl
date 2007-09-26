@@ -26,7 +26,7 @@ sub gen_flat {
     # Magic numbers to deal with reflections off the filter glass (0.03/slice)
     @panecount = (0,2,1,1,0);
     $pane_nd=0.03;
-    $trans = pdl(map { m/inf/ ? 
+    $trans = pdl(map { $_==0 ? 
 			   0 : 
 			   pow(10,-$densities[$_] - $pane_nd * $panecount[$_]) 
 		       } (0..$#densities));
@@ -38,13 +38,14 @@ sub gen_flat {
 
     @files = map { [<$_/*>] } @dirs;
 
-    my $nfiles = 32; # two full modulator rotations...
+    my $nfiles = 16; # two full modulator rotations...
 
     @panes = map { double rfits($_->[0],{hdrcpy=>1}) } @files;
 
     for my $i(1..$nfiles){
 	for my $j(0..$#dirs) {
-	    $panes[$j] += rfits($files[$j]->[$i]);
+	print "[$i,$j]: $files[$j]->[$i-1] ...";
+	    $panes[$j] += rfits($files[$j]->[$i-1]);
 	}
 	print "$i of $nfiles...\n";
     }

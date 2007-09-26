@@ -1,0 +1,80 @@
+sub read_iquv {
+    my $files_raw = shift;
+    my $phase = shift;
+
+    # Massage the files to find the full-rotation runs...
+    my $time_phase = sub {
+	my $fname = shift;
+	$fname =~ m/(\d\d)(\d\d)(\d\d)\.(\d\d)_P(\d\d)/;
+	my($h,$m,$s,$hs,$ph) = ($1,$2,$3,$4,$5);
+	return ($hs * 0.01 + $s + $m*60 + $h*60, $ph);
+    };
+
+    $files = [];
+    $start = 0;
+
+    do {
+      print "start=$start...";
+      do { 
+	  $ctime = [&$time_phase($files_raw->[$start])];
+	  $start++ unless($ctime->[1]==$phase);
+	  print "ctime->[1]=".(0+$ctime->[1])."; phase is $phase; flag is '".($ctime->[1]+0 != $phase)."'\n";
+      } while( ($ctime->[1] != $phase) && ($start <$#$files_raw));
+      $ok = 1;
+
+      rot: for $ij(1..15){
+	  $stime = $ctime;
+	  $ctime= [&$time_phase($files_raw->[$ij+$start])];
+	  unless ($ctime->[0]-$stime->[0] < 2 && 
+		  ( $ctime->[1]-$stime->[1] == 1 ||
+		    $ctime->[1]-$stime->[1] == -15 )
+		  ) {
+
+	      $start += $ij;
+	      $ok = 0;
+	      print "ij=$ij; ctime: $ctime->[0],$ctime->[1]; stime: $stime->[0],$stime->[1]\n";
+	      last rot;
+	  }
+      }
+
+
+      if($ok and @$files_raw - $start >= 16) {
+	  for $i(0..15) {
+	      push( @$files, $files_raw->[$i+$start] );
+	  }
+	    $start = $start + 16;
+      }
+      
+    } until(@$files_raw - $start <= 16);
+
+    print "files_raw is ".(0+@$files_raw)."; files is ".(0+@$files)."\n";
+    @files_ok =@$files;
+
+    
+    my $ph = (xvals(16) + $phase)%16;
+    my $pm = ones(16) - 2*($ph%8<4);
+    print "pm=$pm";
+    $pm2 = ones(16)-2*($ph%4<2);
+    $pm3 = ones(16)-2*(($ph+1)%4<2);
+
+    $maxf = (0 + @$files) - (@$files % 16);
+    
+    print "Reading $files->[$i] ($i)...\n";
+    $out = zeroes(rfits($files->[0])->dims,4);
+    
+    for $i(0..$maxf-1){
+	$files->[$i] =~ m/_P(\d\d).fits/;
+	my $p = $1;
+	print "$files->[$i]...";
+	my $im = rfits($files->[$i]);
+	$out->(:,:,:,(0)) += $im;
+	$out->(:,:,:,(1)) += $im * $pm3->($p);
+	$out->(:,:,:,(2)) += $im * $pm->($p);
+	$out->(:,:,:,(3)) += $im * $pm2->($p);
+    }
+    $out /= $maxf;
+    print "\n";
+
+    return $out;
+}
+	
