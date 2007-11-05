@@ -1,0 +1,59 @@
+=head2 dipole
+
+=for ref 
+
+Potential field from a dipole at the given location & orientation
+
+=for usage
+
+$field = dipole($where,$vstrength,$xyz);
+
+$where is the location of the monopole, as a 3-PDL.  $vstrength is
+the dipole's strength/orientation vector, as a 3-PDL.  $xyz is the
+location where you want the field.  You can thread over multiple dipoles
+in a single dimension, and the returned field is the sum of the fields from the
+dipoles.  Likewise, you can thread over locations, and you get back 
+a threaded set of field vectors. 
+
+You specify the dipole strength components in total flux per steradian, 
+and you get back the field in flux per unit area. 
+
+This will break if you try to thread over more than one dimension in
+dipole and/or location.
+
+=cut
+use PDL::NiceSlice;
+
+sub dipole {
+  my($where) = pdl(shift);
+  my($m) =     pdl(shift);
+  my($xyz) =   pdl(shift);
+
+  barf("dipole: needs a 3xn PDL for dipole location\n")
+    if($where->dim(0) != 3);
+
+  barf("dipole: needs a 3xn PDL for dipole value\n")
+    if($m->dim(0) != 3);
+
+  if($where->ndims > 2 || $m->ndims > 2) {
+      barf("dipole: no more than one thread dimension allowed for dipole collections!\n");
+  }
+
+  eval { $where + $m };
+  if($@) {
+      barf("dipole: dipole location and moment must have thread-compatible dimension!\n($@)\n");
+  }
+
+  $xyz = $xyz->(:,*1,:); # Dummy dim to thread over dipoles
+  
+  my $rvec = ($xyz - $where);                           # (xyz, dipole, field-loc)
+  my $r2 = ($rvec * $rvec)->sumover->(*1);      
+  my $r  = sqrt($r2);
+  
+  $out = (1 / ($r2 * $r)) * 
+      ( 3 * ( $rvec * (($m * $rvec)->sumover->(*1)) / $r2 ) - $m);
+  
+  # Collapse by summing over dipoles...
+  $out->mv(1,0)->sumover;
+}
+  
