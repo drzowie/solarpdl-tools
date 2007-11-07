@@ -4,7 +4,7 @@
 
 =for ref
 
-Return the sign of elements in a piddle
+Return the sign of elements in a piddle (DEPRECATED)
 
 =for usage
 
@@ -15,6 +15,13 @@ Sign returns +1 for positive values, -1 for negative values, and 0 in the value 
 AUTHOR
 
 Derek Lamb
+
+HISTORY
+
+This subroutine has been deprecated.  Actually, it was never necessary
+in the first place.  Use Perl's "spaceship" comparison operator with 0
+to achieve the same effect.  Instead of <C>sign($a)</C>, use
+<C>$a<=>0</C>.
 
 =cut
 
