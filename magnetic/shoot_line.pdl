@@ -37,7 +37,7 @@ sub shoot_line {
   my $max_step = shift || undef;
   my $n = 0;
   $epsilon = pdl($epsilon);
-  my $e2 = $epsilon*$epsilon;
+  my $e2 = 1e-15;
 
 
   my $dydt = sub { shift; &$field(@_); };  # ignore time call
@@ -71,10 +71,11 @@ sub shoot_line {
     $y0 = $y2;
 
     $t += $dt;
-    $dt *= 1.1;
+    $dt *= 1.2;
 
     print "step=$n; t=$t; y0=$y0\n" unless($n%500);
-  } until(($epsilon >0 and $dt*$fmag < $e2)   or   &$term($y0,$t) or   $n++ > 10000);
+    $n++;
+  } until(($epsilon >0 and $dt*$fmag < $e2)   or   &$term($y0,$t));
   push(@locations,$y0->(:,(0)));
   print "\n" if($n>500);
   return pdl(@locations);
