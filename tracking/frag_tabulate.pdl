@@ -255,6 +255,7 @@ if (a feature is filtered){
 =cut
 
 =pod
+
 ## IF a concentration is going to get discarded
 ## AND it is touching another concentration of the same sign
 ## THEN reassociate the small concentration with the bigger one
@@ -284,7 +285,9 @@ if (a feature is filtered){
             ##set up a bounding box
 	    ($xmin,$xmax)=minmax($loci->[$fr]->{$id}->pdl % $xsize);
 	    ($ymin,$ymax)=minmax(floor($loci->[$fr]->{$id}->pdl / $xsize));
-	    $subfield=$id_list->[$fr]->range([$xmin-1,$ymin-1],[$xmax-$xmin+2,$ymax-$ymin+2],'t');
+	    my $rs = pdl($xmax - $xmin+2,$ymax - $ymin+2);
+	    print "(xy): $xmin $xmax $ymin $ymax : $rs\n" if $opt->{verbose};
+	    $subfield=$id_list->[$fr]->range([$xmin-1,$ymin-1],$rs,'t');
             ##find out what other ids are in this subfield
 	    $subfield_ids=$subfield->uniq;
 	    $subfield_sizes=zeroes($subfield_ids);
