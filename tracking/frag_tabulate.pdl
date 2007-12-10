@@ -39,14 +39,6 @@ filtered as noise.
 A feature with a maximum size smaller than this value will get filtered as 
 noise.
 
-=item keep (default 0)
-
-In order to prevent filtering causing the C<Swiss cheese problem>, features
-that are going to get discarded that are touching another feature of the 
-same sign will be reassociated to that feature.  Features that do not touch
- another same-sign feature will be discarded.  Set this option to 1 to 
-prevent the discarding.  Reassociation happens whether you want it or not.
-
 =item tab
 
 Set this option to an array ref or DiskCache object to prevent the assoc 
@@ -55,6 +47,10 @@ files from being changed in place.
 =item verbose
 
 Chat.
+
+=item DEBUG
+
+Sets verbose option to 2.
 
 =back
 
@@ -70,10 +66,15 @@ Derek Lamb 15-Nov-2004 added reassociation to fix the swiss cheese problem.
 
 Derek Lamb 02-Jun-2005 added documentation.
 
+Derek Lamb 09-Dec-2007 replaced reassociation with the simpler "any
+contacts?" check on the filtering.
+
 =cut
 
 use strict;
+use PDL;
 use PDL::NiceSlice;
+use PDL::ImageND;
 
 sub frag_tabulate {
     my($opt,$id_list,$im_list) = find_opt(@_);
@@ -84,7 +85,6 @@ sub frag_tabulate {
     $opt->{v_min} = 8         unless(defined $opt->{v_min});
     $opt->{t_min} = 4         unless(defined $opt->{t_min});
     $opt->{sz_min}= 4         unless(defined $opt->{sz_min});
-    $opt->{keep}  = 0         unless(defined $opt->{keep});
     $opt->{tab} = $id_list    unless(defined $opt->{tab}); 
     #assoc files are set to change in place unless {tab} is defined
     
@@ -94,7 +94,7 @@ sub frag_tabulate {
     ## Allocate the features table
     
     my($maxfrag) = $id_list->[-1]->abs->max;  
-    my($summary) = zeroes($maxfrag+1,scalar(@{$id_list}),4);
+    my($summary) = zeroes(float,$maxfrag+1,scalar(@{$id_list}),4);
 ##summary is indexed by (feature number, frame number, (flux, size, centroid x, centroid y)) 
    
     ##############################
@@ -186,8 +186,64 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 ##note that anything based on which($frag_ok) is only going to have positive ID numbers!
 
 =pod
+
+if (a feature is filtered){
+    if (feature is touching another feature in space or time){
+    keep feature
+    }
+    else{
+    kill feature
+    }
+}
+
+=cut
+
+    my $frag_filt = !$frag_ok;
+    my $k = ones(3,3);
+    my $xsize=$id_list->[0]->dim(0);
+  FilteredFeature:    foreach my $feat($frag_filt->list){
+      
+      my $frames = which($summary(($feat),:,(1)));
+      my $start = $frames->at(0)?$frames->at(0)-1:0;
+      my $end = $frames->at(-1)<=$summary->dim(1)-1?$frames->at(-1)+1:$summary->dim(1)-1;
+      
+###check before
+      if (($frames->at(0)) &&
+	  ($id_list->[$frames->at(0)-1]->where($id_list->[$frames->at(0)]==$feat)->any))
+      {
+	  $frag_ok(($feat)).=1;
+	  next FilteredFeature;
+      }
+      
+###check after
+      if (($frames->at(-1)<=$summary->dim(1)-1) &&
+	  ($id_list->[$frames->at(-1)+1]->where($id_list->[$frames->at(-1)]==$feat)->any))
+      {
+	  $frag_ok(($feat)).=1;
+	  next FilteredFeature;
+      }
+      
+###check around
+
+      for my $fr($frames){
+	  my ($xmin,$xmax)=minmax($loci->[$fr]->{$feat}->pdl % $xsize);
+	  my ($ymin,$ymax)=minmax(floor($loci->[$fr]->{$feat}->pdl / $xsize));
+	  
+	  my $sub_idlist = $id_list->[$fr]->range(pdl($xmin,$ymin)-1,pdl($xmax-$xmin,$ymax-$ymin)+2,'t');
+	  my $dilated = convolveND($sub_idlist==$feat,$k)>0;
+
+	  my $localids = $sub_idlist->where($dilated)->uniq;
+#localids should at least have $feat in it, and we don't care about 0.
+	  if(($localids!=$feat && $localids!=0)->any){
+	      $frag_ok(($feat)).=1;
+	      next FilteredFeature;
+	  }
+      }
+  }
+    
+=pod
 ## IF a feature is going to get discarded
-## And a simple majority of that feature's pixels overlap another feature at the beginning or end of it's life
+## And a simple majority of that feature's pixels overlap another feature at the beginning or end of its life
 ## THEN if only overlap at beginn
 
     my $reassoc = 0;
@@ -198,7 +254,7 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
     $xsize = $im_list->[0]->dim(0);
 =cut
 
-
+=pod
 ## IF a concentration is going to get discarded
 ## AND it is touching another concentration of the same sign
 ## THEN reassociate the small concentration with the bigger one
@@ -293,8 +349,11 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
 
     }##end loop over frames
 
-##need to remake this because we might have (if $opt->{keep}) re-ok'd some features
+=cut
+
+##need to remake this because we might have re-ok'd some features
     $ok_ids = which($frag_ok);
+
 
     # Generate forward and backward conversions for IDs.  The +1s are to 
     # make the new IDs starts at 1 not 0.
@@ -326,7 +385,7 @@ hash keys for a given frame won't be: {0,4,5,8,9,13,...}
     my($sum2) = $summary->(append(pdl(0),$ok_ids),:,:)->copy;
     print "cleaning up...\n";
     undef $summary;
-    print "$reassoc concentrations reassociated\n";
+#    print "$reassoc concentrations reassociated\n";
     print "frag_tabulate completed successfully.\n";
     return $sum2;
 }
