@@ -75,7 +75,7 @@ extensive paging to/from disk) in most cases.
 
 =for bugs
 
-None known.
+None known at this time (14 January 2008).
 
 =for history
 
@@ -85,6 +85,9 @@ Parnell.
 2.0-b: 15-April-2004
 
 01-June-2005 Derek Lamb implemented "behind" option
+
+13-January-2008 Derek Lamb fixed a bug whereby not all the pixels
+were picked up in some special cases.
 
 =cut
 
@@ -127,14 +130,11 @@ sub frag_detect {
   $opt->{thresh} = pdl(20,10) unless (defined($opt->{thresh}));
   $opt->{thresh} = pdl($opt->{thresh});
   
-  $opt->{mask_list} = [] unless (defined($opt->{mask_list}));
-  
   $opt->{behind} = -1 unless (defined $opt->{behind});
   
   $masks = (defined($opt->{masks})) ? $opt->{masks} : [];
   
   my($lthresh,$hthresh) = ($opt->{thresh}->min, $opt->{thresh}->max);
-  my($threshdiff) = $lthresh - $hthresh; # less than zero
   
   ##############################
   ## @locus tells us which pixels are newly selected and
@@ -146,7 +146,7 @@ sub frag_detect {
   ## 
   
   my( @ploci, @nloci, $null, $i );
-  $null = pdl([[-10,-10]]);
+  $null = pdl([[-10,-10]]); #$null is 2 x 1
   map { push(@ploci,$null); push(@nloci,$null); } (0..$#$cube);
   
   ##############################
@@ -154,49 +154,45 @@ sub frag_detect {
   my $frame = 0;
   my $frmax = 0;
   do {
-      my $ploc;  
-      my $nloc;
+      my ($ploc,$nloc,$fr_ploc,$fr_nloc,$nfound,$pfound);  
       
       print "Frame $frame of $#$cube ";
-      
       #### If necessary, generate the initial mask from high-threshold values
       print "def\n";
       unless( defined($masks->[$frame])){
 	  
-	  $masks->[$frame] =     ( $cube->[$frame] > $hthresh ) 
-	      -  ( $cube->[$frame] < -$hthresh );
+	  $masks->[$frame] =     ( $cube->[$frame] >= $hthresh ) 
+	      -  ( $cube->[$frame] <= -$hthresh );
 	  $ploc = whichND($masks->[$frame]>0);
 	  $nloc = whichND($masks->[$frame]<0);
       } else {
 	  $ploc = $nloc = $null;
       }
-      
+
       #### If necessary, add locus values from the next and previous frames
       print "fr ";    
-      my $fr_ploc;
-      my $fr_nloc;
-      $fr_ploc = ( PDL::glue( ($frame == 0 ? $null : $ploci[$frame-1]), 
-			      1, 
-			      ($frame < $#$cube ? $ploci[$frame+1] : $null)
+
+      $fr_ploc = ( PDL::glue( ($frame == 0 ? $null : $ploci[$frame-1]), 1, 
+			      ($frame < $#$cube ? $ploci[$frame+1] : $null),
+			      ($frame == 0 ? $null : $null->glue(1,scalar whichND($masks->[$frame-1]>0))),
+			      (($frame < $#$cube && defined $masks->[$frame+1]) ? $null->glue(1,scalar whichND($masks->[$frame+1]>0)) : $null)
 			      )
 		   ) -> uniqvec;
-      
-      $fr_nloc = ( PDL::glue( ($frame == 0 ? $null : $nloci[$frame-1]), 
-			      1, 
-			      ($frame < $#$cube ? $nloci[$frame+1] : $null)
+
+      $fr_nloc = ( PDL::glue( ($frame == 0 ? $null : $nloci[$frame-1]), 1,
+			      ($frame < $#$cube ? $nloci[$frame+1] : $null),
+			      ($frame == 0 ? $null : $null->glue(1,scalar whichND($masks->[$frame-1]<0))),
+			      (($frame < $#$cube && defined $masks->[$frame+1]) ? $null->glue(1,scalar whichND($masks->[$frame+1]<0)) : $null)
 			      )
 		   ) -> uniqvec;
-      
+
       print "diag ";
       my $pchk = frag_detect_diag($opt->{diag}-2, $fr_ploc, $fr_ploc);
       my $nchk = frag_detect_diag($opt->{diag}-2, $fr_nloc, $fr_nloc);
       
       #### Now add current locus points and their offsets, and loop until 
       #    satisfied with the current mask.
-      my $nfound;
-      my $pfound;
-      my $total_found;
-      $total_found = 0;
+      my $total_found=0;
       
       print "loop ";
       do {
@@ -210,16 +206,16 @@ sub frag_detect {
 	  $nchk = frag_detect_diag($opt->{diag}, $nloc, $nchk)->glue(1,$nloc);
 	  
 	  # Simplify the loci to check.
-	  $pchk = $pchk->uniqvec if($pchk->nelem > 5000);
-	  $nchk = $nchk->uniqvec if($nchk->nelem > 5000);
+	  $pchk = $pchk->uniqvec;#DAL if($pchk->nelem > 5000);
+	  $nchk = $nchk->uniqvec;#DAL if($nchk->nelem > 5000);
 	  
 	  # Locate new pixels, and update ploc/nloc.
 	  
-	  printf("Checking: n - %6d; p - %6d;  ",$pchk->((0))->nelem,$nchk->((0))->nelem) if($opt->{verbose});
+	  printf("Checking: n - %6d; p - %6d;  ",$nchk->((0))->nelem-9,$pchk->((0))->nelem-9) if($opt->{verbose});
 	  
 	  my $pcpix = $cube->[$frame]->range($pchk,0,'t')->sever;
 	  my $pmpix = $masks->[$frame]->range($pchk,0,'t');
-	  $pfound = which(($pmpix == 0) & ($pcpix > $lthresh));
+	  $pfound = which(($pmpix == 0) & ($pcpix >= $lthresh));
 	  $ploc = ($pfound->nelem ? 
 		   $pchk->xchg(0,1)->range($pfound(*1),0,'f')->xchg(0,1) : 
 		   $null
@@ -228,10 +224,9 @@ sub frag_detect {
 	  
 	  my $ncpix = $cube->[$frame]->range($nchk,0,'t')->sever;
 	  my $nmpix = $masks->[$frame]->range($nchk,0,'t');
-	  $nfound = which(($nmpix == 0) & ($ncpix < -$lthresh));
+	  $nfound = which(($nmpix == 0) & ($ncpix <= -$lthresh));
 	  $nloc = ($nfound->nelem ? $nchk->xchg(0,1)->($nfound)->xchg(0,1) : $null);
 	  $nmpix->indexND($nfound(*1)) .= -1;
-	  
 	  
 	  $ploci[$frame] = $ploci[$frame]->glue(1,$ploc) if($pfound->nelem);
 	  $nloci[$frame] = $nloci[$frame]->glue(1,$nloc) if($nfound->nelem);
@@ -261,7 +256,7 @@ sub frag_detect {
 	  $frmax=$frame if($frame>$frmax);
       }
   } while($frame <= $#$cube);
-  
+
   return $masks;
   
 }
