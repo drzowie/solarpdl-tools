@@ -1,0 +1,88 @@
+=head2 spikejones - despike using spatial information
+
+=for usage
+
+$im = spikejones($im, $opt);
+spikejones($im->inplace, $opt);
+
+=for ref 
+
+spikejones is a simple single-image despiker, along the lines of all
+the other despikers out there.  It unsharp-masks the image and sets
+spiky values to be equal to the average of local non-spike pixels.  If
+you have an image sequence that adequately samples the underlying
+evolution, consider using zspike() instead, as that uses more robust
+temporal information rather than just spatial information.
+
+The default works OK for TRACE EUV images with small to moderate
+amounts of spike.  
+
+It works by comparing an unsharp-masked copy of the image to a 
+smoothed copy of the image.  You can adjust the size of the 
+unsharp-masking kernel, the smoothing kernel, and the required
+ratio to identify a spike.
+
+Options are:
+
+=over 3
+
+=item siz (default 3)
+
+The size of the margin around the central pixel, for the unsharp mask
+convolution kernel. 
+
+=item smsiz (default siz*2 + 1)
+
+The size of the smoothing kernel used to smooth the image for intensity
+comparison with the unsharp masked image.
+
+=item alpha (default 1)
+
+The height in the unsharp-masked image, above which a pixel is
+considered a spike (normalized to the smoothed image -- ie a n
+unsharp-masked pixel, by default, must be above the smsiz x smsiz
+pixel average brigtness in the neighborhood, to be considered a spike.
+Lower values are more sensitive, higher values are more tolerant.
+
+=back
+
+
+=cut
+
+sub spikejones {
+    my $im = shift;
+    my $opt = shift || {};
+
+    die "spikejones requires a PDL" unless (UNIVERSAL::isa($im,'PDL'));
+    my $a = $im->new_or_inplace;
+        
+    ##############################
+    # Pick a size -- default is three pixels around the central one (7x7 kernel)
+    my $siz = $opt->{siz} || 3;
+    $siz = pdl($siz)->flat->at(0); # ensure a Perl scalar...
+    $siz *= 2;
+    $siz += 1;
+
+    ##############################
+    # Pick a smoothing size -- default is twice $siz.
+    my $smsiz = $opt->{smsiz} || $siz*2+1
+    $smsiz = pdl($smsiz)->flat->at(0); 
+    my $az = $a / $a->convolveND(ones($smsiz,$smsiz)/$smsiz/$smsiz,{bound=>'p'});
+
+
+    my $k = -ones($siz,$siz)/$siz*$siz
+    $k->(3,3) += 0.75;
+    $k->(2:4,2:4) += 0.25/9;
+    
+    my $thresh = ($opt->{alpha} || 1);
+    my $am = ($az->convolveND($k) > $thresh);
+    my $spikes = whichND($am);
+
+    my $ar = $a->range($spikes-($siz-1)/2,$siz,'e');
+    my $amr = (!$am)->range($spikes-($siz-1)/2,$siz,'e');
+    my $ac = $a->indexND($spikes);
+
+    $ac .= ($ar * $amr)->mv(0,2)->sumover->sumover / $amr->mv(0,2)->sumover->sumover;
+
+    return $a;
+}

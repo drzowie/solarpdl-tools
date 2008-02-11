@@ -1,0 +1,32 @@
+=head2 invert_kernel 
+
+Given a kernel (as a 2-D PDL), find its inverse kernel or a close
+approximation.  You feed in the kernel and an epsilon (default 10^-2) 
+that forms a lower cutoff for Fourier components. 
+
+=cut
+
+sub invert_kernel {
+    my $k = shift;
+    my $epsilon = shift || 1e-2;
+
+     $kr = copy $k;
+     $ki = zeroes $k;
+
+    fftnd($kr,$ki);
+    
+     $km = sqrt($kr*$kr + $ki*$ki);
+    
+     $km2 = $km / ( ($km * $km) + ($epsilon * $epsilon) );
+     $ka2 = -$ka;
+    
+    $ki .= sin($ka2) * $km2;
+    $kr .= cos($ka2) * $km2;
+    
+    $kra = $kr->copy;
+    $kia = $ki->copy;
+
+    ifftnd($kr,$ki);
+    
+    return $kr->range([($kr->dim(0)+1)/2,($kr->dim(1)+1)/2],[$kr->dims],'p');
+}
