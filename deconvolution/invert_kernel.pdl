@@ -17,7 +17,8 @@ sub invert_kernel {
     
      $km = sqrt($kr*$kr + $ki*$ki);
     
-     $km2 = $km / ( ($km * $km) + ($epsilon * $epsilon) );
+     $km2 = sqrt($km) / ( sqrt($km * $km*$km) + $epsilon );
+##     $km2 = 1/($km+$epsilon);
      $ka2 = -$ka;
     
     $ki .= sin($ka2) * $km2;
