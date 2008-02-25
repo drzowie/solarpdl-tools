@@ -2,24 +2,25 @@
 
 =for use
 
-$psf = sot_psf(rvals(50,50));
+$psf = sot_psf( $size )
 
 =for ref
 
 This returns DeForest's hand-tweaked SOT PSF, suitable for
-deconvolution, as a function of radial distance from a centerline.
+deconvolution, as a zero-centered square kernel with sides of length
+$size.
 
 =cut
 
 sub sot_psf {
-    my $rv = shift;
+    my $size = pdl(shift)->flat->at(0);
+    my $rv = rvals($size,$size);
 
     # (These were hand-fitted by DeForest using the 7-Feb-2008 data)
     my ($gs, $ls, $w, $h)  = ([1.2=>1,30=>0.00015,3.3=>0.2,8=>0.002,10=>1.5e-3,30=>1e-4],
 			      [800,0.000002,0.4=>0.11],
 			      650,
 			      0.00);
-    my $norm = 1/(18.2274);
 
     my $e = $w ? exp(-$rv/$w) : 1;
     
@@ -43,7 +44,7 @@ sub sot_psf {
 	}
     }
     $k += exp(-$rv/$w)*$h;
-    $k *= $norm;
+    $k /= $k->sum;
     return $k;
 }
 	
