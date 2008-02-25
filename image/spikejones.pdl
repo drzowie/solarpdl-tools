@@ -50,7 +50,7 @@ Lower values are more sensitive, higher values are more tolerant.
 =cut
 
 sub spikejones {
-    my $im = shift;
+    my $im = double  shift;
     my $opt = shift || {};
 
     die "spikejones requires a PDL" unless (UNIVERSAL::isa($im,'PDL'));
@@ -65,12 +65,12 @@ sub spikejones {
 
     ##############################
     # Pick a smoothing size -- default is twice $siz.
-    my $smsiz = $opt->{smsiz} || $siz*2+1
+    my $smsiz = $opt->{smsiz} || $siz*2+1;
     $smsiz = pdl($smsiz)->flat->at(0); 
     my $az = $a / $a->convolveND(ones($smsiz,$smsiz)/$smsiz/$smsiz,{bound=>'p'});
 
 
-    my $k = -ones($siz,$siz)/$siz*$siz
+    my $k = -ones($siz,$siz)/$siz/$siz;
     $k->(3,3) += 0.75;
     $k->(2:4,2:4) += 0.25/9;
     
