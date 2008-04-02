@@ -203,6 +203,7 @@ sub emergence_movie {
 	my $w = pgwin(dev=>$framename,size=>$size);
 	# RGB-ify data and scale to [0,1].
 	$im = $data->[$i]->float->clip(@$range)->dummy(2,3)->copy;
+#	$im = $data->[$i]->float->clip(@$range)->copy;
 	$im->sethdr($data->[$i]->hdr_copy);
 	$im->hdrcpy(1);
 	$im -= $range->[0];
@@ -262,8 +263,7 @@ sub emergence_movie {
 		
 		if($contour==2) {
 		    $boundaries(2,-1) .= 0; # lift up pen
-		    my $l = boundary($id,$tabs->(($id),($i)),$ids->[$i]);
-#		    my $l = boundary2($id,$tabs->(($id),($i)),$ids->[$i]);
+		    my $l = boundary($id,$ids->[$i]);
 		    $l((2)).=($tabs->(($id),($i),(0))>0)?1:255 if ($format eq 'vps');
 		    $boundaries = $boundaries->glue(1,$l);
 		} elsif($contour==1) {
