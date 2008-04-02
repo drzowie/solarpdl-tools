@@ -55,6 +55,8 @@ sub swamis{
 
     my $hist = frag_hist($tabs,$tab,$data,{verbose=>1,sep=>5,ratio=>0.5});
     $hist->wfits('hist.fits');
+
     emergence_movie($hist,$tabs,$data,$tab,{dir=>'swamis_movie',size=>[8,8],range=>[-300,300],evmask=>[0,0,0,0,0,0],id_feats=>0,contour=>2,format=>'ppm'});   
 ### Done!
+
 }

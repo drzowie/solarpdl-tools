@@ -131,6 +131,8 @@ Derek Lamb April 2005--bug finding and fixing, added documentation
 
 Derek Lamb January 2007--colorfied the contours. Implemented 'start' option
 
+Derek Lamb July 2007--Added plotrange option.
+
 =cut
 
 use Carp;
@@ -140,6 +142,7 @@ use PDL::NiceSlice;
 use PDL::Transform;
 
 sub emergence_movie {
+    $|=1;
     my($hist,$tabs,$data,$ids,$opt) = @_;
     
     $opt = {} unless defined($opt);
@@ -149,7 +152,8 @@ sub emergence_movie {
     my $fname = $opt->{fname} || "frame";  # Frame name template
     my $size  = $opt->{size}  || [10,10];  # Frame size (inches)
     
-    my $start = $opt->{start} || 4;        # Don't show events in first n frames
+#    my $start = $opt->{start} || 4;        
+    my $start = defined($opt->{start})?$opt->{start}:4; # Don't show events in first n frames
     my $pre   = $opt->{pre}   || 4;        # Pre-illumination frame count
     my $post  = $opt->{post}  || 20;       # Post-illumination frame count
     my $range = $opt->{range} || [-50,50]; # Data range to display
@@ -168,8 +172,8 @@ sub emergence_movie {
     my $frag_color = pdl(-0.1,0.3,-0.1);  # Fragmentations are green
     my $cmplx_color = pdl(-0.1,-0.1,-0.1); 
     my $err_color = pdl(0.2,-0.1,-0.1); # Errors are faint red
-    my $plot_range = $opt->{plot_range} || [0,0,-1,-1];
-    $plot_range = pdl($plot_range);
+    $opt->{plot_range} = [0,0,-1,-1] unless defined ($opt->{plot_range});
+
     my $anti_alias = $opt->{anti} || 1;
 
     my $format = $opt->{format} || 'ppm';
@@ -229,16 +233,17 @@ sub emergence_movie {
 		$imr += $cmask * $colors[$h->at(1)]->(*1,*1) * pow($decay,$i+$pre-$h->at(0)) if($evmask->[$h->at(1)]) ;
 	    }
 	}
-	my $title = sprintf("MDI Tracked Rgn %s %s",$im->hdr->{'DATE-OBS'},$im->hdr->{'TIME-OBS'});
+	my $title = sprintf("%s %s",$im->hdr->{'DATE-OBS'},$im->hdr->{'TIME-OBS'});
 	my $t = t_fits($im);
 #       my $t = t_identity();	    
 
 #there's probably an easier way to do this, but I'm too lazy to figure it out. DAL
+	my $plot_range = pdl($opt->{plot_range});
 	$plot_range->(0)+=$im->dim(0) if $plot_range->at(0) == -1;
 	$plot_range->(1)+=$im->dim(1) if $plot_range->at(1) == -1;
 	$plot_range->(2)+=$im->dim(0) if $plot_range->at(2) == -1;
 	$plot_range->(3)+=$im->dim(1) if $plot_range->at(3) == -1;
-	$plot_range = $plot_range->reshape(2,2)->apply($t)->flat unless $i;
+	$plot_range = $plot_range->reshape(2,2)->apply($t)->flat;# unless $i;
 
 	print "plot_range = $plot_range\n";
 
@@ -249,7 +254,7 @@ sub emergence_movie {
 	    my $id;
 	    
 	    my($boundaries)=zeroes(3,1);
-	    
+
 	    for $id(which($tabs->(:,($i),((0))))->list) {
 		my $xy = $tabs->(($id),($i),2:3)->apply($t);
 #skip if center position is not in our FOV.  Not the best way, but sufficient.
@@ -266,6 +271,7 @@ sub emergence_movie {
 		    my $l = boundary($id,$ids->[$i]);
 		    $l((2)).=($tabs->(($id),($i),(0))>0)?1:255 if ($format eq 'vps');
 		    $boundaries = $boundaries->glue(1,$l);
+
 		} elsif($contour==1) {
 		    $w->ellipse($xy->at(0),$xy->at(1),$r,$r,{fill=>2,color=>3});
 		}
@@ -273,13 +279,13 @@ sub emergence_movie {
 		$w->text($id,$xy->at(0)+$r*1.05,$xy->at(1),{charsize=>0.67*$anti_alias,color=>3}) if $id_feats;
 		print ".";
 	    }
-	    
+
 	    if($contour==2) {
 		$w->lines( $boundaries->apply($t),{color=>1});
 	    }
 	    
 	}
-	$w->close;
+	$w->close; 
 #	if($anti_alias > 1) {
 #	    $im = rim($framename);
 #	    $im = $im->match([(pdl($im->dims)/$anti_alias)->short->list],{method=>'h'});
