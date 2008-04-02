@@ -204,17 +204,17 @@ if (a feature is filtered){
 ########################
 #shortcut: if there's no filtering, we can just write out the images and return
     if ($filt_ids->nelem == 1 && $filt_ids->at(0)==0){
+	print "shortcutting..." if $opt->{verbose}>1;	
 	for my $fr(0..$#{$im_list}) {
 	    $opt->{tab}->[$fr] = $id_list->[$fr]->abs;
 	}
+	print "frag_tabulate completed successfully.";
 	return $summary;
     }
 #end shortcut
 ########################
 
 #    my($ok_ids) = which ($frag_ok); #with no reassociation, don't need to make this until later
-    $frag_ok->wfits('frag_ok.fits');
-    $summary->wfits('summary.fits');
     
     my $k = ones(3,3);
     my $xsize=$id_list->[0]->dim(0);
@@ -292,7 +292,6 @@ if (a feature is filtered){
     my($sum2) = $summary->(append(pdl(0),$ok_ids),:,:)->copy;
     print "cleaning up...\n";
     undef $summary;
-#    print "$reassoc concentrations reassociated\n";
     print "frag_tabulate completed successfully.\n";
     return $sum2;
 }
