@@ -19,40 +19,42 @@ use PDL::DiskCache;
 
 sub swamis{
 
-### Set up and execute mask run
+### Set up filename lists
     my @datafiles = <00-data/*.fits>;
     my @maskfiles = map { ($a=$_)=~s/00-data/01-mask/; $a } @datafiles; 
-    `rm -rf 01-mask; mkdir 01-mask`;
-    my $data = diskcache(\@datafiles,{ro=>1});
-    my $mask = diskcache(\@maskfiles,{rw=>1});
-    
-    $mask = frag_detect($data, {diag=>2,masks=>$mask,thresh=>[28,38]});
-
-### Set up and execute ID run
     my @idfiles   = map { ($a=$_)=~s/00-data/02-id/;   $a } @datafiles;
-    `rm -rf 02-id; mkdir 02-id`;
-    
-    my $id = diskcache(\@idfiles,{rw=>1});
-    my $ids = frag_id($data,$mask,{method=>'clump',diag=>1,ids=>$id,verbose=>1,monitor=>0,min_size=>4});
-    
-### Set up and execute association run
     my @assocfiles = map { ($a=$_)=~s/00-data/03-assoc/;   $a } @datafiles;
-    `rm -rf 03-assoc; mkdir 03-assoc`;
-    
-    my $assoc = diskcache(\@assocfiles,{rw=>1});
-    $assoc = frag_assoc($ids,{assoc=>$assoc, monitor=>0, verbose=>1});
-    (tied @$assoc)->purge(-1);
-    
     my @tabfiles = map { ($a=$_)=~s/00-data/04-tab/; $a}@datafiles;
+
+### Create the PDL::DiskCache objects
+    my $data = diskcache(\@datafiles,{ro=>1,bless=>1});
+    my $mask = diskcache(\@maskfiles,{rw=>1,bless=>1});
+    my $id = diskcache(\@idfiles,{rw=>1,bless=>1});    
+    my $assoc = diskcache(\@assocfiles,{rw=>1,bless=>1});
+    my $tab=diskcache(\@tabfiles,{rw=>1,bless=>1});
+
+### Create the directories
+    `rm -rf 01-mask; mkdir 01-mask`;
+    `rm -rf 02-id; mkdir 02-id`;
+    `rm -rf 03-assoc; mkdir 03-assoc`;
     `rm -rf 04-tab; mkdir 04-tab`;
-    my $tab=diskcache(\@tabfiles,{rw=>1});
-    
+
+### Run the individual programs
+    frag_detect($data, {diag=>2,masks=>$mask,thresh=>[28*4,28*5]});
+    $mask->sync;
+
+    frag_id($data,$mask,{method=>'downhill',diag=>1,ids=>$id,verbose=>1,monitor=>0,min_size=>4});
+    $id->sync;
+
+    frag_assoc($ids,{assoc=>$assoc, monitor=>0, verbose=>1});
+    $assoc->sync;
+
     my $tabs = frag_tabulate($assoc,$data,{verbose=>1,tab=>$tab,sz_min=>4,t_min=>4,v_min=>0});
     wfits($tabs,'tabs.fits');
-    (tied @$tab)->purge(-1);
-    #$tabs = rfits('tabs.fits');   
+    $tab->sync;
+
     my $hist = frag_hist($tabs,$tab,$data,{verbose=>1,sep=>5,ratio=>0.5});
     $hist->wfits('hist.fits');
-
     emergence_movie($hist,$tabs,$data,$tab,{dir=>'swamis_movie',size=>[8,8],range=>[-300,300],evmask=>[0,0,0,0,0,0],id_feats=>0,contour=>2,format=>'ppm'});   
+### Done!
 }
