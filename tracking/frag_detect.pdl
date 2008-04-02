@@ -122,7 +122,7 @@ sub frag_detect {
   local $_;
   
   croak "frag_detect needs an array ref of fits images\n!"
-    if(ref $cube ne "ARRAY");
+    if(ref $cube ne "ARRAY" && ref $cube ne "PDL::DiskCache");
   
   
   ##############################
