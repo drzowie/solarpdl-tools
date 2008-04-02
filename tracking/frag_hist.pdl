@@ -158,7 +158,7 @@ sub frag_hist {
     
     my $hist = zeroes( $frag_ct, 11 );
     
-    print "Finding start and end times...\n" if($opt->{verbose});
+    print "Finding start and end times..." if($opt->{verbose});
     
     ##############################
     ## Find all the start and end times.  Just find the minimum and maximum
@@ -166,21 +166,25 @@ sub frag_hist {
     
     # frame gets the frame number for all frames with features of nonzero size.
     my $frame =  (yvals($frag_ct,$frame_ct)+ones($frag_ct)) * ($tabs->(:,:,(1)) != 0) ;
+    print "frame " if $opt->{verbose};
 
     # starts and ends get the max and min frame number for each feature.
     # (long-named collapse operators collapse in 0th dim only)
     # the -=1 accounts for adding the ones($frag_ct) in the $frame def
     my $ends =   $frame->xchg(0,1)->maximum;
+    my $lifes = ($frame!=0)->xchg(0,1)->sumover;
+    my $starts = $ends - $lifes;
     $ends(1:-1)-=1;
-    my $starts = ( $frame + ($ends * ($frame==0)))->xchg(0,1)->minimum;
-    $starts(1:-1)-=1;
+
     $hist->(:,(0)) .= $starts;
     $hist->(:,(3)) .= $ends;
-    $hist->(1:-1,(6)) .= $ends(1:-1) - $starts(1:-1) +1;
-    
+    $hist->(:,(6)) .= $lifes;
+
+    print "coords " if $opt->{verbose};
     $hist->(:,7:8) .= $tabs->(:,:,2:3)->range(yvals(1,$frag_ct)->glue(0,$starts->(*1)));
-    $hist->(:,9:10).= $tabs->(:,:,2:3)->range(yvals(1,$frag_ct)->glue(0,$ends->(*1)));
-    
+    print "beg " if $opt->{verbose};
+    $hist->(:,9:10) .= $tabs->(:,:,2:3)->range(yvals(1,$frag_ct)->glue(0,$ends->(*1)));
+    print "done\n" if $opt->{verbose};
     ##now we only need to fill in items 1,2,4,5    
 
     ##############################
@@ -310,19 +314,6 @@ BIRTH_INT:	for $j(0..$#interactions) {
 		    
 		    print "flux: ".$t->((0))->long."; other: ".$tabs->(($other),($starts->($other)),(0))->long."; sign is $sign\t" if($opt->{verbose} > 1);
 		    
-#		    my $starting = ( ($starts->($other) <= $bframe + $post) &&
-#				     ($starts->($other) >= $bframe - $pre)
-#				     )->at(0);
-#		    my $ending=( ($ends->($other) <= $bframe + $post) &&
-#				 ($ends->($other) >= $bframe - $pre)
-#				 )->at(0);
-
-#$starting ($ending)isn't used anywhere!  It is a boolean that answers
-#"Does $other start (end) in the frame range we're considering?"  We
-#probably need to use this somewhere, especially if the frame range is
-#large.  On the other hand it's not clear yet exactly how to properly
-#handle a larger frame range.
-
 #This is where all the origin decision-making takes place.
 #df_other is backwards to account for polarity & flux conservation.
 #No need to subtract on df_this as flux was 0 at beginning.
@@ -454,12 +445,10 @@ BIRTH_INT:	for $j(0..$#interactions) {
 DEATH_INT:	for $j(0..$#interactions) {
 		    my $other = $interactions[$j];
 		    barf "Non-valid interaction number $other, $j" if($other >= $tabs->dim(0));
-		    print "\nother=$other " if($opt->{verbose});
+		    print "\nother=$other " if($opt->{verbose}>1);
 		    my $sign = 1- ($t->((0)) * $tabs->(($other),($ends->($other)),(0))<0)*2;
 		    
 		    print "flux: ".$t->((0))->long."; other: ".$tabs->(($other),($ends->($other)),(0))->long."; sign is $sign\t" if($opt->{verbose} > 1);
-		    
-##starting and ending go here if we ever decide to use them
 		    
 		    my $df_other = $tabs->(($other),(pdl($h->((3))+$post,$frame_ct -1)->min),(0)) - $tabs->(($other),(pdl($h->((3))-$pre,0)->max),(0));
 		    
