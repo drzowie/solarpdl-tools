@@ -89,8 +89,9 @@ sub frag_assoc {
   ##############################
   # main loop
 
-  print "frag_assoc: processing $#$ids mask images...\n";
-  my $win=pgwin('xs',size=>[8,8]) if $opt->{monitor};
+  print "frag_assoc: processing ".($#$ids+1)." mask images...\n";
+  my $win=pgwin('xs',size=>[6,6]) if $opt->{monitor};
+
   for $frame(0..$#$ids) {
     next unless defined($ids->[$frame]);
 
