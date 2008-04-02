@@ -391,7 +391,7 @@ BIRTH_INT:	for $j(0..$#interactions) {
 		    print "F" if($opt->{verbose});
 		    $h->(1:2) .= pdl(3,$fr[0]);
 		} else {
-		    $berr+=sign($t->(0))*sign($tabs(($interactions[0]),($starts->($interactions[0])),0));
+		    $berr+=($t->(0)<=>0)*($tabs(($interactions[0]),($starts->($interactions[0])),0)<=>0);
 		    print "BIRTH ERROR" if($opt->{verbose});
 		}
 	    } ##end 'else' block to determine emergence & fragmentation
@@ -512,7 +512,7 @@ DEATH_INT:	for $j(0..$#interactions) {
 		    print "M" if($opt->{verbose});
 		    $h->(4:5) .=pdl(3,$mg[0]);
 		} else {
-		    $derr+=sign($t->(0))*sign($tabs(($interactions[0]),($ends->($interactions[0])),0));
+		    $derr+=($t->(0)<=>0)*($tabs(($interactions[0]),($ends->($interactions[0])),0)<=>0);
 		    print "DEATH ERROR" if($opt->{verbose});
 		}
 		
