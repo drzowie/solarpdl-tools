@@ -200,7 +200,6 @@ if (a feature is filtered){
 
 ##note that anything based on which($frag_ok) is only going to have positive ID numbers!
     my $filt_ids = which(!$frag_ok);
-
 ########################
 #shortcut: if there's no filtering, we can just write out the images and return
     if ($filt_ids->nelem == 1 && $filt_ids->at(0)==0){
