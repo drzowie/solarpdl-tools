@@ -9,15 +9,19 @@ that forms a lower cutoff for Fourier components.
 sub invert_kernel {
     my $k = shift;
     my $epsilon = shift || 1e-2;
+    my $alpha = shift || 0.5;
 
-     $kr = copy $k;
-     $ki = zeroes $k;
+    $siz = pdl dims $k;
+
+    $kr = $k->range(floor(-$siz/2),2*$siz,'t')->sever;
+    $ki = zeroes $kr;
 
     fftnd($kr,$ki);
     
      $km = sqrt($kr*$kr + $ki*$ki);
     
-     $km2 = sqrt($km) / ( sqrt($km * $km*$km) + $epsilon );
+    $km2 = pow($km,$alpha) / ( pow($km,$alpha+1) + $epsilon );
+##     $km2 = sqrt($km) / ( sqrt($km * $km*$km) + $epsilon );
 ##     $km2 = 1/($km+$epsilon);
      $ka2 = -$ka;
     
@@ -29,5 +33,5 @@ sub invert_kernel {
 
     ifftnd($kr,$ki);
     
-    return $kr->range([($kr->dim(0)+1)/2,($kr->dim(1)+1)/2],[$kr->dims],'p');
+    return $kr->range([($kr->dim(0)+1)/2,($kr->dim(1)+1)/2],[$kr->dims],'p')->sever->range(ceil($siz/2),$siz)->sever;
 }
