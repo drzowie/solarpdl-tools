@@ -102,6 +102,7 @@ have one, the other should come easy.
 	my $dt=date2int($c[0]->hdr->{DATE_OBS}) - date2int($a[0]->hdr->{DATE_OBS});
 	
 	my $mockhdr=$a[0]->hdr_copy;
+	$mockhdr->{CROTA1} = $mockhdr->{CROTA2} = $mockhdr->{CROTA} = 0;
 	$mockhdr->{DATE_OBS}=int2date('%yyyy-mm-ddTHH:MM:SSZ',date2int($a[0]->hdr->{DATE_OBS}) + $dt/2);
 	my $outa=dr_mean(\@a,$a[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr,method=>'s'});
 	print "Displaying...\n";
@@ -236,7 +237,7 @@ print "here2\n";
 	print "\n\nb0: $b0\n\n";
 	$b->hdr->{HGLT_OBS} = 0;
 	$b->hdr->{HGLN_OBS} = 0;
-	
+	$b->hdr->{CROTA1} = $b->hdr->{CROTA2} = 0;
 	
 ##change this to put whatever field you want to center on. 
 ##$origin_xy is exactly as you would see it by just 
@@ -255,7 +256,7 @@ print "here2\n";
 	    my $tt = int2date('soho ut all',$t);
 	    my $frname = "$dirs[3]/".int2date('%yyyymmdd__HH:MM:ss',$t).".fits";
 	    print "frame centered on $tt\n";
-	    my $out2 = dr_mean(\@cube,$tt,$fwhm_t,{hdr=>$b->hdr,o=>$origin_lonlat,method=>'g'});
+	    my $out2 = dr_mean(\@cube,$tt,$fwhm_t,{hdr=>$b->hdr,o=>$origin_lonlat,method=>'l'});
 	    next unless defined($out2);
 	    print "Writing $frname...";
 	    $out2->hdr->{COMMENT}="";
