@@ -13,8 +13,7 @@ $size.
 =cut
 
 sub sot_psf {
-    my $size = pdl(shift)->flat->at(0);
-    my $rv = rvals($size,$size);
+    my $rv = shift;
 
     # (These were hand-fitted by DeForest using the 7-Feb-2008 data)
     my ($gs, $ls, $w, $h)  = ([1.2=>1,30=>0.00015,3.3=>0.2,8=>0.002,10=>1.5e-3,30=>1e-4],
