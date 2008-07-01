@@ -142,6 +142,8 @@ Derek Lamb 06/01/05 more minor debugging
 Derek Lamb 01/11/07 Added pixel-overlap sensitivity to
                     fragmentation/mergers
 
+Derek Lamb 07/01/08 Fixed interaction bug for when feature id > short.
+
 =cut
 
 use strict;
@@ -217,6 +219,7 @@ sub frag_hist {
     ## Loop over features and characterize each one.
     
     for $i(1..$frag_ct-1) {
+	next unless $i==73388;
 	print "\n$i:\t" if($opt->{verbose});
 
 	my $h = $hist->(($i));
@@ -278,11 +281,9 @@ sub frag_hist {
 	    
 	    
 	    ## Now sort through to make a list of unique interacting frames.
-	    my $interactions = zeroes(1)->
-		glue(0, map {$_->uniq->(:)} @vicinity)->short;
-	    $interactions->where( $interactions == $i ) .= 0;
-	    my @interactions = $interactions->uniq->list;
-	    shift @interactions if($interactions[0]==0);
+	    my $interactions = null()->
+		glue(0, map {$_->uniq} @vicinity);
+	    my @interactions = $interactions->where($interactions!=$i & $interactions!=0)->uniq->list;
 	    print "int - ".join(", ",@interactions)," " if($opt->{verbose}>1);
 	    
 	    
@@ -423,11 +424,9 @@ BIRTH_INT:	for $j(0..$#interactions) {
 	    (($dframe + $frame_offsets)->clip(0,$frame_ct-1)->list);
 	    print "::";
 	    
-	    my $interactions = zeroes(1)->
-		glue(0, map {$_->uniq->(:)} @vicinity)->short;
-	    $interactions->where( $interactions == $i ) .= 0;
-	    my @interactions = $interactions->uniq->list;
-	    shift @interactions if($interactions[0]==0);
+	    my $interactions = null()->
+		glue(0, map {$_->uniq} @vicinity);
+	    my @interactions = $interactions->where($interactions!=$i & $interactions!=0)->uniq->list;
 	    print "int - ".join(", ",@interactions)," " if($opt->{verbose}>1);
 	    
 	    print ".. ";
