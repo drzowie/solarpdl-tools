@@ -219,7 +219,6 @@ sub frag_hist {
     ## Loop over features and characterize each one.
     
     for $i(1..$frag_ct-1) {
-	next unless $i==73388;
 	print "\n$i:\t" if($opt->{verbose});
 
 	my $h = $hist->(($i));
