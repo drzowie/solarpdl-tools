@@ -1,0 +1,25 @@
+=head2 gradient_2d - return the gradient of an image
+
+=for ref
+
+You supply an Nx x Ny 2-D image (or a stack of 'em); you get back a 2
+x (Nx-1) x (Ny-1) image containing the 2-D vector gradient at each 
+pixel intersection in the original image.
+
+=cut
+
+sub gradient_2d { 
+    my $in = shift;
+    
+    my $coords = ndcoords(2,2)->(:,:,:,*2);                              # index x 2 x 2 x (out-vec-index)
+    my $multiplier = pdl( [ [-1,1], [-1,1] ], [ [-1,-1], [1,1] ] );      # 2 x 2 x (out-vec-index) 
+	
+	return (( ( $in->range($coords, pdl($in->dims)-1)->sever      # 2 x 2 x (out-vec-index) x Nx-1 x Ny-1
+		   * $multiplier )                                    #  2 x 2 x (out-vec-index)
+		 ->clump(2)                                           #  4 x (out-vec-index) x Nx-1 x Ny-1
+		 ->sumover                                            #  (out-vec-index) x Nx-1 x Ny-1
+		 )
+		 * 0.5
+	);
+}
+    

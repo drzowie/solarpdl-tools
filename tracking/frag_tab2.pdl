@@ -76,6 +76,7 @@ sub frag_tab2 {
     for $frag(@{$frag_ids}) {
       next if $frag==0;
       
+      print "." if($opt->{DEBUG} && !($zz++ % 10));
       print " $frag" if($opt->{DEBUG}>1);
       
       my($ff) = ($frames->[$i]->{frags}->{$frag} = {});
@@ -86,7 +87,7 @@ sub frag_tab2 {
       my($locx,$locy,$strength) = where($xcoords,$ycoords,$im->flat
 					,$map==$frag);
       
-      printf ":%d",$#{$locx} if($opt->{DEBUG}>1);
+      ##printf ":%d",$#{$locx} if($opt->{DEBUG}>1);
       
       my($locus) = ($locx + $locy * $im->dim(0));
       

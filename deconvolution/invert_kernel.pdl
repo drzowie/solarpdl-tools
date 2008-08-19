@@ -1,37 +1,73 @@
 =head2 invert_kernel 
 
+
+=for usage
+
+$ik = invert_kernel($k, $opt)
+
+=for ref
+
+
 Given a kernel (as a 2-D PDL), find its inverse kernel or a close
 approximation.  You feed in the kernel and an epsilon (default 10^-2) 
 that forms a lower cutoff for Fourier components. 
+
+If you want, you can choose to convolve the kernel with a Gaussian to 
+prevent ringing.
+
 
 =cut
 
 sub invert_kernel {
     my $k = shift;
-    my $epsilon = shift || 1e-2;
-    my $alpha = shift || 0.5;
+    my $opt = shift;
+    my $epsilon = 1e-2;
+    my $alpha = 0.5;
+    my $smooth;
+    
+    if(ref $opt ne 'HASH') {
+	$epsilon = $opt;
+	my $s = shift;
+	$alpha = $s if($s);
+    }
 
-    $siz = pdl dims $k;
+    $epsilon = $opt->{epsilon} if(exists $opt->{epsilon});
+    $alpha = $opt->{alpha} if(exists $opt->{alpha});
+    $smooth = $opt->{smooth} if(exists $opt->{smooth});
+    	   
 
-    $kr = $k->range(floor(-$siz/2),2*$siz,'t')->sever;
-    $ki = zeroes $kr;
+    my $siz = pdl dims $k;
+
+    my $kr = $k->range(floor(-$siz/2),2*$siz,'t')->sever;
+    my $ki = zeroes $kr;
 
     fftnd($kr,$ki);
     
-     $km = sqrt($kr*$kr + $ki*$ki);
+     my $km = sqrt($kr*$kr + $ki*$ki);
     
-    $km2 = pow($km,$alpha) / ( pow($km,$alpha+1) + $epsilon );
-##     $km2 = sqrt($km) / ( sqrt($km * $km*$km) + $epsilon );
-##     $km2 = 1/($km+$epsilon);
-     $ka2 = -$ka;
+     my $km2 = pow($km,$alpha) / ( pow($km,$alpha+1) + $epsilon );
+
+    # Having produced the magnitude, now smooth it with a Gaussian if so desired
+    if($smooth) {
+	print "Smoothing by $smooth...\n";
+	my $wh = whichND($km2==$km2->max)->(:,(0));
+	my $whr = ($wh*$wh)->sumover->sqrt;
+
+	my $rv = rvals($km2)->range(pdl($km2->dims)/2,pdl($km2->dims),'p');
+	
+	my $sm = exp( - $rv * $rv * log(2) / $whr / $whr * $smooth * $smooth );
+	my $km2 *= $sm;
+    }
+
+    
+    my $ka2 = -$ka;
     
     $ki .= sin($ka2) * $km2;
     $kr .= cos($ka2) * $km2;
     
-    $kra = $kr->copy;
-    $kia = $ki->copy;
-
     ifftnd($kr,$ki);
     
-    return $kr->range([($kr->dim(0)+1)/2,($kr->dim(1)+1)/2],[$kr->dims],'p')->sever->range(ceil($siz/2),$siz)->sever;
+    my $ret = $kr->range([($kr->dim(0)+1)/2,($kr->dim(1)+1)/2],[$kr->dims],'p')->sever->range(ceil($siz/2),$siz)->sever;
+    $ret /= ( $ret->sum * $k->sum );
+    return $ret;
 }

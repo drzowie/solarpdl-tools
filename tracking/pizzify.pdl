@@ -16,6 +16,7 @@ sub pizzify {
   my $to = shift;
   my $raw_from = shift;
   my $raw_range = shift;
+  undef $raw_img;
   my $unsigned_ids = shift;
   print "pizzify: unsigned_ids=$unsigned_ids\n";
 #	$w=pgwin(xs);
@@ -24,24 +25,25 @@ sub pizzify {
       print "i=$i\n";
       my $f_to;
 
-      my $image = $from->[$i];
+      my $image = rfits($from->[$i]);
       $image->hdrcpy(1);
       
       my $raw_im = undef;
 
       if(defined $raw_from && defined $raw_from->[$i]) {
 	print "loading raw image....\n";
-	  $raw_from->[$i]->hdrcpy(1);	
+	  $raw_img = rfits($raw_from->[$i]);
+	  $raw_img->hdrcpy(1);	
 	  if(defined $raw_range) {
-	      $raw_in = $raw_from->[$i]->($raw_range->at(0,0):$raw_range->at(0,1),
-					  $raw_range->at(1,0):$raw_range->at(1,1));
+	      $raw_img = $raw_img->($raw_range->at(0,0):$raw_range->at(0,1),
+				    $raw_range->at(1,0):$raw_range->at(1,1));
 	  } else {
-	      $raw_in = $raw_from->[$i]->clip(-20,20);
+##	      $raw_img .= $raw_img->clip(-20,20);
 	  }
 
 	  if($unsigned_ids) {
 	    print "unsigned ids -- multiplying...\n";
-	      $image *= ($raw_in <=> 0);
+	      $image *= ($raw_img <=> 0);
 	  }
       }
       
@@ -57,21 +59,22 @@ sub pizzify {
     $gg = $im2->(:,:,((1)));
     $bb = $im2->(:,:,((2)));
 
-    $rr .= floor( ($image<0)*( 0.7 + 0.3 * (0.5 * (1 + sin($image*34000))) )*255);
-    $gg .= floor( ($image!=0) * (0.7 + 0.3 * (0.5 * (1 + sin($image*54392+54))) )*255);
-    $bb .= floor( ($image>0) * (0.7 + 0.3 * (0.5 + (1 + sin($image*23233-103))))*255);
+    $rr .= floor( ($image<0)*( 0.7 + 0.3 * (0.5 * (1 + sin(float($image)*34000))) )*255);
+    $gg .= floor( ($image!=0) * (0.7 + 0.3 * (0.5 * (1 + sin(float($image)*54392+54))) )*255);
+    $bb .= floor( ($image>0) * (0.7 + 0.3 * (0.5 + (1 + sin(float($image)*23233-103))))*255);
 
-    if(defined $raw_in) {
+    if(defined $raw_img) {
       my $idx = whichND($gg==0);
 
-      $raw_in += 20;
-      $raw_in *= (255/40);
+      $imr = 150;
+      $raw_img += $imr;
+      $raw_img *= (255/(2*$imr));
 
-      $im2->indexND($idx) .= $raw_in->indexND($idx);
+      $im2->indexND($idx) .= $raw_img->clip(0,255)->indexND($idx);
     }
 
       print "setting to...\n";
-    $to->[$i] = $im2;
+    wim($im2,$to->[$i]);
   }
 }
 

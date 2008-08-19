@@ -110,7 +110,7 @@ sub frag_tabulate {
     ##############################
     ## Loop over frames and accumulate data.
 
-    for my $fr(0..$#{$im_list}){
+    for my $fr(0..$#{$id_list}){
 	next unless (defined($im_list->[$fr]) && defined($id_list->[$fr]));
 	
 	print "(1) summarizing f$fr: \n" if($opt->{verbose});
@@ -225,6 +225,7 @@ if (a feature is filtered){
       my $end = $frames->at(-1)<$summary->dim(1)-1?$frames->at(-1)+1:$summary->dim(1)-1;
       print "Feature $feat lives in frames $frames, also checking $start and $end\n" if ($opt->{verbose}>1);
       
+=pod
 ###check before
       if (($frames->at(0)) &&
 	  ($id_list->[$frames->at(0)-1]->where($id_list->[$frames->at(0)]->abs==$feat)->any))
@@ -240,6 +241,7 @@ if (a feature is filtered){
 	  $frag_ok(($feat)).=1;
 	  next FilteredFeature;
       }
+=cut
       
 ###check around
       foreach my $fr($frames->list){
