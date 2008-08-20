@@ -38,14 +38,13 @@ sub invert_kernel {
 
     my $siz = pdl dims $k;
 
-    my $kr = $k->range(floor(-$siz/2),2*$siz,'t')->sever;
+    my $kr = $k->copy;
     my $ki = zeroes $kr;
 
     fftnd($kr,$ki);
     
-     my $km = sqrt($kr*$kr + $ki*$ki);
-    
-     my $km2 = pow($km,$alpha) / ( pow($km,$alpha+1) + $epsilon );
+    my $km = sqrt($kr*$kr + $ki*$ki);
+    my $km2 = pow($km,$alpha) / ( pow($km,$alpha+1) + $epsilon );
 
     # Having produced the magnitude, now smooth it with a Gaussian if so desired
     if($smooth) {
@@ -59,15 +58,20 @@ sub invert_kernel {
 	my $km2 *= $sm;
     }
 
-    
+    my $ka = atan2($ki,$kr);
     my $ka2 = -$ka;
     
     $ki .= sin($ka2) * $km2;
     $kr .= cos($ka2) * $km2;
-    
+
     ifftnd($kr,$ki);
+
+    if($ki->abs->max > 5e-16) {
+        print STDERR "invert_kernel: Warning -- imaginary component is nonzero! (max is ".$ki->abs->max.")...\n";
+    }
     
-    my $ret = $kr->range([($kr->dim(0)+1)/2,($kr->dim(1)+1)/2],[$kr->dims],'p')->sever->range(ceil($siz/2),$siz)->sever;
-    $ret /= ( $ret->sum * $k->sum );
-    return $ret;
+    
+    $kr *= ($kr->abs > 5e-16);
+    return $kr;
+
 }
