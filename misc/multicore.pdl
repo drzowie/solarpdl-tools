@@ -1,0 +1,49 @@
+=head2 multicore - execute a process on multiple CPU cores
+
+=for usage
+
+multicore(\@iteration,sub { stuff }, $maxpids);
+
+=for ref
+
+multicore handles bookkeeping to run several iterations of a snippet of perl code in parallel. 
+The $iterator is an array ref containing all desired values of an iterator variable.  The $code
+is a closure (code ref with context) that accepts the value of the iterator and does something.
+The $maxpids is the maximum number of copies to run in parallel -- that should at most match the 
+number of CPU cores in your system.
+
+=cut
+
+sub multicore {
+    my $iterator = shift;
+    my $code = shift;
+    my $maxpids = shift || 4;
+    
+    my %pids = ();
+    
+    for my $it(@$iterator) {
+	while((0+keys(%pids)) >= $maxpids) {
+	    $goner = wait();
+	    if($goner < 0) {
+		die;
+	    }
+	    delete $pids{$goner};
+	}
+	
+	my $pid = fork();
+	if($pid<0) {
+	    die "multicore: spawn failed.  I give up!";
+	}
+	if($pid>0) {
+	    # parent
+	    $pids{$pid} = 1;
+	}
+	else {
+	    # child
+	    eval {&$code($it)};
+	    print $@ if($@);
+	    exit(0);
+	}
+    }
+    while(wait()>0){print "waiting...\n"};
+}
