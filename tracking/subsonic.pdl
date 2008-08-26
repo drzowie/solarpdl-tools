@@ -31,6 +31,10 @@ interpolated down to 0.  Similarly for the first image.
 
 Number of frames in the dataset.
 
+=item startframe (default 0)
+
+Where to start in the file list
+
 =item zeroes (default 3)
 
 Number of zero-filled frames to insert between the Hanning apodization
@@ -104,12 +108,16 @@ $|=1; #flush stdout immediately
     my $ghost = defined($opt->{'ghost'})?$opt->{'ghost'}:7;
     my $numframes = $opt->{'frames'} || 1;
     my $zeroes = defined($opt->{'zeroes'})?$opt->{'zeroes'}:3;
+    my $startframe = defined($opt->{'startframe'})?$opt->{'startframe'}:0;
 
     barf "Negative option defined where only nonnegative option allowed!\n" if ($zeroes<0 || $ghost<0 || $numframes<0);
     barf "bp option must be -64,-32, 32,16,8!\n" unless any($bitpix==pdl(8,16,32,-32,-64));
     map{s/\/$//;}($indir,$outdir);
     my $moviedir = $outdir . '_movie';
     my @fin = <$indir/*.fits>;
+    for (1..$startframe) {
+      shift @fin;
+    }
     @fin = @fin[0..$numframes-1];
     my @fout = @fin;
     map{s/$indir/$outdir/;}@fout;
