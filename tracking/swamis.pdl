@@ -20,18 +20,20 @@ use PDL::DiskCache;
 sub swamis{
 
 ### Set up filename lists
-    my @datafiles = <00-data/*.fits>;
-    my @maskfiles = map { ($a=$_)=~s/00-data/01-mask/; $a } @datafiles; 
-    my @idfiles   = map { ($a=$_)=~s/00-data/02-id/;   $a } @datafiles;
-    my @assocfiles = map { ($a=$_)=~s/00-data/03-assoc/;   $a } @datafiles;
-    my @tabfiles = map { ($a=$_)=~s/00-data/04-tab/; $a}@datafiles;
+    my(@datafiles,@maskfiles,@idfiles,@assocfiles,@tabfiles);
+    @datafiles = <00-data/*.fits>;
+    @maskfiles = map { ($a=$_)=~s/00-data/01-mask/; $a } @datafiles; 
+    @idfiles   = map { ($a=$_)=~s/00-data/02-id/;   $a } @datafiles;
+    @assocfiles = map { ($a=$_)=~s/00-data/03-assoc/;   $a } @datafiles;
+    @tabfiles = map { ($a=$_)=~s/00-data/04-tab/; $a}@datafiles;
 
 ### Create the PDL::DiskCache objects
-    my $data = diskcache(\@datafiles,{ro=>1,bless=>1});
-    my $mask = diskcache(\@maskfiles,{rw=>1,bless=>1});
-    my $id = diskcache(\@idfiles,{rw=>1,bless=>1});    
-    my $assoc = diskcache(\@assocfiles,{rw=>1,bless=>1});
-    my $tab=diskcache(\@tabfiles,{rw=>1,bless=>1});
+    my($data,$mask,$id,$assoc,$tab);
+    $data = diskcache(\@datafiles,{ro=>1,bless=>1});
+    $mask = diskcache(\@maskfiles,{rw=>1,bless=>1});
+    $id = diskcache(\@idfiles,{rw=>1,bless=>1});    
+    $assoc = diskcache(\@assocfiles,{rw=>1,bless=>1});
+    $tab=diskcache(\@tabfiles,{rw=>1,bless=>1});
 
 ### Create the directories
     `rm -rf 01-mask; mkdir 01-mask`;
@@ -49,8 +51,11 @@ sub swamis{
     frag_assoc($ids,{assoc=>$assoc, monitor=>0, verbose=>1});
     $assoc->sync;
 
-    my $tabs = frag_tabulate($assoc,$data,{verbose=>1,tab=>$tab,sz_min=>4,t_min=>4,v_min=>0});
-    wfits($tabs,'tabs.fits');
+    my $tabs;
+    $tabs = frag_tab2($assoc,$data,{verbose=>1,tab=>$tab,sz_min=>4,t_min=>4});
+#    my $tabs = frag_tabulate($assoc,$data,{verbose=>1,tab=>$tab,sz_min=>4,t_min=>4,v_min=>0});
+     fdump($tabs,'tabs.fits');
+#    wfits($tabs,'tabs.fits');
     $tab->sync;
 
     my $hist = frag_hist($tabs,$tab,$data,{verbose=>1,sep=>5,ratio=>0.5});
