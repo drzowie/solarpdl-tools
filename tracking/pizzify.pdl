@@ -4,7 +4,7 @@ use PDL::NiceSlice;
 
 =for usage
 
-pizzify([@from_files],[@out_files],[@mag_files],$raw_range);
+pizzify(\@from_files,\@out_files,\@mag_files,$raw_range,$ncores);
 
 =for ref
 
@@ -16,12 +16,14 @@ sub pizzify {
   my $to = shift;
   my $raw_from = shift;
   my $raw_range = shift;
+  my $ncores = shift || 1;
   undef $raw_img;
   my $unsigned_ids = shift;
   print "pizzify: unsigned_ids=$unsigned_ids\n";
 #	$w=pgwin(xs);
-  
-  for my $i(0..$#$from) {
+
+  my $sub = sub {
+      my $i = shift;
       print "i=$i\n";
       my $f_to;
 
@@ -75,6 +77,14 @@ sub pizzify {
 
       print "setting to...\n";
     wim($im2,$to->[$i]);
+  };
+
+  if($ncores <= 1) {
+      for my $i(0..$#$from) {
+	  &$sub($i);
+      }
+  } else {
+      multicore([0..$#$from],$sub,$ncores);
   }
 }
 

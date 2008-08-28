@@ -2,13 +2,45 @@
 
 =head2 swamis
 
+=for usage
+
+swamis($options);
+
 =for ref
 
-Feature track a sequence of magnetograms.
+Feature track a sequence of magnetograms.  This is a wrapper around a
+standard SWAMIS pipeline.  Options deal with the different steps.
 
-BUGS
+Recognized options are:
 
-This is just the generic SWAMIS pipeline, put into one subroutine.  No options calling yet, just edit the file.
+=over 3
+
+=item thresh
+
+This is a list ref containing (low,high) thresholds for feature detection.
+
+=item method
+
+This is either 'downhill' or 'clump' (default is 'clump') and specifies the feature ID method.
+
+=item min_size
+
+This is the minimum allowed feature size in a given frame, in pixels; below that, the feature is 
+ignored.
+
+=item v_min
+
+This is the minimum total volume (in pixel-frames) below which a feature is ignored.
+
+=item t_min 
+
+This is the minimum lifetime (in frames) below which a feature is ignored.
+
+=item sz_min
+
+This is the smallest maximum size (in pixels) below which a feature is ignored.
+
+=back
 
 =cut
 
@@ -18,6 +50,10 @@ use PDL;
 use PDL::DiskCache;
 
 sub swamis{
+    my $opt = shift || {};
+    my $thresh = defined($opt->{thresh})  ?  $opt->{thresh}  :  [28*2,28*4];
+    my $method = defined($opt->{method})  ?  $opt->{method}  :  'downhill';
+    my $min_sz = defined($opt->{min_size})?  $opt->{min_size}:  undef;
 
 ### Set up filename lists
     my(@datafiles,@maskfiles,@idfiles,@assocfiles,@tabfiles);
@@ -42,13 +78,13 @@ sub swamis{
     `rm -rf 04-tab; mkdir 04-tab`;
 
 ### Run the individual programs
-    frag_detect($data, {diag=>2,masks=>$mask,thresh=>[28*4,28*5]});
+    frag_detect($data, {diag=>2,masks=>$mask,thresh=>$thresh});
     $mask->sync;
 
-    frag_id($data,$mask,{method=>'downhill',diag=>1,ids=>$id,verbose=>1,monitor=>0,min_size=>4});
+    frag_id($data,$mask,{method=>$method,diag=>1,ids=>$id,verbose=>1,monitor=>0,min_size=>$min_sz});
     $id->sync;
 
-    frag_assoc($ids,{assoc=>$assoc, monitor=>0, verbose=>1});
+    frag_assoc($id,{assoc=>$assoc, monitor=>0, verbose=>1});
     $assoc->sync;
 
     my $tabs;
