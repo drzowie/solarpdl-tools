@@ -1,0 +1,63 @@
+#!/usr/bin/perl
+
+=pod
+
+=head2 make_table
+
+=for ref
+
+Rearrange frag_tabulate table and append peak flux.
+
+=for usage
+
+make_table($directory);
+
+In the directory $directory it expects a tabs.fits, 00-data/*.fits, 04-tab/*.fits, and will output a table1.fits
+
+BUGS
+
+Bad coding practices galore.  Hard-wired file and directory names!
+
+Assumes that most features are short-lived,and so the inner loop is
+over frames, so for lots of long-lived features, may involve a lot of
+disk-thrashing.
+
+=cut
+use strict;
+use warnings;
+use PDL;
+use PDL::DiskCache;
+use PDL::NiceSlice;
+
+sub make_table{
+
+    my $indir = shift;
+    my $tabs = rfits("$indir/tabs.fits");
+    
+    my $ids = $tabs->dim(0);
+    my $frames = $tabs->dim(1);
+    
+    my @datafiles = <$indir/00-data/*.fits>;
+    my $data = diskcache(\@datafiles,{ro=>1});
+    my @tabfiles = <$indir/04-tab/*.fits>;
+    my $tab = diskcache(\@tabfiles,{ro=>1});
+    
+    my $peak = zeroes($tabs(:,:,(0)));
+    my $p;
+    print "tabs dims: " . pdl($tabs->dims) . "\n";
+    
+    for my $f(0..$frames-1){
+	print "frame $f\n";
+	print "ids: ";
+	for my $i(0..$ids-1){
+	    next unless $tabs(($i),($f),(1));	    
+	    print "$i ";
+	    $p = $data->[$f]->where($tab->[$f] == $i)->abs->max;
+	    $p *= ($tabs(($i),($f),(0))<=>0);
+	    $peak(($i),($f)).=$p;
+	}
+    }
+    
+    my $out = cat $tabs(:,:,(2)),$tabs(:,:,(3)),$tabs(:,:,(0)),$tabs(:,:,(1)),$peak;
+    $out->wfits("$indir/table1.fits");
+}
