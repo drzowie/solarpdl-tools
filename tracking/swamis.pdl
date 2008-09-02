@@ -88,10 +88,10 @@ sub swamis{
     $assoc->sync;
 
     my $tabs;
-    $tabs = frag_tab2($assoc,$data,{verbose=>1,tab=>$tab,sz_min=>4,t_min=>4});
-#    my $tabs = frag_tabulate($assoc,$data,{verbose=>1,tab=>$tab,sz_min=>4,t_min=>4,v_min=>0});
-     fdump($tabs,'tabs.fits');
-#    wfits($tabs,'tabs.fits');
+#    $tabs = frag_tab2($assoc,$data,{verbose=>1,tab=>$tab,sz_min=>4,t_min=>4});
+    $tabs = frag_tabulate($assoc,$data,{verbose=>1,tab=>$tab,sz_min=>4,t_min=>4,v_min=>0});
+#     fdump($tabs,'tabs.fits');
+    wfits($tabs,'tabs.fits');
     $tab->sync;
 
     my $hist = frag_hist($tabs,$tab,$data,{verbose=>1,sep=>5,ratio=>0.5});

@@ -97,6 +97,8 @@ sub frag_tabulate {
     ## Allocate the features table
     
     my($maxfrag) = $id_list->[-1]->abs->max;  
+    print "maxfrag is $maxfrag\n";
+    print "Allocating ".join("x",$maxfrag+1,scalar(@{$id_list}),4)." floats (".($maxfrag+1)*(scalar(@{$id_list})*4*4/1024/1024," MB)\n";
     my($summary) = zeroes(float,$maxfrag+1,scalar(@{$id_list}),4);
 ##summary is indexed by (feature number, frame number, (flux, size, centroid x, centroid y)) 
    

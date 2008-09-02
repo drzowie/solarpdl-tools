@@ -58,11 +58,15 @@ sub frag_tab2 {
 
     $frames->[$i] = {};
     my($f) = $frames->[$i];
-    
+	
+    if(tied @$idlist) {
+	(tied @$idlist)->sync;
+     }    
+
     my($map) = $id_list->[$i]->long;
     my($im) = $im_list->[$i];
     if($map->nelem != $xcoords->nelem) {
-      croak "frag_tabulate: Image $i isn't the right size!\n";
+      croak "frag_tabulate: Image $i isn't the right size!($xcoords is ".(join("x",$xcoords->dims))."; image is ".(join("x",$im->dims))."\n";
     }
 
     my($frag_ids) = $frames->[$i]->{frag_ids} = [$map->uniq->list];
