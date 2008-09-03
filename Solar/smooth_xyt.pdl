@@ -94,8 +94,10 @@ sub smooth_xyt {
     my $times=zeroes(scalar @$list);
     my $times_index=0;
     for my $in_name(@$list){
-	$in_name =~m/_(\d{4})-(\d{2})-(\d{2})_(\d{2}):(\d{2}):([\d\.]{2,})/;
+	$in_name =~m/_(\d{4})-(\d{2})-(\d{2})_(\d{2}):(\d{2}):([\d\.]{2,})/ ||
+		$in_name =~m/(200[78])(\d\d)(\d\d)_(\d\d)(\d\d)(\d\d(\.\d)?)/;
 	my ($year,$month,$date,$hour,$minute,$sec) = ($1,$2,$3,$4,$5,$6);
+	print "year: $year; month:$month; date:$date; hour:$hour; min:$minute; sec:$sec\n";
 	my $frac = $sec - int($sec);
 	$times($times_index).=timegm(int($sec),$minute,$hour,$date,$month-1,$year)+$frac;
 	$times_index++;
@@ -210,3 +212,4 @@ This is stuff stripped from dr_mean, might be marginally useful later
 }
 
 =cut
+ 
