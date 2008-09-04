@@ -277,6 +277,11 @@ if (a feature is filtered){
 	$id_conv->{$ok_ids->at($a)} = $a+1;
     }
     
+    print "id_conv is:";
+    for my $idc(sort keys %$id_conv) {
+	print $idc."=>".$id_conv->{$idc}.";  ";
+    }
+
     # Compress all the IDs in the images.
     for my $fr(0..$#{$im_list}) {
 	print "(2) crunching f$fr: " if($opt->{verbose});
@@ -288,7 +293,8 @@ if (a feature is filtered){
 	my($n) = 0;
 	for my $old_id(keys %{$floci}) {
 	    next unless $id_conv->{$old_id};
-	    $idmap->whichND($floci->{$old_id}) .= $id_conv->{$old_id};
+	    my $idw = $idmap->whichND($floci->{$old_id});
+	    $idw .= $id_conv->{$old_id};
 	    print "." if($opt->{verbose} && (($n++ % 10 == 0) || $opt->{verbose}>1));
 	}
 	
