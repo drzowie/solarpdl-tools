@@ -76,7 +76,7 @@ use PDL;
 use PDL::NiceSlice;
 use PDL::ImageND;
 
-sub frag_tabulate {
+sub frag_tabulate_range {
     my($opt,$id_list,$im_list) = find_opt(@_);
     local($_);
     
@@ -129,21 +129,24 @@ sub frag_tabulate {
 	# Loop over current features
 	my($id);    
 	my($n);
-	my $idmapfl = $idmap->flat->long;
 	
+	my($idml) = $idmap->long;
+	my $id_fxy = whichND($idmap != 0);
+	my $id_f = $idmap->indexND($id_fxy)->sever;	
+
 	for $id($ids->list) {
 	    next unless $id;  # Skip the null case
 
    	    # Retrieve loci and cache them for later use.
-	    my($xl,$yl,$il,$val) = where($xcoord, $ycoord, $icoord, $im->flat, $idmapfl==$id);
-	    
-	    $floci->{ $id } = $il;
-	    
-	    my($flux)     = sumover($val);
-	    my($size)     = $val->nelem;
-	    
-	    my($locus) = cat($xl,$yl);
-	    my($centroid) = sumover($locus * $val) / $flux;
+	    my $xy = $id_fxy->(:,which($id_f==$id));  # 2 x N for feature
+	    $floci->{$id} = $xy;
+
+##	    my($xl,$yl,$il,$val) = where($xcoord, $ycoord, $icoord, $im->flat, $idmap->flat->long == $id);
+
+	    my($val) = $im->indexND($xy);
+	    my($flux)     = $val->sumover;
+	    my($size)     = $xy->dim(1);
+	    my($centroid) = sumover($xy->mv(1,0) * $val) / $flux;
 	    
 ##put in a check: if id is bigger than maxfrag, then we need to append a slice to summary. This is an issue if the largest id number in the data set isn't alive in the last frame (i.e., very rarely).
 
@@ -248,15 +251,16 @@ if (a feature is filtered){
       
 ###check around
       foreach my $fr($frames->list){
-	  my ($xmin,$xmax)=minmax($loci->[$fr]->{$feat}->pdl % $xsize);
-	  my ($ymin,$ymax)=minmax(floor($loci->[$fr]->{$feat}->pdl / $xsize));
+	  my ($xmin,$xmax)=minmax($loci->[$fr]->{$feat}->((0)));
+	  my ($ymin,$ymax)=minmax($loci->[$fr]->{$feat}->((1)));
 	  
-	  my $sub_idlist = $id_list->[$fr]->range(pdl($xmin,$ymin)-1,pdl($xmax-$xmin,$ymax-$ymin)+3,'t');
-	  my $dilated = convolveND($sub_idlist==$feat*$ft_sgn,$k)>0;
+	  my $sub_idlist = $id_list->[$fr]->range(pdl($xmin,$ymin)-2,pdl($xmax-$xmin,$ymax-$ymin)+4,'t');
+	  my $dilated = convolveND($sub_idlist == $feat * $ft_sgn, $k)>0;
 
 	  my $localids = $sub_idlist->where($dilated)->uniq;
+
 #localids should at least have $feat in it, and we don't care about 0.
-	  if(($localids!=$feat*$ft_sgn & $localids!=0)->any){
+	  if((($localids != $feat*$ft_sgn) & ($localids!=0))->any){
 	      $frag_ok(($feat)).=1;
 	      next FilteredFeature;
 	  }
@@ -266,9 +270,8 @@ if (a feature is filtered){
 ##need to remake this because we might have re-ok'd some features
     my $ok_ids = which($frag_ok);
 
-
     # Generate forward and backward conversions for IDs.  The +1s are to 
-    # make the new IDs starts at 1 not 0.
+    # make the new IDs start at 1 not 0.
     my($a,$id_conv);
     for $a(0..$ok_ids->nelem-1) {
 	$id_conv->{$ok_ids->at($a)} = $a+1;
@@ -285,7 +288,7 @@ if (a feature is filtered){
 	my($n) = 0;
 	for my $old_id(keys %{$floci}) {
 	    next unless $id_conv->{$old_id};
-	    $idmap->flat->($floci->{$old_id}) .= $id_conv->{$old_id};
+	    $idmap->whichND($floci->{$old_id}) .= $id_conv->{$old_id};
 	    print "." if($opt->{verbose} && (($n++ % 10 == 0) || $opt->{verbose}>1));
 	}
 	
