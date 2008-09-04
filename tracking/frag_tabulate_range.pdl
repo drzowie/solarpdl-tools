@@ -229,7 +229,7 @@ if (a feature is filtered){
       my $ft_sgn = $summary(($feat),($frames->at(0)),(0)) <=> 0;
       my $start = $frames->at(0)?$frames->at(0)-1:0;
       my $end = $frames->at(-1)<$summary->dim(1)-1?$frames->at(-1)+1:$summary->dim(1)-1;
-      print "Feature $feat lives in frames $frames, also checking $start and $end\n" if ($opt->{verbose}>1);
+      print "Feature $feat lives in frames $frames, also checking $start and $end\n" if ($opt->{verbose});
       
 =pod
 ###check before
@@ -251,6 +251,7 @@ if (a feature is filtered){
       
 ###check around
       foreach my $fr($frames->list){
+	  print " $fr ";
 	  my ($xmin,$xmax)=minmax($loci->[$fr]->{$feat}->((0)));
 	  my ($ymin,$ymax)=minmax($loci->[$fr]->{$feat}->((1)));
 	  
@@ -266,7 +267,7 @@ if (a feature is filtered){
 	  }
       }
   }
-    
+ print "\n";    
 ##need to remake this because we might have re-ok'd some features
     my $ok_ids = which($frag_ok);
 
@@ -302,7 +303,7 @@ if (a feature is filtered){
 	print "\n" if($opt->{verbose});
     }
     print "Copying summary...\n";
-    my($sum2) = $summary->(append(pdl(0),$ok_ids),:,:)->copy;
+    my($sum2) = $summary->(append(pdl(0),$ok_ids),:,:)->sever;
     print "cleaning up...\n";
     undef $summary;
     print "frag_tabulate completed successfully.\n";

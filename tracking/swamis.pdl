@@ -90,7 +90,6 @@ sub swamis{
     my $tabs;
 #    $tabs = frag_tab2($assoc,$data,{verbose=>1,tab=>$tab,sz_min=>4,t_min=>4});
     $tabs = frag_tabulate_range($assoc,$data,{verbose=>1,tab=>$tab,sz_min=>4,t_min=>4,v_min=>0});
-#     fdump($tabs,'tabs.fits');
     wfits($tabs,'tabs.fits');
     $tab->sync;
 
