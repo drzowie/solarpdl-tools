@@ -1,0 +1,48 @@
+=head2 tabs3d - render a SWAMIS tabs file as a 3-D network of lines
+
+=for usage
+
+tabs3d($tabs)
+
+=for ref
+
+Accepts an old-style tabs summary file and renders it in 3-D for visualization.
+
+=cut
+
+sub tabs3d {
+    my $tabs = shift;
+
+    $stepsperdecade =5;
+    $decades = 2;
+    $sm = 10;
+    $th = xvals($stepsperdecade * $decades  +  1) / $stepsperdecade;
+    @thresh = ($sm * (10 ** $th))->list;
+    for $i(0..$#thresh) {
+	if($i<$#thresh) {
+	    $coords = whichND(  ($tabs->(:,:,(1)) >= $thresh[$i]) &
+				($tabs->(:,:,(1)) <  $thresh[$i+1])
+		);
+	} else {
+	    $coords = whichND(  ($tabs->(:,:,(1)) >= $thresh[$i]) );
+	}
+	$x = $tabs->(:,:,(2))->indexND($coords);
+	$y = $tabs->(:,:,(3))->indexND($coords);
+	$z = $coords->((1));
+	$sign = ($tabs->(:,:,(0))->indexND($coords)>0) * 2 - 1;
+	nokeeptwiddling3d;
+	$grey = ones($x)*($i/$#thresh);
+	$red = $grey*0.5 + ($sign<0) * $grey * 0.5 + 0.25;
+	$green = $grey*0.5 + 0.25;
+	$blue = $grey*0.5+($sign>0)*$grey*0.5 + 0.25; 
+	points3d([$x,$y,$z],[$red,$green,$blue],{PointSize=>int(sqrt($thresh[$i])/2)});
+	hold3d;
+    }
+    keeptwiddling3d;
+    release3d;
+    twiddle3d;
+}
+
+	
+
+    
