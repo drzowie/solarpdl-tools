@@ -1,0 +1,33 @@
+sub gen_hrmag {
+    my($dir,$destdir,$pixbin,$noise) = @_;
+    $noise = 0 unless(defined($noise));
+
+    `mkdir $destdir`;
+
+    chop (@a=`ls $dir`);
+    my($i);
+    for($i=0;$i<@a;$i++) {
+	print "================",$i,scalar(@a),"\n";
+	$im = rfits("$dir/$a[$i]");
+	$a = zeroes( list(floor(pdl($im->dims)/$pixbin)) );
+	rescale2d($im,$a);
+	$a2 = $a->clump(-1);
+	help $a2;
+
+	if($noise) {
+#	  $noise_scale = 10 * (256./100.);
+	  for($j=0; $j<$a2->nelem; $j++){
+	    $a2->slice("($j)") += rand(2*$noise)-$noise;
+	  }
+	}
+
+
+	$im2 = zeroes($im->dims);
+	rescale2d($a,$im2);
+
+
+	$s = sprintf("%s/%s-%4.4d.fits",$destdir,$destdir,$i);
+	print $s,"\n";
+	wfits($im2,$s);
+    }
+}

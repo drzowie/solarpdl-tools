@@ -1,0 +1,108 @@
+=head2 corksdump2flux - snarf a corks dump file and work with a fluxon model
+
+
+=cut
+
+use Flux;
+
+$CORKS::locale_radius = 600;
+$CORKS::nverts = 10;
+$CORKS::alpha = xvals($CORKS::nverts)/($CORKS::nverts+1) + 1.0/($CORKS::nverts+1);
+$CORKS::beta = 1.0 - $CORKS::alpha;
+$CORKS::aspect = 0.25;
+
+sub corksdump2flux {
+    my $file = shift;
+    my $flux = shift; #optional
+    my  $new = 0;
+    unless (defined($flux)) {
+	$new = 1;
+	$flux = str2world('');
+	$flux->{photosphere} = {type=>1,origin=>pdl(0,0,0),normal=>pdl(0,0,1)};
+	$flux->{auto_open} = 1;
+	$flux->{fc_oe}->{locale_radius} = $CORKS::locale_radius;
+	$flux->{fc_ob}->{locale_radius} = $CORKS::locale_radius;
+	$flux->{fc_oe}->{x} = pdl(0,0,0);
+	$flux->{fc_ob}->{x} = pdl(0,0,0);
+	$flux->{dtau} = 0.2;
+	$flux->{scale_b_power} = 0;
+	$flux->{scale_d_power} = 2;
+	$flux->{scale_s_power} = 0;
+	$flux->{scale_ds_power}= 0;
+	$flux->{default_bound} = 'fl_b_tied_inject';
+    }
+
+    $flux->{rel_step} = 0;
+
+
+    open CORKSDUMP,"<$file" || die "Couldn't open $file\n";
+    print "ok\n";
+    local($_);
+    my $lno = 0;
+    my ($xmax,$xmin,$ymax,$ymin);
+    while($_ = <CORKSDUMP>) {
+	$lno++;
+	next if(m/^\#/);
+	p $_;
+	if( s/^EMERGE\:\s+// ) {
+
+	    s/P(\d+)\s+(-?\d+(\.\d+)?)\s+(-?\d+(\.\d+)?)\s+// || die "Couldn't get 'P'\n";
+	    my($pno,$px,$py) = ($1,$2,$4);
+
+	    s/N(\d+)\s+(-?\d+(\.\d+)?)\s+(-?\d+(\.\d+)?)\s+// || die "Couldn't get 'N'\n";
+	    my($nno,$nx,$ny) = ($1,$2,$4);
+
+	    $fc1 = $flux->new_concentration(pdl($px,$py,0),1,$pno);
+	    $fc2 = $flux->new_concentration(pdl($nx,$ny,0),-1,$nno);
+	    
+	    $xmax = $px if(!defined($xmax) || $xmax < $px);
+	    $xmin = $px if(!defined($xmin) || $xmin > $px);
+	    $ymax = $py if(!defined($ymax) || $ymax < $py);
+	    $ymin = $py if(!defined($ymin) || $ymin > $py);
+	    	    
+	    # Single fluxon connecting the two -- 20 vertices.
+	    my $vx = $CORKS::alpha * $nx + $CORKS::beta * $px;
+	    my $vy = $CORKS::alpha * $ny + $CORKS::beta * $py;
+	      # random term avoids collisions...
+	    my $vz = zeroes($vx) + sqrt(($px-$nx)*($px-$nx)+($py-$ny)*($py-$ny))/$CORKS::aspect + 0.05 * random($vx) + 0.05;
+	    my $verts = pdl($vx,$vy,$vz)->transpose;
+	    $fc1->new_fluxon($fc2,1,0,$verts);
+	}
+	elsif( s/^MOVE\:\s// ) {
+	    m/(\d+)\s+(-?\d+(\.\d+)?)\s+(-?\d+(\.\d+))/ || die "Couldn't parse MOVE in line $lno of $file: '$_'\n";
+	    my($id,$x,$y) = ($1,$2,$4);
+	    if(defined $flux->concentration($id)) {
+	    	    $flux->concentration($id)->{x} = pdl($x,$y,0);
+		    }
+	}
+	elsif( s/^CANCEL\:\s//) {
+	    m/\-?(\d+)\s+\-?(\d+)/ || die "Couldn't parse CANCEL in line $lno of $file: '$_'\n";
+	    my($id1,$id2) = ($1,$2);
+	    ## Elementary check...
+	    my $fluxon = $flux->concentration($id1)->{lines};
+	    if($fluxon->{fc_start}->{label}==$id1) {
+		$flux->concentration($id1)->cancel($flux->concentration($id2));
+	    } else {
+		$flux->concentration($id2)->cancel($flux->concentration($id1));
+	    }
+	}
+    }
+
+    if($new) {
+	$flux->{fc_oe}->{x} = pdl( ($xmin+$xmax)/2, ($ymin+$ymax)/2, 0);
+	$flux->{fc_ob}->{x} = $flux->{fc_oe}->{x};
+	$flux->{photosphere2} = {type=>3,
+				 origin=>pdl(0,0,0),
+				 normal=>pdl(0,0,($xmax-$xmin)/sqrt(2))
+	};
+    }
+    return $flux;
+}
+	    
+	    
+	    
+	    
+    
+        
+    
+	

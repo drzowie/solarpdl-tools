@@ -1,0 +1,30 @@
+sub make_mags {
+  my($pix_size) = shift || 6;
+  my($rms) = shift || 8;
+  my($fitsdir) = shift || 'magfits';
+  my($noisedir) = shift || 'hrmag-noise';
+  my($outdir) = shift || 'hrmag-n';
+
+
+  @f = `ls $fitsdir`;
+  if(!@f) {die "Couldn't find fits directory $fitsdir!\n";}
+
+
+
+  `rm -rf $noisedir`;
+  gen_hrmag($fitsdir,$noisedir,$pix_size,$rms);
+  chomp (@f = `ls $noisedir`);
+  if(!@f) {die "Couldn't find hrmag-noise directory $noisedir!\n";}
+  
+    
+  foreach $f(@f) {
+    print $f,"...";
+    $a = rfits("$noisedir/$f");
+    $b = ($a + 128.5)->floor->clip(0,255)->byte;
+    
+    ($f1 = $f)=~s/fits$/pnm/;
+    wpic($b,"$outdir/$f1");
+  }
+
+  print "\n";
+}
