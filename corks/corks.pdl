@@ -699,6 +699,7 @@ sub advect_internal{
 			      $clocs_0->index($w->at($w2->at(0))) .= -50;
 			      $clocs_1->index($clist_i) .= 0;
 			      $clocs_1->index($w->at($w2->at(0))) .= 0;
+			      undef $x1;
 			      last timestep;
 			  } else {
 			      ## The cork didn't cancel with anything; but it
@@ -723,7 +724,7 @@ sub advect_internal{
 	  }
       } # end of timestep loop
 
-	if($f->{dump}) {
+	if($f->{dump} && !$nocollision) {
 	    if(defined $x1) {
 		printf DUMPFILE "MOVE: %d\t%.2f %.2f\n",$cork, $x1->list;
 	    }

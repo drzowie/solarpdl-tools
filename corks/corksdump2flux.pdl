@@ -1,6 +1,5 @@
 =head2 corksdump2flux - snarf a corks dump file and work with a fluxon model
 
-
 =cut
 
 use Flux;
@@ -60,20 +59,37 @@ sub corksdump2flux {
 	    $ymax = $py if(!defined($ymax) || $ymax < $py);
 	    $ymin = $py if(!defined($ymin) || $ymin > $py);
 	    	    
-	    # Single fluxon connecting the two -- 20 vertices.
+	    # Single fluxon connecting the two -- 10 vertices.
 	    my $vx = $CORKS::alpha * $nx + $CORKS::beta * $px;
 	    my $vy = $CORKS::alpha * $ny + $CORKS::beta * $py;
 	      # random term avoids collisions...
-	    my $vz = zeroes($vx) + sqrt(($px-$nx)*($px-$nx)+($py-$ny)*($py-$ny))/$CORKS::aspect + 0.05 * random($vx) + 0.05;
+	    my $vz = zeroes($vx) + 0.01 * sqrt(($px-$nx)*($px-$nx)+($py-$ny)*($py-$ny))/$CORKS::aspect + 0.05 * random($vx) + 0.05;
 	    my $verts = pdl($vx,$vy,$vz)->transpose;
 	    $fc1->new_fluxon($fc2,1,0,$verts);
 	}
 	elsif( s/^MOVE\:\s// ) {
 	    m/(\d+)\s+(-?\d+(\.\d+)?)\s+(-?\d+(\.\d+))/ || die "Couldn't parse MOVE in line $lno of $file: '$_'\n";
 	    my($id,$x,$y) = ($1,$2,$4);
-	    if(defined $flux->concentration($id)) {
-	    	    $flux->concentration($id)->{x} = pdl($x,$y,0);
-		    }
+	    my($conc) = $flux->concentration($id);
+	    if(defined $conc) {
+		my $newloc = pdl($x,$y,0);
+		my $oldloc = $conc->{x};
+		$diff = $newloc - $oldloc;
+		$conc->{x} = $newloc;
+		if($conc->{flux} > 0) {
+		    my $v = $conc->{lines}->{start};
+		    $v->{x} = $v->{x} + $diff;     $v=$v->{next};
+		    $v->{x} = $v->{x} + 3*$diff/4; $v=$v->{next};
+		    $v->{x} = $v->{x} + $diff/2;   $v=$v->{next};
+		    $v->{x} = $v->{x} + $diff/4;   $v=$v->{next};
+		} else {					       
+		    my $v = $conc->{lines}->{end};
+		    $v->{x} = $v->{x} + $diff;     $v=$v->{prev};
+		    $v->{x} = $v->{x} + 3*$diff/4; $v=$v->{prev};
+		    $v->{x} = $v->{x} + $diff/2;   $v=$v->{prev};
+		    $v->{x} = $v->{x} + $diff/4;   $v=$v->{prev};
+		}
+	    }
 	}
 	elsif( s/^CANCEL\:\s//) {
 	    m/\-?(\d+)\s+\-?(\d+)/ || die "Couldn't parse CANCEL in line $lno of $file: '$_'\n";
