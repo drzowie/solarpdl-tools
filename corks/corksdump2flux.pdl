@@ -13,6 +13,16 @@ $CORKS::aspect = 0.25;
 sub corksdump2flux {
     my $file = shift;
     my $flux = shift; #optional
+    my $opt = shift;
+    if(!defined($opt)) {
+	if(defined($flux) and  ref $flux eq 'HASH') {
+	    $opt = $flux;
+	    $flux = undef
+	} else {
+	    $opt = {};
+        }
+    }
+
     my  $new = 0;
     unless (defined($flux)) {
 	$new = 1;
@@ -73,33 +83,61 @@ sub corksdump2flux {
 	    my($conc) = $flux->concentration($id);
 	    if(defined $conc) {
 		my $newloc = pdl($x,$y,0);
-		my $oldloc = $conc->{x};
-		$diff = $newloc - $oldloc;
-		$conc->{x} = $newloc;
-		if($conc->{flux} > 0) {
-		    my $v = $conc->{lines}->{start};
-		    $v->{x} = $v->{x} + $diff;     $v=$v->{next};
-		    $v->{x} = $v->{x} + 3*$diff/4; $v=$v->{next};
-		    $v->{x} = $v->{x} + $diff/2;   $v=$v->{next};
-		    $v->{x} = $v->{x} + $diff/4;   $v=$v->{next};
-		} else {					       
-		    my $v = $conc->{lines}->{end};
-		    $v->{x} = $v->{x} + $diff;     $v=$v->{prev};
-		    $v->{x} = $v->{x} + 3*$diff/4; $v=$v->{prev};
-		    $v->{x} = $v->{x} + $diff/2;   $v=$v->{prev};
-		    $v->{x} = $v->{x} + $diff/4;   $v=$v->{prev};
+		if((  defined($opt->{xr}) and  ( 
+			  ($x < $opt->{xr}->[0]) ||
+			  ($x > $opt->{xr}->[1])
+		      ))
+		   or 
+		   (  defined($opt->{yr}) and (
+			  ($y < $opt->{yr}->[0]) ||
+			  ($y > $opt->{yr}->[1])
+		      ))
+		    ) {
+		    ## Out of bounds.  Deal with it.
+		    $conc->open;
+		} else {
+		    # Normal motion case 
+
+		    my $oldloc = $conc->{x};
+		    $diff = $newloc - $oldloc;
+		    $conc->{x} = $newloc;
+		    if($conc->{flux} > 0) {
+			my $v = $conc->{lines}->{start};
+			$v->{x} = $v->{x} + $diff;     $v=$v->{next};
+			$v->{x} = $v->{x} + 3*$diff/4; $v=$v->{next};
+			$v->{x} = $v->{x} + $diff/2;   $v=$v->{next};
+			$v->{x} = $v->{x} + $diff/4;   $v=$v->{next};
+		    } else {					       
+			my $v = $conc->{lines}->{end};
+			$v->{x} = $v->{x} + $diff;     $v=$v->{prev};
+			$v->{x} = $v->{x} + 3*$diff/4; $v=$v->{prev};
+			$v->{x} = $v->{x} + $diff/2;   $v=$v->{prev};
+			$v->{x} = $v->{x} + $diff/4;   $v=$v->{prev};
+		    }
 		}
 	    }
-	}
-	elsif( s/^CANCEL\:\s//) {
+	} elsif( s/^CANCEL\:\s//) {
 	    m/\-?(\d+)\s+\-?(\d+)/ || die "Couldn't parse CANCEL in line $lno of $file: '$_'\n";
 	    my($id1,$id2) = ($1,$2);
 	    ## Elementary check...
-	    my $fluxon = $flux->concentration($id1)->{lines};
-	    if($fluxon->{fc_start}->{label}==$id1) {
-		$flux->concentration($id1)->cancel($flux->concentration($id2));
+
+	    my ($c1,$c2) = ($flux->concentration($id1),
+			    $flux->concentration($id2));
+
+	    if(defined $c1) {
+		if(defined $c2) {
+		    if($c1->{flux}>0) {
+			$c1->cancel($c2);
+		    } else {
+			$c2->cancel($c1);
+		    }
+		} else {
+		    $c1->open;
+		}
 	    } else {
-		$flux->concentration($id2)->cancel($flux->concentration($id1));
+		if(defined $c2) {
+		    $c2->open;
+		}
 	    }
 	}
     }
