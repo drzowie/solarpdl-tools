@@ -1,0 +1,36 @@
+=head2 calibrate_image  - convert an image in camera values to intensity-proportional values.
+
+=for usage
+
+$im2 = calibrate_image($im,$cal);
+$im2->inplace->calibrate;
+
+=for ref
+
+You feed in the image, and a calibration structure handed back by gen_calibration, and 
+the image is returned fixed up to intensity units.
+
+Works by C-spline interpolation on the DN intensity axis.
+
+=cut
+
+sub calibrate_image {
+    my $im = shift;
+    my $cal = shift;
+
+    my $out = $im->new_or_inplace;
+    
+    $dk = find_dark($cal->{dark});
+
+    # Convert the image into an index into the DN tiepoint array...
+    $uncal = float($im - find_dark($im,$cal->{dark}));
+    $uncal -= $cal->{min};
+    $uncal /= $cal->{range}
+    
+    $out = cspline_interpolate($cal->{ties}, $uncal);
+    return $out;
+    
+}
+    
+
+    

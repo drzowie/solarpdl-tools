@@ -1,0 +1,22 @@
+=head2 find_dark - find the right dark image for some data
+
+=for usage
+
+$dark = find_dark($im,$collected_data);
+
+=for ref
+
+Given a data image and a dark sequence from collect_exposure_sequence,
+finds the appropriate dark to subtract from the data image.
+
+=cut
+
+sub find_dark {
+    my $im = shift;
+    my $collected = shift;
+
+    my $t = $im->hdr->{EXPTIME};
+    my $times = $collected->[0];
+    $of = ($times>$t)->which->min;
+    return $collected->(($of));
+}
