@@ -18,5 +18,11 @@ sub find_dark {
     my $t = $im->hdr->{EXPTIME};
     my $times = $collected->[0];
     $of = ($times>$t)->which->min;
-    return $collected->(($of));
+    p "time is $t; of is $of; first longer is ".$times->(($of))."\n";
+    if($of == 0) {
+        return $collected->[1]->(($of));
+    } else {
+	$alpha = ($t - $times->($of-1)) / ($times->($of) - $times->($of-1));
+	return $collected->[1]->(($of-1))*(1-$alpha) + $collected->[1]->(($of))*$alpha;
+    }
 }

@@ -20,14 +20,13 @@ sub calibrate_image {
 
     my $out = $im->new_or_inplace;
     
-    $dk = find_dark($cal->{dark});
-
     # Convert the image into an index into the DN tiepoint array...
     $uncal = float($im - find_dark($im,$cal->{dark}));
     $uncal -= $cal->{min};
-    $uncal /= $cal->{range}
+    $uncal /= ($cal->{range} + ($cal->{range}==0));
+    $uncal *= $cal->{ties}->dim(0)-1;
     
-    $out = cspline_interpolate($cal->{ties}, $uncal);
+    $out = cspline_interp($cal->{ties}, $uncal);
     return $out;
     
 }

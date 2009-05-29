@@ -227,6 +227,48 @@ CODE:
 OUTPUT:
  RETVAL
 
+SV *
+render_mag(wi)
+ IV wi;
+PREINIT:
+ pdl *p;
+ PDL_Long dims[2];
+ PDL_Double *d;
+ long i;    
+ WORLD *w;
+CODE:
+ w = (WORLD *)wi;
+ dims[0] = w->p->w;
+ dims[1] = w->p->h;
+ 
+ p = PDL->create(PDL_PERM);
+ PDL->setdims(p, dims, 2);
+ p->datatype = PDL_D;
+ PDL->allocdata(p);
+ PDL->make_physical(p);
+ d = p->data;
+ 
+ for(i=0; i<w->p->w * w->p->h; i++)
+   d[i] = 0;
+
+ for(i=0; i<w->mc->maxn; i++) {
+   if(w->mc->array[i].id) {
+      long x,y, of;
+      x = w->mc->array[i].x;
+      y = w->mc->array[i].y;
+      of = ( (x>0) ? (x<w->p->w) ? x : w->p->w - 1 : 0) + 
+      ( (y>0) ? (y<w->p->h) ? y : w->p->h - 1 : 0)*(w->p->w);
+      d[of] += (w->mc->array[i].id > 0) ? 1 : -1;
+   }
+ }
+
+ RETVAL = NEWSV(547,0); // 547 is arbitrary
+ PDL->SetSV_PDL(RETVAL, p);
+OUTPUT:
+ RETVAL
+
+ 	
+
 void
 update_sim(wi,n=1)
  IV wi

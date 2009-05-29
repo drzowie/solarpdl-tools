@@ -33,7 +33,7 @@ typedef struct CORKS {
   double life;       // lifetime of field corks (e.g. supergranules), seconds
   double corksize;   // typical size, in Mm
   double turnover;   // turnover rate, in turnovers per lifetime
-  double div;        // calculated total expansion rate
+  double div;        // calculated total expansion rate in scientific units...
   double plonkrate;  // how frequently they should randomly appear (corks per second)
   double plonktime;  // time at which last plonking happened
 } CORKS;
@@ -105,7 +105,7 @@ void plonk_mag_corks( WORLD *wld );
 void plonk_granules( WORLD *wld );
 void plonk_supergranules( WORLD *wld );
 void plonk_corks( WORLD *wld, CORKS *corks, void (*plonker)(WORLD *wld, double x, double y, double deltat) );
-void advect_cork( CORK *c, FIELD *field, double dt );
+int advect_cork( CORK *c, FIELD *field, double dt, double dx );
 
 /******************************/
 double div_flow( double flow_out[2], double div, double x_of, double y_of );

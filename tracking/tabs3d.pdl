@@ -20,7 +20,7 @@ sub tabs3d {
         $opt = $hist;
         $hist = undef;
     }
-
+    $pointscale = 1.5;
     $stepsperdecade =5;
     $decades = 2;
     $sm = 10;
@@ -90,7 +90,7 @@ sub tabs3d {
         $green = $grey*0.5 + 0.25;
         $blue = $grey*0.5+($sign>0)*$grey*0.5 + 0.25; 
 
-        points3d([$x,$y,$z],[$red,$green,$blue],{PointSize=>int(sqrt($thresh[$i])/2)});
+        points3d([$x,$y,$z],[$red,$green,$blue],{PointSize=>int(sqrt($thresh[$i])*$pointscale/2)});
 
         hold3d;
     }

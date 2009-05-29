@@ -42,16 +42,20 @@ sub gen_calibration {
     my $normalization = shift || 1;
 
     # Check exposure times
-    if( $darks->[0]->nelem != $flats->[0]->nelem) {
+    if( $darks->[0]->nelem < $flats->[0]->nelem) {
 	die("Dark counts don't match flat counts");
+    } elsif($darks->[0]->nelem != $flats->[0]->nelem) {
+        print "Warning: more darks than flats.  Beware...\n";
+	$darks->[0] = $darks->[0]->(0:$flats->[0]->dim(0) - 1);
+	$darks->[1] = $darks->[1]->(0:$flats->[1]->dim(0) - 1);
     }
 
     if( any($darks->[0] != $flats->[0]) ) {
 	print "WARNING: dark and flat exposure times differ\n";
     }
 
-    $fl = $flats->[1];
-    $dk = $darks->[1];
+    my $fl = $flats->[1]->copy;
+    my $dk = $darks->[1]->copy;
 
 
     # Dark-correct the flat exposure files
@@ -67,21 +71,23 @@ sub gen_calibration {
     # (tiepoints are exposure values, in ms of flat field, for particular 
     # DN values that are sampled on a regular grid between $min and $max.
 
+
     # First set the tiepoints based on a linear scale...
-    $ties = xvals(float, $n, $flats->[1]->dim(1), $flats->[1]->dim(2))/($n-1) * ($flats->[0]->((1))-$flats->[0]->((0))) + $flats->[0]->((0));
+    $ties = xvals(float, $n, $flats->[1]->dim(1), $flats->[1]->dim(2))/($n-1);
+    $ties *= $flats->[0]->(-1) - $flats->[0]->(0);
+    $ties += $flats->[0]->(0);
 
 
-    # Now loop several times, adjusting each tiepoint to the optimum assuming its neighbors stay fixed.
-    # (we hope that this converges...)
+    # Now loop several times, adjusting each tiepoint to the optimum assuming its neighbors stay 
+    # fixed. (we hope that this converges...)
 
     ## FIXME - put loop in!
 
-    $out = {dark  => $dk,
+    $out = {dark  => $darks,
     	    min   => $min,
 	    range => $max - $min,
 	    ties  => $ties
 	    };
-    
     return $out;
     
         

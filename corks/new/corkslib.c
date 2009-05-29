@@ -42,7 +42,7 @@ FIELD *new_field(long w, long h) {
   f->h = h;
   f->V = 0;
   f->id = 0;
-  
+
   f->V  = (double *) malloc(sizeof(double) * siz * 2);
   f->id = (long *)   malloc(sizeof(long)   * siz );
 
@@ -169,8 +169,8 @@ void corks_crunch_and_grow(CORKS *cs) {
   long i,j;
 
   /* If enough elements are used,, grow -- which crunches automatically. */
-  if( (cs->maxn - cs->unused) * 3 / 2   >  cs->size ) {
-    corks_grow(cs, cs->maxn * 3 / 2);
+  if( (cs->maxn - cs->unused) * 3 / 2   >=  cs->size ) {
+    corks_grow(cs, cs->maxn * 3 / 2 + 10);
   } else 
     /* If there's empty space, crunch it out */
     if(cs->unused) {
@@ -281,14 +281,14 @@ void update_params(WORLD *wld) {
   wld->gc->life      = p->g_life;
   wld->gc->corksize  = p->g_size;
   wld->gc->turnover  = p->g_turnover;
-  wld->gc->div       = p->g_turnover * pi * p->g_size * p->g_size / p->g_life;
+  wld->gc->div       = p->g_turnover * p->g_size * p->g_size / p->g_life;
   wld->gc->plonkrate = ( area / (pi4 * p->g_size * p->g_size) / p->g_life);
   wld->gc->plonktime = wld->t;
 
   wld->sgc->life      = p->sg_life;
   wld->sgc->corksize  = p->sg_size;
   wld->sgc->turnover  = p->sg_turnover;
-  wld->sgc->div       = p->sg_turnover * pi * p->sg_size * p->sg_size / p->sg_life;
+  wld->sgc->div       = p->sg_turnover * p->sg_size * p->sg_size / p->sg_life;
   wld->sgc->plonkrate = (area / (pi4 * p->sg_size * p->sg_size) / p->sg_life);
   wld->sgc->plonktime = wld->t;
 
@@ -572,7 +572,7 @@ void plonk_corks( WORLD *wld, CORKS *corks, void (*new_cork)(WORLD *w, double x,
   rel_dt = (wld->t - corks->plonktime) * corks->plonkrate;
 
 
-  printf("%g plonks...",rel_dt); fflush(stdout);
+  //  printf("%g plonks...",rel_dt); fflush(stdout);
 
   for( rel_dt = (wld->t - corks->plonktime) * corks->plonkrate;
        rel_dt >= 1; 
@@ -587,24 +587,114 @@ void plonk_corks( WORLD *wld, CORKS *corks, void (*new_cork)(WORLD *w, double x,
 
   // Put the residual back into the plonktime.
   corks->plonktime = wld->t - rel_dt / corks->plonkrate;
+  //  printf("\n");
 }
   
 
 /**********************************************************************
- * advect_cork
- * Advance a cork by the specified dt through an existing flow field
+ * interpolate_vel
+ * Get an interpolated velocity from a field
  */
-void advect_cork( CORK *c, FIELD *f, double dt ) {
-  // Do nothing yet
+void interpolate_vel(double out[2], FIELD *f, double loc[2]) {
+  long x,y;
+  double alpha,beta;
+  double fac;
+  long of;
+  
+  x = loc[0];
+  y = loc[1];
+  
+  if(x<=0 || y<=0 || x >= f->w-1 || y >= f->h-1) {
+    out[0] = 0;
+    out[1] = 0;
+    return;
+  }
+
+  x = loc[0];
+  y = loc[1];
+  alpha = loc[0] - x;
+  beta = loc[1] - y;
+  //  printf("alpha=%g, beta=%g\n",alpha,beta);
+  of = 2 * (x + y*f->w);
+  
+  fac = (1 - alpha) * (1 - beta);
+  out[0] = fac * f->V[ of ];
+  out[1] = fac * f->V[ of + 1];
+
+  of += 2;
+  fac = (alpha) * (1 - beta);
+  out[0] += fac * f->V[ of ];
+  out[1] += fac * f->V[ of + 1 ];
+  
+  of += f->w - 2;
+  fac = (1 - alpha) * (beta);
+  out[0] += fac * f->V[ of ];
+  out[1] += fac * f->V[ of + 1 ];
+  
+  of += 2;
+  fac = alpha * beta;
+  out[0] += fac * f->V[ of ];
+  out[1] += fac * f->V[ of + 1 ];
+}  
+  
+/**********************************************************************
+ *
+ */
+
+ 
+/**********************************************************************
+ * advect_cork
+ * Advance a cork by the specified dt through an existing flow field.
+ * 
+ * returns 0 on normal completion; 1 on motion out-of-bounds.
+ */
+int advect_cork( CORK *c, FIELD *f, double dt, double dx ) {
+  double xy[2];
+  double vel[2];
+  long i;
+  double ddt = dt/10;
+
+  if(!f) {
+    printf("Die!\n");
+    exit(2);
+  }
+
+  xy[0] = c->x;
+  xy[1] = c->y;
+
+  for(i=0;i<10;i++) {
+    interpolate_vel(vel, f, xy);
+    if( (c->id % 500 == 0) && (i==0) ) {
+      long x = c->x;
+      long y = c->y;
+      long of;
+      of = ((x > 0) ? (x < f->w) ? x : f->w-1 : 0) +
+	f->w * ((y > 0) ? (y < f->h) ? y : f->h-1 : 0);
+      printf("cork %d: location %g,%g, vel %g,%g, (sample %g,%g), ddt %g, dx %g, displacement %g,%g pixels\n",c->id,xy[0],xy[1],vel[0],vel[1], f->V[of*2], f->V[of*2+1], ddt, dx, vel[0]*ddt/dx, vel[1]*ddt/dx);
+    }
+    xy[0] += vel[0] * ddt / dx ;  // div-by-dx converts scientific flow to pixel units
+    xy[1] += vel[1] * ddt / dx;
+  }
+  
+  c->x = xy[0];
+  c->y = xy[1];
+
+  return !( (c->x >= 1) &&
+	   (c->x < f->w - 1) &&
+	   (c->y >= 1) && 
+	   (c->y < f->h - 1)
+	   );
 }
+
 
 /**********************************************************************
  **********************************************************************
  ** div_flow - divergence flow calculator 
- ** given a divergence and an offset, return the flow in the given 2-vector
- ** and its magnitude directly.
+ ** given a divergence and an offset, return the flow velocity in the 
+ ** given 2-vector and its magnitude directly.
  **
  ** The offsets should be given in world scientific units, not in pixels!
+ ** The output is in scientific units.
  **/
 double div_flow( double flow_out[2], double div, double x_of, double y_of ) {
   double dist2 = x_of*x_of + y_of * y_of;
@@ -641,13 +731,16 @@ void update_field(WORLD *wld, CORKS *corks, FIELD *f, FIELD *fpre, FIELD *ftot, 
   long i, passno;
   long shrinkers;
 
-
+  printf("Processing %ss...\n",name);
   printf("advecting %d %ss (maxn=%d)\n",corks->maxn - corks->unused, name, corks->maxn);
 
   if(fpre) {
     for(i=0;i<corks->maxn;i++) {
       if(corks->array[i].id) {
-	advect_cork(corks->array + i, fpre, dt);
+	if(advect_cork(corks->array + i, fpre, dt, wld->p->dx)) {
+	  corks->array[i].id = 0;
+	  corks->unused++;
+	}
       }
     }
   }
@@ -683,11 +776,11 @@ void update_field(WORLD *wld, CORKS *corks, FIELD *f, FIELD *fpre, FIELD *ftot, 
 	  rmax_pix = (  c->rmax_pix +                                                   // old rmax_pix
 			div * wld->p->dt / wld->p->dx / wld->p->dx / c->rmax_pix        // divergence expansion
 			+1
-			);
+			) * 1.5;
 
 
-	  if(c->id % 500 == 0)
-	    printf("id %d: c->t_born=%g; t=%g; relage=%g; rl=%g; div=%g; c->rmax_pix=%d; rmax_pix = %d\n",c->id,c->t_born,wld->t,relage,rl,div,c->rmax_pix, rmax_pix );
+	  //	  if(c->id % 500 == 0)
+	  //	    printf("id %d: c->t_born=%g; t=%g; relage=%g; rl=%g; div=%g; c->rmax_pix=%d; rmax_pix = %d\n",c->id,c->t_born,wld->t,relage,rl,div,c->rmax_pix, rmax_pix );
 	  
 	  
 	  // Now find the bounds of a small array that's rmax*2+1 x rmax*2+1 centered on the 
@@ -715,7 +808,7 @@ void update_field(WORLD *wld, CORKS *corks, FIELD *f, FIELD *fpre, FIELD *ftot, 
 	      long of = y * f->w + x;
 	      long of2 = of*2;
 	      
-	      flow_mag = div_flow( V, div, x - c->x, y - c->y );
+	      flow_mag = div_flow( V, div, (x - c->x) * wld->p->dx, (y - c->y) * wld->p->dx );
 	      
 	      // If this pixel already belongs to this cork, or if the current calculated flow
 	      // magnitude is greater than the existing flow magnitude, replace the pixel with 
@@ -732,6 +825,11 @@ void update_field(WORLD *wld, CORKS *corks, FIELD *f, FIELD *fpre, FIELD *ftot, 
 		r2_pix = (x - c->x) * (x - c->x) + (y - c->y) * (y - c->y);
 		if(r2_pix > rmax_pix)
 		  rmax_pix = r2_pix;
+
+		if(ftot && fpre) {
+		  ftot->V[of2]   = fpre->V[of2  ] + f->V[of2];
+		  ftot->V[of2+1] = fpre->V[of2+1] + f->V[of2+1];
+		}
 	      }
 	    }
 	  }
@@ -743,7 +841,7 @@ void update_field(WORLD *wld, CORKS *corks, FIELD *f, FIELD *fpre, FIELD *ftot, 
 	    c->max_pixels = pix_count;
 
 	  // If the cork shrank too much, zero it out and delete it.
-	  else if(pix_count < c->max_pixels / 2 || relage >= 1.5) {
+	  else if(pix_count < c->max_pixels / 4 || relage >= 1.5) {
 	    //  printf(" cork %d is a shrinker - deleting...\n");
 	    shrinkers++;
 	    for(y=ymin; y<=ymax; y++) {
