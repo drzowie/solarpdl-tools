@@ -77,12 +77,6 @@ sub gen_calibration {
     $ties *= $flats->[0]->(-1) - $flats->[0]->(0);
     $ties += $flats->[0]->(0);
 
-
-    # Now loop several times, adjusting each tiepoint to the optimum assuming its neighbors stay 
-    # fixed. (we hope that this converges...)
-
-    ## FIXME - put loop in!
-
     $out = {dark  => $darks,
     	    min   => $min,
 	    range => $max - $min,
