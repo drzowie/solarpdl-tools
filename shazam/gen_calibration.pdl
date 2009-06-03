@@ -63,7 +63,7 @@ sub gen_calibration {
     $flats->[2] = 1;
 
     # Get the range of the flat exposure files
-    $max = $fl->((-1));
+    $max = $fl->(($fl->dim(0)/3));
     $min = $fl->((0));
 
 
@@ -83,9 +83,5 @@ sub gen_calibration {
 	    ties  => $ties
 	    };
     return $out;
-    
-        
-
-
 }
 

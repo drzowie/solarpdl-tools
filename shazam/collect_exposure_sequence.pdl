@@ -93,7 +93,10 @@ sub collect_exposure_sequence {
     }
     
     print "Dividing..."; flush STDOUT;
-    $o2 /= pdl(@nread);
+    for $i(0..$slots[$#slots]) {
+	$o2->(($i)) /= $nread[i];
+    }
+#    $o2 /= pdl(@nread);
     
     print "ok\n";
     
