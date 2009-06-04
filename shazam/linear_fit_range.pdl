@@ -1,0 +1,94 @@
+=sub linear_fit_range - do a linear fit over a particular range of values
+
+=for usage
+
+$out = linear_fit_range($data, $lo, $hi);
+
+=for signature
+
+linear_fit_range( data(n), lo(), hi(), [o]out(m) )
+
+=for ref
+
+Does a linear regression on a collection of data points versus index
+coordinate, delivering the Y intercept and the slope of the regressed
+line.  The twist is that only points within the specified range are 
+considered -- points less than $lo, or greater than $hi, are ignored.
+
+If you leave either $lo or $hi undefined, then no limit is applied.
+
+=cut
+
+sub linear_fit_range {
+    my $data = shift;
+    my $lo = shift || undef;
+    my $hi = shift || undef;
+    my $out = shift || undef;
+
+    my $loflag = (defined $lo);
+    my $hiflag = (defined $hi);
+
+    $out = PDL::my_linear_fit_range($data,$lo,$hi,$loflag,$hiflag, 2);
+}
+
+no PDL::NiceSlice;
+use Inline PDLPP => <<'EOF'
+
+pp_def('my_linear_fit_range',
+	Pars=>'data(k); lo(); hi(); [o]out(n);',
+	OtherPars=>'char loflag; char hiflag; long OutSize => n',
+	Inplace=>0,
+	Code=> <<'EOC'
+       long n;
+       double avX,avY;
+       double wgtS, avS;
+	
+	n = 0;
+	avX = avY=0;
+		
+	// Get average X and Y
+	loop(k) %{
+	   $GENERIC() val = $data();
+	   if(
+	      ((!$COMP(loflag)) || val >= $lo()) && 
+	      ((!$COMP(hiflag)) || val <= $hi())
+	      ) {
+	     n++;
+	     avX += k;
+	     avY += val;
+	   }
+	%}
+
+       if(!n) {
+	 barf("my_linear_fit_range: impossible fit (0 points)!\n");
+       }
+       avX /= n;
+       avY /= n;
+
+       printf("avX = %g; avY=%g; n=%g\n",avX,avY,(float)n);
+
+       wgtS = avS = 0;
+       
+       loop(k) %{
+	 $GENERIC() val = $data();
+	 if(
+	    ((!$COMP(loflag)) || val >= $lo()) &&
+	    ((!$COMP(hiflag)) || val <= $hi())
+	    ) {
+	   double diffX = k - avX;
+	   wgtS += diffX*diffX;
+	   avS += diffX * (val - avY);
+	 }
+       %}
+
+       if(!wgtS) {
+	 barf("my_linear_fit_range: impossible fit (no pivot)!\n");
+       }
+
+       avS /= wgtS;
+
+       $out(n=>0) = avY - avS * avX;
+       $out(n=>1) = avS;
+EOC
+       );
+EOF
