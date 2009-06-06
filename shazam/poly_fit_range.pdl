@@ -1,0 +1,55 @@
+=sub poly_fit_range - do a polynomial fit over a particular range of values
+
+=for usage
+
+$out = poly_fit_range($x, $data, $lo, $hi);
+
+=for signature
+
+linear_fit_range( x(n), data(n), lo(), hi(), [o]out(m) )
+
+=for ref
+
+Does a linear regression on a collection of data points versus index
+coordinate, delivering the Y intercept and the slope of the regressed
+line.  The twist is that only points within the specified range are 
+considered -- points less than $lo, or greater than $hi, are ignored.
+
+If you leave either $lo or $hi undefined, then no limit is applied.
+
+Handled using polyfit1d, chunked to prevent memory overload for 2k x
+2k arrays
+
+=cut
+
+use PDL::Fit::Polynomial;
+
+sub poly_fit_range {
+    my $x = shift;
+    my $data = shift;
+    my $order = shift || 5;
+    my $lo = shift || undef;
+    my $hi = shift || undef;
+
+    my $loflag = (defined $lo);
+    my $hiflag = (defined $hi);
+
+    my $i;
+
+    my @coeffs = ();
+    for $i(0..$data->dim(1)-1) {
+	$wgt = ones(short, $data->(:,($i))->dims);
+	if($loflag) {
+	    $wgt *= ($data->(:,($i)) >= $lo);
+	}
+	if($hiflag) {
+	    $wgt *= ($data->(:,($i)) <= $hi);
+	}
+	
+	my ($fit, $coeffs) = fitpoly1d($x, $data->(:,($i)), $order, {Weights=>$wgt});
+	push(@coeffs,$coeffs);
+    }
+    $coeffs = pdl(@coeffs)->mv(-1,1);
+
+    return $coeffs;
+}
