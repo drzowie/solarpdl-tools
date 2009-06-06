@@ -2,28 +2,19 @@
 
 =for usage
 
-$cal = gen_calibration($darks, $flats, [$order], [$intended_exp])
+$cal = gen_calibration($darkfit, $flats, [$order], [$intended_exp])
 
 =for ref
 
-You hand over exposure sequence objects (from
+You hand over a dark fit (from gen_darks) and a $flats sequence (from
 collect_exposure_sequence) and you get back a prefrobnicated
-calibration object.  The darks and flats should have the same set of
-exposure times (we check), and should also have been exposed using a
-true flat fed into the cameras. This step handles the nonlinear calibration of the 
-cameras, but not flat field effects due to the polarizer rotation; that should be 
-handled separately by dividing out polarized flat fields.
-
-You get back a calibration curve for each pixel that is a polynomial 
-fit of order $order; the output is an O x Nx x Ny PDL containing the polynomial
-coefficients.  A separate PDL contains a flag for bad pixels (1 where they are bad).
+calibration object. This step handles the nonlinear calibration of the
+cameras, but not flat field effects due to the polarizer rotation;
+that should be handled separately by dividing out polarized flat
+fields.
 
 If you specify the intended exposure time then the $darks are discarded and 
 the return value gets just a single dark frame for the intended exposure time.
-
-The coefficients are normalized to 
-
-The output is an array ref: [ $darks, $coeffs, $bad ];
 
 =for author
 

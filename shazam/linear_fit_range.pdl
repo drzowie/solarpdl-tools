@@ -2,11 +2,11 @@
 
 =for usage
 
-$out = linear_fit_range($data, $lo, $hi);
+$out = linear_fit_range($x, $data, $lo, $hi);
 
 =for signature
 
-linear_fit_range( data(n), lo(), hi(), [o]out(m) )
+linear_fit_range( x(n), data(n), lo(), hi(), [o]out(m) )
 
 =for ref
 
@@ -20,6 +20,7 @@ If you leave either $lo or $hi undefined, then no limit is applied.
 =cut
 
 sub linear_fit_range {
+    my $x = shift;
     my $data = shift;
     my $lo = shift || undef;
     my $hi = shift || undef;
@@ -28,23 +29,24 @@ sub linear_fit_range {
     my $loflag = (defined $lo);
     my $hiflag = (defined $hi);
 
-    $out = PDL::my_linear_fit_range($data,$lo,$hi,$loflag,$hiflag, 2);
+    $out = PDL::my_linear_fit_range($x, $data,$lo,$hi,$loflag,$hiflag, 3);
 }
 
 no PDL::NiceSlice;
 use Inline PDLPP => <<'EOF'
 
 pp_def('my_linear_fit_range',
-	Pars=>'data(k); lo(); hi(); [o]out(n);',
+	Pars=>'x(k); data(k); lo(); hi(); [o]out(n);',
 	OtherPars=>'char loflag; char hiflag; long OutSize => n',
 	Inplace=>0,
 	Code=> <<'EOC'
        long n;
        double avX,avY;
        double wgtS, avS;
-	
+	 
 	n = 0;
 	avX = avY=0;
+	$out(n=>2) = 0;
 		
 	// Get average X and Y
 	loop(k) %{
@@ -54,18 +56,18 @@ pp_def('my_linear_fit_range',
 	      ((!$COMP(hiflag)) || val <= $hi())
 	      ) {
 	     n++;
-	     avX += k;
+	     avX += $x();
 	     avY += val;
 	   }
 	%}
 
        if(!n) {
-	 barf("my_linear_fit_range: impossible fit (0 points)!\n");
+         n = 1;
+	 $out(n=>2) = 1;
+
        }
        avX /= n;
        avY /= n;
-
-       printf("avX = %g; avY=%g; n=%g\n",avX,avY,(float)n);
 
        wgtS = avS = 0;
        
@@ -75,14 +77,15 @@ pp_def('my_linear_fit_range',
 	    ((!$COMP(loflag)) || val >= $lo()) &&
 	    ((!$COMP(hiflag)) || val <= $hi())
 	    ) {
-	   double diffX = k - avX;
+	   double diffX = $x() - avX;
 	   wgtS += diffX*diffX;
 	   avS += diffX * (val - avY);
 	 }
        %}
 
        if(!wgtS) {
-	 barf("my_linear_fit_range: impossible fit (no pivot)!\n");
+         wgtS = 1;
+	 $out(n=>2) += 2;
        }
 
        avS /= wgtS;

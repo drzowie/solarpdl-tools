@@ -45,7 +45,7 @@ sub collect_exposure_sequence {
 		    my $bn = $hdrhash->{$b}->{EXPTIME};
 		    $an <=> $bn;
                    } 
-               <$dir/*_e????.fits $dir/*_e????_n???.fits>;
+               <$dir/*_e*.fits>;
     undef $hdrhash;
     
     print "collect_exposure_sequence: found ".(@files+0)." files\n";
@@ -92,15 +92,15 @@ sub collect_exposure_sequence {
        if($i%100==0){print "-"; flush STDOUT;}
     }
     
-    print "Dividing..."; flush STDOUT;
-    for $i(0..$slots[$#slots]) {
-	$o2->(($i)) /= $nread[i];
+    print "Dividing (o2 is ",join("x",$o2->dims),"; slots is ".(0+@slots)."..."; flush STDOUT;
+    for $i(0..$#nread) {
+	$o2->(($i)) /= $nread[$i];
     }
 #    $o2 /= pdl(@nread);
     
     print "ok\n";
     
-    my $t = pdl(@times);
+    my $t = float pdl(@times);
     if($step>1){
      $t = $t->(0:-1:$step)->sever;
     }
