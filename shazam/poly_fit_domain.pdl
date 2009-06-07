@@ -1,12 +1,12 @@
-=sub poly_fit_range - do a polynomial fit
+=sub poly_fit_domain - do a polynomial fit, ignoring points outside a specified domain
 
 =for usage
 
-$out = poly_fit_range($x, $data, $order, $lo, $hi);
+$out = poly_fit_domain($x, $data, $order, $lo, $hi);
 
 =for signature
 
-linear_fit_range( x(n), data(n), lo(), hi(), [o]out(m) )
+linear_fit_domain( x(n), data(n), lo(), hi(), [o]out(m) )
 
 =for ref
 
@@ -19,7 +19,7 @@ If you leave either $lo or $hi undefined, then no limit is applied.
 
 =cut
 
-sub poly_fit_range {
+sub poly_fit_domain {
     my $x = shift;
     my $data = shift;
     my $order = shift;
@@ -34,13 +34,13 @@ sub poly_fit_range {
 	die "poly_fit_range: maximum polynomial order is 10 (you wanted $order)\n";
     }
  
-    $out = PDL::my_poly_fit_range($x, $data, $lo,$hi,$loflag,$hiflag, $order);
+    $out = PDL::my_poly_fit_domain($x, $data, $lo,$hi,$loflag,$hiflag, $order);
 }
 
 no PDL::NiceSlice;
 use Inline PDLPP => <<'EOF'
 
-pp_def('my_poly_fit_range',
+pp_def('my_poly_fit_domain',
 	Pars=>'x(k); data(k); lo(); hi(); [o]out(n);',
 	OtherPars=>'char loflag; char hiflag; long order => n',
 	Inplace=>0,
@@ -64,14 +64,14 @@ pp_def('my_poly_fit_range',
 
        // Get average X and Y
        loop(k) %{
-	 $GENERIC() val = $data();
+	 $GENERIC() xval = $x();
 	 if(
-	    ((!$COMP(loflag)) || val >= $lo()) && 
-	    ((!$COMP(hiflag)) || val <= $hi())
+	    ((!$COMP(loflag)) || xval >= $lo()) && 
+	    ((!$COMP(hiflag)) || xval <= $hi())
 	    ) {
 	   n++;
-	   avX += $x();
-	   avY += val;
+	   avX += xval;
+	   avY += $data();
 	 }
        %}
        
@@ -85,14 +85,14 @@ pp_def('my_poly_fit_range',
        wgtS = avS = 0;
        
        loop(k) %{
-	 $GENERIC() val = $data();
+	 $GENERIC() xval = $x();
 	 if(
-	    ((!$COMP(loflag)) || val >= $lo()) &&
-	    ((!$COMP(hiflag)) || val <= $hi())
+	    ((!$COMP(loflag)) || xval >= $lo()) &&
+	    ((!$COMP(hiflag)) || xval <= $hi())
 	    ) {
-	   double diffX = $x() - avX;
+	   double diffX = xval - avX;
 	   wgtS += diffX*diffX;
-	   avS += diffX * (val - avY);
+	   avS += diffX * ($data() - avY);
 	 }
        %}
 
@@ -136,16 +136,16 @@ pp_def('my_poly_fit_range',
 	   err_acc = 0;
 	   err_ct = 0;
 	   loop(k) %{
-	     $GENERIC() val = $data();
+	     $GENERIC() xval = $x();
 	     if(
-		((!$COMP(loflag)) || val >= $lo()) &&
-		((!$COMP(hiflag)) || val <= $hi())
+		((!$COMP(loflag)) || xval >= $lo()) &&
+		((!$COMP(hiflag)) || xval <= $hi())
 		) {
 	       xpow = 1;
 	       val = 0;
 	       for(jj=0;jj<order;jj++){
 		 val += xpow * vecs[jj][ii];
-		 xpow *= $x();
+		 xpow *= xval;
 	       }
 	       err_acc += (val - $data()) * (val - $data());
 	       err_ct++;
@@ -195,16 +195,16 @@ pp_def('my_poly_fit_range',
 	     err_acc = 0;
 	     err_ct = 0;
 	     loop(k) %{
-	       $GENERIC() val = $data();
+	       $GENERIC() xval = $x();
 	       if(
-		  ((!$COMP(loflag)) || val >= $lo()) &&
-		  ((!$COMP(hiflag)) || val <= $hi())
+		  ((!$COMP(loflag)) || xval >= $lo()) &&
+		  ((!$COMP(hiflag)) || xval <= $hi())
 		  ) {
 		 xpow = 1;
 		 val = 0;
 		 for(jj=0;jj<order;jj++){
 		   val += xpow * centroid[jj];
-		   xpow *= $x();
+		   xpow *= xval;
 		 }
 		 err_acc += (val - $data()) * (val - $data());
 		 err_ct++;
@@ -227,16 +227,16 @@ pp_def('my_poly_fit_range',
 	     err_acc = 0;
 	     err_ct = 0;
 	     loop(k) %{
-	       $GENERIC() val = $data();
+	       $GENERIC() xval = $x();
 	       if(
-		  ((!$COMP(loflag)) || val >= $lo()) &&
-		  ((!$COMP(hiflag)) || val <= $hi())
+		  ((!$COMP(loflag)) || xval >= $lo()) &&
+		  ((!$COMP(hiflag)) || xval <= $hi())
 		  ) {
 		 xpow = 1;
 		 val = 0;
 		 for(jj=0;jj<order;jj++){
 		   val += xpow * rvec[jj];
-		   xpow *= $x();
+		   xpow *= xval;
 		 }
 		 err_acc += (val - $data()) * (val - $data());
 		 err_ct++;
@@ -263,16 +263,16 @@ pp_def('my_poly_fit_range',
 	       err_acc = 0;
 	       err_ct = 0;
 	       loop(k) %{
-	       	 $GENERIC() val = $data();
+	       	 $GENERIC() xval = $x();
 		 if(
-		    ((!$COMP(loflag)) || val >= $lo()) &&
-		    ((!$COMP(hiflag)) || val <= $hi())
+		    ((!$COMP(loflag)) || xval >= $lo()) &&
+		    ((!$COMP(hiflag)) || xval <= $hi())
 		    ) {
 		   xpow = 1;
 		   val = 0;
 		   for(jj=0;jj<order;jj++){
 		     val += xpow * scrvec[jj];
-		     xpow *= $x();
+		     xpow *= xval;
 		   }
 		   err_acc += (val - $data()) * (val - $data());
 		   err_ct++;
@@ -304,16 +304,16 @@ pp_def('my_poly_fit_range',
 	       err_acc = 0;
 	       err_ct = 0;
 	       loop(k) %{
-	       	 $GENERIC() val = $data();
+	         $GENERIC() xval = $x();
 		 if(
-		    ((!$COMP(loflag)) || val >= $lo()) &&
-		    ((!$COMP(hiflag)) || val <= $hi())
+		    ((!$COMP(loflag)) || xval >= $lo()) &&
+		    ((!$COMP(hiflag)) || xval <= $hi())
 		    ) {
 		   xpow = 1;
 		   val = 0;
 		   for(jj=0;jj<order;jj++){
 		     val += xpow * scrvec[jj];
-		     xpow *= $x();
+		     xpow *= xval;
 		   }
 		   err_acc += (val - $data()) * (val - $data());
 		   err_ct++;
@@ -348,16 +348,16 @@ pp_def('my_poly_fit_range',
 		   err_acc = 0;
 		   err_ct = 0;
 		   loop(k) %{
-		     $GENERIC() val = $data();
+		     $GENERIC() xval = $x();
 		     if(
-			((!$COMP(loflag)) || val >= $lo()) &&
-			((!$COMP(hiflag)) || val <= $hi())
+			((!$COMP(loflag)) || xval >= $lo()) &&
+			((!$COMP(hiflag)) || xval <= $hi())
 			) {
 		       xpow = 1;
 		       val = 0;
 		       for(jj=0;jj<order;jj++){
 			 val += xpow * vecs[jj][kk];
-			 xpow *= $x();
+			 xpow *= xval;
 		       }
 		       err_acc += (val - $data()) * (val - $data());
 		       err_ct++;
