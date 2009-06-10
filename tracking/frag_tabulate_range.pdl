@@ -104,10 +104,9 @@ sub frag_tabulate_range {
    
     ##############################
     ## Ancillary indices for locus calculation
-    my($xcoord) = xvals(abs($id_list->[-1])) ->flat;
-    my($ycoord) = yvals(abs($id_list->[-1])) ->flat;
-    my($icoord) = xvals(abs($id_list->[-1])->flat);
-    my($loci)= [];
+#    my($xcoord) = xvals(abs($id_list->[-1])) ->flat;
+#    my($ycoord) = yvals(abs($id_list->[-1])) ->flat;
+#    my($icoord) = xvals(abs($id_list->[-1])->flat);
     
     ##############################
     ## Loop over frames and accumulate data.
@@ -124,8 +123,6 @@ sub frag_tabulate_range {
 	
 	print $ids->nelem," frags" if($opt->{verbose});
 	
-	my($floci) = {}; 
-	
 	# Loop over current features
 	my($id);    
 	my($n);
@@ -137,9 +134,8 @@ sub frag_tabulate_range {
 	for $id($ids->list) {
 	    next unless $id;  # Skip the null case
 
-   	    # Retrieve loci and cache them for later use.
+   	    # Retrieve loci for summary table.
 	    my $xy = $id_fxy->(:,which($id_f==$id));  # 2 x N for feature
-	    $floci->{$id} = $xy;
 
 ##	    my($xl,$yl,$il,$val) = where($xcoord, $ycoord, $icoord, $im->flat, $idmap->flat->long == $id);
 
@@ -148,7 +144,9 @@ sub frag_tabulate_range {
 	    my($size)     = $xy->dim(1);
 	    my($centroid) = sumover($xy->mv(1,0) * $val) / $flux;
 	    
-##put in a check: if id is bigger than maxfrag, then we need to append a slice to summary. This is an issue if the largest id number in the data set isn't alive in the last frame (i.e., very rarely).
+##put in a check: if id is bigger than maxfrag, then we need to append
+##a slice to summary. This is an issue if the largest id number in the
+##data set isn't alive in the last frame (i.e., very rarely).
 
 	    $summary=$summary->append(zeroes(1,scalar(@{$id_list}),4)) if ($id>$maxfrag);
 	    $summary->(($id),($fr),:) .= $flux->append($size)->append($centroid);
@@ -159,20 +157,7 @@ sub frag_tabulate_range {
 	    
 	}
 ##end loop over ids in a frame 
-=pod
-=begin comment
- Cache locus information for later.  This deserves a little more explanation: 
-$loci is an array (indexed by frame) whose elements are hashes.  The keys of 
-the hash are the unique ids in that frame, and the values are the flattened 
-image pixel numbers that contain the id for that frame.  So to get all the 
-pixels that have id of 16 in frame 10, one would say $loci->[10]->{16}.  
-Remember that while the frames are continuously indexed (0,1,2,3,...), the 
-hash keys for a given frame won't be: {0,4,5,8,9,13,...}
-=end comment
-=cut
 
-	$loci->[$fr] = $floci;
-	
 	print "\n" if($opt->{verbose});
     }
 ##end loop over frames    
@@ -252,10 +237,10 @@ if (a feature is filtered){
 ###check around
       foreach my $fr($frames->list){
 	  print " $fr ";
-	  my ($xmin,$xmax)=minmax($loci->[$fr]->{$feat}->((0)));
-	  my ($ymin,$ymax)=minmax($loci->[$fr]->{$feat}->((1)));
-	  
-	  my $sub_idlist = $id_list->[$fr]->range(pdl($xmin,$ymin)-2,pdl($xmax-$xmin,$ymax-$ymin)+4,'t');
+
+	  my ($mins,$maxes)=whichND($id_list->[$fr]->abs==$feat)->xchg(0,1)->minmaximum;
+
+	  my $sub_idlist = $id_list->[$fr]->range($mins-2,$maxes-$mins+4,'t');
 	  my $dilated = convolveND($sub_idlist == $feat * $ft_sgn, $k)>0;
 
 	  my $localids = $sub_idlist->where($dilated)->uniq;
@@ -266,7 +251,8 @@ if (a feature is filtered){
 	      next FilteredFeature;
 	  }
       }
-  }
+  } #end loop FilteredFeature
+
  print "\n";    
 ##need to remake this because we might have re-ok'd some features
     my $ok_ids = which($frag_ok);
@@ -277,25 +263,29 @@ if (a feature is filtered){
     for $a(0..$ok_ids->nelem-1) {
 	$id_conv->{$ok_ids->at($a)} = $a+1;
     }
-    
-    print "id_conv is:";
-    for my $idc(sort keys %$id_conv) {
-	print $idc."=>".$id_conv->{$idc}.";  ";
-    }
 
+##DAL
+    use PDL::IO::Dumper;
+    fdump($id_conv,'id_conv.pdld');
+    
+#    print "id_conv is:";
+#    for my $idc(sort keys %$id_conv) {
+#	print $idc."=>".$id_conv->{$idc}.";  ";
+#    }
+#    $main::frag_ok = $frag_ok;
+#    return;
     # Compress all the IDs in the images.
     for my $fr(0..$#{$im_list}) {
 	print "(2) crunching f$fr: " if($opt->{verbose});
-	my $idmap = zeroes(abs($id_list->[0]));
-	my $floci = $loci->[$fr];
-	
-	print scalar(keys %{$floci})," ids, of which ",sum($frag_ok->(pdl(keys %{$floci})))," are OK " if($opt->{verbose});
-	
-	my($n) = 0;
-	for my $old_id(keys %{$floci}) {
+	my $idmap = zeroes($id_list->[0]);
+
+	my $frame_ids = $id_list->[$fr]->abs->uniq->(1:-1); #doesn't include 0
+	print $frame_ids->nelem," ids, of which ",intersect($ok_ids,$frame_ids)->nelem," are OK " if $opt->{verbose};
+
+	my $n = 0;
+	foreach my $old_id(list $frame_ids){
 	    next unless $id_conv->{$old_id};
-	    my $idw = $idmap->whichND($floci->{$old_id});
-	    $idw .= $id_conv->{$old_id};
+	    $idmap->where($id_list->[$fr]==$old_id).=$id_conv->{$old_id};
 	    print "." if($opt->{verbose} && (($n++ % 10 == 0) || $opt->{verbose}>1));
 	}
 	
