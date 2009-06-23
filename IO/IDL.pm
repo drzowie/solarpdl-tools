@@ -143,6 +143,8 @@ our $types = [ ['START_MARKER',undef]     # 0      (start of SAVE file)
 	      ,['HEAP_HEADER',undef]      # 15     (Heap index information)
 	      ,['HEAP_DATA',undef]        # 16     (Heap data)
 	      ,['PROMOTE64',\&r_p64]      # 17     (Starts 64-bit file offsets)
+	      ,undef                      # 18       (??)
+	      ,['LEGALESE',\&r_legalese]  # 19
 	      ];
 
 
@@ -368,6 +370,13 @@ sub r_v {
   $hash->{"+meta"}->{v_os} = r_string();
   $hash->{"+meta"}->{v_release} = r_string();
   return 1;
+}
+
+##############################
+# r_legalese
+sub r_legalese {
+    my $hash = shift;
+    print STDERR "Ignoring dubious legalese field\n";
 }
 
 ##############################
