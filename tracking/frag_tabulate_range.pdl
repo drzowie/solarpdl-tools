@@ -1,6 +1,6 @@
 =pod
 
-=head2 frag_tabulate
+=head2 frag_tabulate_range
 
 =for ref
 
@@ -99,14 +99,10 @@ sub frag_tabulate_range {
     my($maxfrag) = $id_list->[-1]->abs->max;  
     print "maxfrag is $maxfrag\n";
     print "Allocating ".join("x",$maxfrag+1,scalar(@{$id_list}),4)." floats (".($maxfrag+1)*(scalar(@{$id_list})*4*4/1024/1024)," MB)\n";
-    my($summary) = zeroes(float,$maxfrag+1,scalar(@{$id_list}),4);
-##summary is indexed by (feature number, frame number, (flux, size, centroid x, centroid y)) 
+
+    ##  summary is indexed by (feature number, frame number, (flux, size, centroid x, centroid y)) 
+    my($summary) = zeroes( float, 1.05 * $maxfrag + 1, scalar(@{$id_list}), 4 );
    
-    ##############################
-    ## Ancillary indices for locus calculation
-#    my($xcoord) = xvals(abs($id_list->[-1])) ->flat;
-#    my($ycoord) = yvals(abs($id_list->[-1])) ->flat;
-#    my($icoord) = xvals(abs($id_list->[-1])->flat);
     
     ##############################
     ## Loop over frames and accumulate data.
@@ -128,39 +124,40 @@ sub frag_tabulate_range {
 	my($n);
 	
 	my($idml) = $idmap->long;
+	
+	## Prepare a single list of all old-ID values and also a list of their coordinates
 	my $id_fxy = whichND($idmap != 0);
 	my $id_f = $idmap->indexND($id_fxy)->sever;	
 
+	## Loop over old id's and summarize each.
 	for $id($ids->list) {
 	    next unless $id;  # Skip the null case
 
    	    # Retrieve loci for summary table.
 	    my $xy = $id_fxy->(:,which($id_f==$id));  # 2 x N for feature
 
-##	    my($xl,$yl,$il,$val) = where($xcoord, $ycoord, $icoord, $im->flat, $idmap->flat->long == $id);
 
-	    my($val) = $im->indexND($xy);
-	    my($flux)     = $val->sumover;
-	    my($size)     = $xy->dim(1);
-	    my($centroid) = sumover($xy->mv(1,0) * $val) / $flux;
+	    my($val)       = $im->indexND($xy);
+	    my($flux)      = $val->sumover;
+	    my($size)      = $xy->dim(1);
+	    my($centroid)  = sumover($xy->mv(1,0) * $val) / $flux;
 	    
 ##put in a check: if id is bigger than maxfrag, then we need to append
 ##a slice to summary. This is an issue if the largest id number in the
 ##data set isn't alive in the last frame (i.e., very rarely).
+	    $summary=$summary->append(zeroes(1,scalar(@{$id_list}),4)) if ($id >= $summary->dim(0));
 
-	    $summary=$summary->append(zeroes(1,scalar(@{$id_list}),4)) if ($id>$maxfrag);
 	    $summary->(($id),($fr),:) .= $flux->append($size)->append($centroid);
 	    
 	    print "$fr,$id: ",$summary->(($id),($fr),:),", ",$flux->append($size)->append($centroid),"\n"
 		if($opt->{verbose}>2);
 	    print "." if($opt->{verbose} && (($n++ % 10 == 0) || $opt->{verbose}>1));
 	    
-	}
-##end loop over ids in a frame 
+	} ##end loop over ids in a frame 
 
 	print "\n" if($opt->{verbose});
-    }
-##end loop over frames    
+
+    } ##end loop over frames    
     
     ##############################
     ## Filter on volume and other criteria, and crunch IDs.
@@ -211,10 +208,11 @@ if (a feature is filtered){
   FilteredFeature:    foreach my $feat($filt_ids->list){
       next FilteredFeature if ($feat==0);
       my $frames = which($summary(($feat),:,(1)));
+      next unless($frames->nelem);
       my $ft_sgn = $summary(($feat),($frames->at(0)),(0)) <=> 0;
       my $start = $frames->at(0)?$frames->at(0)-1:0;
       my $end = $frames->at(-1)<$summary->dim(1)-1?$frames->at(-1)+1:$summary->dim(1)-1;
-      print "Feature $feat lives in frames $frames, also checking $start and $end\n" if ($opt->{verbose});
+      print "Feature $feat lives in frames $frames, also checking $start and $end\n" if ($opt->{verbose}>1);
       
 =pod
 ###check before
@@ -236,7 +234,7 @@ if (a feature is filtered){
       
 ###check around
       foreach my $fr($frames->list){
-	  print " $fr ";
+	  print " $feat-$fr " if($opt->{verbose}>1);
 
 	  my ($mins,$maxes)=whichND($id_list->[$fr]->abs==$feat)->xchg(0,1)->minmaximum;
 
@@ -251,6 +249,8 @@ if (a feature is filtered){
 	      next FilteredFeature;
 	  }
       }
+      
+      print "." if($opt->{verbose}==1);
   } #end loop FilteredFeature
 
  print "\n";    
@@ -259,37 +259,29 @@ if (a feature is filtered){
 
     # Generate forward and backward conversions for IDs.  The +1s are to 
     # make the new IDs start at 1 not 0.
+    # $id_conv is a hash (old style).
+    #
+    # CED 24-Jun-2009
+    # $idconv is a pdl (new style).
+    # $idconv is a lookup table -- index is abs(old_id), which is supposed
+    #  to be unique (see frag_assoc), and value is new ID.
+    #
     my($a,$id_conv);
-    for $a(0..$ok_ids->nelem-1) {
-	$id_conv->{$ok_ids->at($a)} = $a+1;
-    }
+    my($idconv) = zeroes(long, $summary->dim(0));
+     print "Assigning crunched IDs...\n";
+    $idconv->($ok_ids) .= xvals($ok_ids->nelem)+1;
+    print "ok\n";
 
-##DAL
-    use PDL::IO::Dumper;
-    fdump($id_conv,'id_conv.pdld');
-    
-#    print "id_conv is:";
-#    for my $idc(sort keys %$id_conv) {
-#	print $idc."=>".$id_conv->{$idc}.";  ";
-#    }
-#    $main::frag_ok = $frag_ok;
-#    return;
     # Compress all the IDs in the images.
     for my $fr(0..$#{$im_list}) {
 	print "(2) crunching f$fr: " if($opt->{verbose});
-	my $idmap = zeroes($id_list->[0]);
 
-	my $frame_ids = $id_list->[$fr]->abs->uniq->(1:-1); #doesn't include 0
-	print $frame_ids->nelem," ids, of which ",intersect($ok_ids,$frame_ids)->nelem," are OK " if $opt->{verbose};
+#	my $frame_ids = $id_list->[$fr]->abs->uniq->(1:-1); #doesn't include 0
+#	print $frame_ids->nelem," ids, of which ",intersect($ok_ids,$frame_ids)->nelem," are OK " if $opt->{verbose};
 
-	my $n = 0;
-	foreach my $old_id(list $frame_ids){
-	    next unless $id_conv->{$old_id};
-	    $idmap->where($id_list->[$fr]==$old_id).=$id_conv->{$old_id};
-	    print "." if($opt->{verbose} && (($n++ % 10 == 0) || $opt->{verbose}>1));
-	}
-	
-	$opt->{tab}->[$fr] = $idmap;
+	my $idmap = $idconv->($id_list->[$fr]->abs)->sever;
+
+	$opt->{tab}->[$fr] = $idconv->indexND($id_list->[$fr]->(*1)->abs)->copy;
 	print "\n" if($opt->{verbose});
     }
     print "Copying summary...\n";
