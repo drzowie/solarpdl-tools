@@ -10,12 +10,16 @@ linear_fit_range( x(n), data(n), lo(), hi(), [o]out(m) )
 
 =for ref
 
-Does a linear regression on a collection of data points versus index
+Does a polynomial regression on a collection of data points versus index
 coordinate, delivering the Y intercept and the slope of the regressed
 line.  The twist is that only points within the specified range are 
 considered -- points less than $lo, or greater than $hi, are ignored.
 
 If you leave either $lo or $hi undefined, then no limit is applied.
+
+Because this was hacked together fast, I cut-and-pasted the 
+polynomial evaluation code in the C part of the procedure; this makes 
+the routine longer than it necessarily has to be.
 
 =cut
 
