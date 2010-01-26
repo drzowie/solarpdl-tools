@@ -36,6 +36,10 @@ Display the progress in a PDL::Graphics::PGPLOT::Window object.
 
 Chat.  Levels 0 (minimal), 1 (some), and 2 (more).
 
+=item start_id
+
+ID number to start with
+
 =back
 
 BUGS
@@ -57,6 +61,7 @@ ARD 04/10/04 Removed feature history processing from frag_assoc.
 use Carp;
 use strict;
 use PDL::NiceSlice;
+use DBI;
 
 sub frag_assoc {
   my($opt,$ids) = find_opt(@_);
@@ -190,5 +195,18 @@ print "Next ID: $nextid\n";
     }
   print "frag_assoc completed successfully\n";  
   $win->close if $opt->{monitor};
+
+  ## Update the current max ID in the DB
+  my $dbh;
+  my $sth;
+  
+  $dbh = DBI->connect("dbi:SQLite:dbname=swamis.sdb","","");
+
+  $sth = $dbh->prepare('UPDATE params SET cur_max_id=?');
+  $sth->execute($nextid - 1);
+  $sth->finish;
+
+  $dbh->disconnect;
+  
   return $id_out;
 }

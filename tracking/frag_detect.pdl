@@ -63,6 +63,10 @@ is -1).
 
 Chat
 
+=item start_frame
+
+Frame to start with (if non-zero, there are "lookback frames" before)
+
 =back
 
 =for method
@@ -118,6 +122,7 @@ sub frag_detect_diag {
 sub frag_detect {
   my($opt,$cube) = find_opt(@_);
   my $masks;
+  my $start_frame;
   
   local $_;
   
@@ -133,6 +138,7 @@ sub frag_detect {
   $opt->{behind} = -1 unless (defined $opt->{behind});
   
   $masks = (defined($opt->{masks})) ? $opt->{masks} : [];
+  $start_frame = (defined($opt->{start_frame})) ? $opt->{start_frame} : 0;
   
   my($lthresh,$hthresh) = ($opt->{thresh}->min, $opt->{thresh}->max);
   
@@ -151,7 +157,7 @@ sub frag_detect {
   
   ##############################
   ## Main loop 
-  my $frame = 0;
+  my $frame = $start_frame;
   my $frmax = 0;
   do {
       my ($ploc,$nloc,$fr_ploc,$fr_nloc,$nfound,$pfound);  

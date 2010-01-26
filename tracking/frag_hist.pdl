@@ -150,6 +150,7 @@ use strict;
 use PDL;
 use PDL::NiceSlice;
 use PDL::ImageND;
+use DBI;
 
 sub frag_hist {
     my ($berr,$derr)=0;
@@ -509,6 +510,46 @@ DEATH_INT:	for $j(0..$#interactions) {
 
     } #end feature loop
     print "\nberr: $berr\t derr: $derr\n";
+
+    # Write the information to a SQLite database
+    my $dbh;
+    my $sth;
+    my $id;
+    my $num_ids;
+    my $birth_frame;
+    my $birth_method;
+    my $birth_id;
+    my $death_frame;
+    my $death_method;
+    my $death_id;
+    my $lifetime;
+    my $birth_x;
+    my $birth_y;
+    my $death_x;
+    my $death_y;
+
+    $dbh = DBI->connect("dbi:SQLite:dbname=swamis.sdb","","");
+    $sth = $dbh->prepare('INSERT INTO hist VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+
+    $num_ids = $hist->dim(0);
+    for ($id=0; $id<$num_ids; $id++)
+    {
+        $birth_frame = $hist->(($id), (0));
+        $birth_method = $hist->(($id), (1));
+        $birth_id = $hist->(($id), (2));
+        $death_frame = $hist->(($id), (3));
+        $death_method = $hist->(($id), (4));
+        $death_id = $hist->(($id), (5));
+        $lifetime = $hist->(($id), (6));
+        $birth_x = $hist->(($id), (7));
+        $birth_y = $hist->(($id), (8));
+        $death_x = $hist->(($id), (9));
+        $death_y = $hist->(($id), (10));
+        $sth->execute($id, $birth_frame, $birth_method, $birth_id, $death_frame, $death_method, $death_id, $lifetime, $birth_x, $birth_y, $death_x, $death_y);
+        $sth->finish;
+    }
+
+    $dbh->disconnect;
 
 ##put the options in the header for saving when writing out as a FITS file
     $hist->sethdr($opt);

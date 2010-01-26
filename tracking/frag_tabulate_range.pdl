@@ -48,6 +48,10 @@ files from being changed in place.
 
 Chat.
 
+=item start_frame
+
+Frame number to start with
+
 =item DEBUG
 
 Sets verbose option to 2.
@@ -75,6 +79,7 @@ use strict;
 use PDL;
 use PDL::NiceSlice;
 use PDL::ImageND;
+use DBI;
 
 sub frag_tabulate_range {
     my($opt,$id_list,$im_list) = find_opt(@_);
@@ -93,6 +98,8 @@ sub frag_tabulate_range {
 
     $opt->{verbose} = 2 if($opt->{DEBUG});
     
+    my($start_frame) = $opt->{start_frame} || 0;
+
     ##############################
     ## Allocate the features table
     
@@ -286,6 +293,44 @@ if (a feature is filtered){
     }
     print "Copying summary...\n";
     my($sum2) = $summary->(append(pdl(0),$ok_ids),:,:)->sever;
+
+    # Write the information to a SQLite database
+    my $dbh;
+    my $sth;
+    my $id;
+    my $num_ids;
+    my $frame;
+    my $num_frames;
+    my $flux;
+    my $size;
+    my $x;
+    my $y;
+
+    $dbh = DBI->connect("dbi:SQLite:dbname=swamis.sdb","","");
+    $sth = $dbh->prepare('INSERT INTO tabs VALUES (?, ?, ?, ?, ?, ?)');
+
+    $num_ids = $summary->dim(0);
+    $num_frames = $summary->dim(1);
+    for ($id=0; $id<$num_ids; $id++)
+    {
+        for ($frame=$start_frame; $frame<$num_frames; $frame++)
+        {
+            $flux = $summary->(($id), ($frame), (0));
+            $size = $summary->(($id), ($frame), (1));
+            $x = $summary->(($id), ($frame), (2));
+            $y = $summary->(($id), ($frame), (3));
+            $sth->execute($id, $frame, $flux, $size, $x, $y);
+            $sth->finish;
+        }
+    }
+
+    ## Update the current number of frames in the DB
+    $sth = $dbh->prepare('UPDATE params SET cur_num_frames=?');
+    $sth->execute($frame);
+    $sth->finish;
+
+    $dbh->disconnect;
+
     print "cleaning up...\n";
     undef $summary;
     print "frag_tabulate completed successfully.\n";
