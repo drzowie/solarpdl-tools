@@ -74,6 +74,7 @@ sub swamis{
     my $tabs;
 
 ### Run the individual programs
+    # FRAG_DETECT
     $res = $dbh->selectall_arrayref('SELECT data_path,mask_path,data_processed,filename FROM files WHERE data_processed<2 ORDER BY filename');
     if (@$res) {
         @datafiles = ();
@@ -93,83 +94,98 @@ sub swamis{
             }
         }
         my $num_files = $num_seen + $num_not_seen;
-        my $detect_start_frame;
-        if ($num_seen > $n_back) {
-            $detect_start_frame = $n_back;
-        } else {
-            $detect_start_frame = $num_seen;
-        }            
-        $data = diskcache(\@datafiles,{ro=>1,bless=>1});
-        $mask = diskcache(\@maskfiles,{rw=>1,bless=>1});
-        frag_detect($data, {diag=>2,masks=>$mask,thresh=>$thresh,start_frame=>$detect_start_frame});
-        $mask->sync;
-        $dbh->selectall_arrayref('UPDATE files SET data_processed=2');
-        my $file_num = 0;
-        foreach (@filenames) {
-            $sth = $dbh->prepare('UPDATE files SET data_processed=? WHERE filename=?');
-            if ($file_num < ($num_files - $n_back)) {
-                $sth->execute(2, $_);
+        if ($num_not_seen > 0) {
+            my $detect_start_frame;
+            if ($num_seen > $n_back) {
+                $detect_start_frame = $n_back;
             } else {
-                $sth->execute(1, $_);
+                $detect_start_frame = $num_seen;
+            }            
+            $data = diskcache(\@datafiles,{ro=>1,bless=>1});
+            $mask = diskcache(\@maskfiles,{rw=>1,bless=>1});
+            frag_detect($data, {diag=>2,masks=>$mask,thresh=>$thresh,start_frame=>$detect_start_frame});
+            $mask->sync;
+            #$dbh->selectall_arrayref('UPDATE files SET data_processed=2');
+            my $file_num = 0;
+            foreach (@filenames) {
+                $sth = $dbh->prepare('UPDATE files SET data_processed=? WHERE filename=?');
+                if ($file_num < ($num_files - $n_back)) {
+                    $sth->execute(2, $_);
+                } else {
+                    $sth->execute(1, $_);
+                }
+                $sth->finish;
+                $file_num++;
             }
-            $sth->finish;
-            $file_num++;
         }
     }
-
-    $res = $dbh->selectall_arrayref('SELECT data_path,mask_path,id_path,filename FROM files WHERE mask_processed=0 AND data_processed=2 ORDER BY filename');
+    
+    # FRAG_ID
+    $res = $dbh->selectall_arrayref('SELECT data_path,mask_path,id_path FROM files WHERE mask_processed=0 AND data_processed=2 ORDER BY filename');
     if (@$res) {
         @datafiles = ();
         @maskfiles = ();
         @idfiles = ();
-        my @filenames = ();
-        my $num_files = 0;
         foreach (@$res) {
             push @datafiles, @$_[0];
             push @maskfiles, @$_[1];
             push @idfiles, @$_[2];
-            push @filenames, @$_[3];
-
-            $num_files++;
         }
         $data = diskcache(\@datafiles,{ro=>1,bless=>1});
         $mask = diskcache(\@maskfiles,{ro=>1,bless=>1});
         $id = diskcache(\@idfiles,{rw=>1,bless=>1});
         frag_id($data,$mask,{method=>$method,diag=>1,ids=>$id,verbose=>1,monitor=>0,min_size=>$min_sz});
         $id->sync;
-        #$dbh->selectall_arrayref('UPDATE files SET mask_processed=2');
-        my $file_num = 0;
-        foreach (@filenames) {
-            $sth = $dbh->prepare('UPDATE files SET mask_processed=? WHERE filename=?');
-            if ($file_num < ($num_files - 1)) {
-                $sth->execute(2, $_);
-            } else {
-                $sth->execute(1, $_);
-            }
-            $sth->finish;
-            $file_num++;
-        }
+        $dbh->selectall_arrayref('UPDATE files SET mask_processed=2 WHERE data_processed=2');
     }
     
-    $res = $dbh->selectall_arrayref('SELECT id_path,assoc_path FROM files WHERE id_processed=0 AND mask_processed>0 ORDER BY filename');
+    # FRAG_ASSOC
+    $res = $dbh->selectall_arrayref('SELECT id_path,assoc_path,id_processed,filename FROM files WHERE id_processed<2 AND mask_processed>0 ORDER BY filename');
     if (@$res) {
         @idfiles = ();
         @assocfiles = ();
-        my $num_frames = 0;
+        my @filenames = ();
+        my $num_seen = 0;
+        my $num_not_seen = 0;
         foreach (@$res) {
             push @idfiles, @$_[0];
             push @assocfiles, @$_[1];
-            $num_frames++;
+            push @filenames, @$_[3];
+
+            if ((@$_[2] + 0) == 1) {
+                $num_seen++;
+            } else {
+                $num_not_seen++;
+            }
         }
-        if ($num_frames > 1) {
+        my $num_files = $num_seen + $num_not_seen;
+        if ($num_not_seen > 0) {
+            my $assoc_start_frame;
+            if ($num_seen > 1) {
+                $assoc_start_frame = 1;
+            } else {
+                $assoc_start_frame = $num_seen;
+            }            
             $id = diskcache(\@idfiles,{ro=>1,bless=>1});
             $assoc = diskcache(\@assocfiles,{rw=>1,bless=>1});
-            frag_assoc($id,{assoc=>$assoc, monitor=>0, verbose=>1, start_id=>($max_id + 1)});
+            frag_assoc($id,{assoc=>$assoc, monitor=>0, verbose=>1, start_frame=>$assoc_start_frame, start_id=>($max_id + 1)});
             $assoc->sync;
-            $dbh->selectall_arrayref('UPDATE files SET id_processed=2 WHERE mask_processed>0');
+            #$dbh->selectall_arrayref('UPDATE files SET id_processed=2 WHERE mask_processed>0');
+            my $file_num = 0;
+            foreach (@filenames) {
+                $sth = $dbh->prepare('UPDATE files SET id_processed=? WHERE filename=?');
+                if ($file_num < ($num_files - 1)) {
+                    $sth->execute(2, $_);
+                } else {
+                    $sth->execute(1, $_);
+                }
+                $sth->finish;
+                $file_num++;
+            }
         }
     }
     
+    # FRAG_TAB
     $res = $dbh->selectall_arrayref('SELECT data_path,assoc_path,tab_path FROM files WHERE assoc_processed=0 AND id_processed>0 ORDER BY filename');
     if (@$res) {
         @datafiles = ();
@@ -189,6 +205,7 @@ sub swamis{
         $dbh->selectall_arrayref('UPDATE files SET assoc_processed=2 WHERE id_processed>0');
     }
     
+    # FRAG_HIST
     $res = $dbh->selectall_arrayref('SELECT data_path,tab_path FROM files WHERE tab_processed=0 AND assoc_processed>0 ORDER BY filename');
     if (@$res) {
         @datafiles = ();

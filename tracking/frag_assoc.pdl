@@ -20,6 +20,10 @@ sign bit corresponds to the sign of each feature.
 
 =over 3
 
+=item start_frame
+
+Frame to start with (if non-zero, there are "lookback frames" before)
+
 =item start_id
 
 If this gets passed in, IDs start here rather than at +/- 1.
@@ -35,10 +39,6 @@ Display the progress in a PDL::Graphics::PGPLOT::Window object.
 =item verbose
 
 Chat.  Levels 0 (minimal), 1 (some), and 2 (more).
-
-=item start_id
-
-ID number to start with
 
 =back
 
@@ -77,6 +77,10 @@ sub frag_assoc {
   ## Set up variables
   ##
 
+  my($start_frame) = $opt->{start_frame} || 0;  # real starting frame
+                                                # (if more than 0, previous
+                                                # is last frame processed)
+  
   my($nextid) = $opt->{start_id} || 1;  # nextid is next frag id to use
  
   my($frame);                           # Frame no. we are working on
@@ -97,7 +101,13 @@ sub frag_assoc {
   print "frag_assoc: processing ".($#$ids+1)." mask images...\n";
   my $win=pgwin('xs',size=>[6,6]) if $opt->{monitor};
 
-  for $frame(0..$#$ids) {
+  # If we are not starting on the first frame, set the previous frame
+  # ($curr at this point) to the last one (first one passed in).
+  if ($start_frame > 0) {
+    $curr .= $id_out->[0];
+  }
+
+  for $frame($start_frame..$#$ids) {
     next unless defined($ids->[$frame]);
 
     $im .= $ids->[$frame];

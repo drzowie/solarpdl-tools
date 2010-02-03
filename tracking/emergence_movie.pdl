@@ -193,7 +193,7 @@ sub emergence_movie {
     my $cmask = $rr*$rr*$rr*($rr<=$radius);
     $cmask /= $cmask->max;
     
-    `rm -r $dir`;
+    `rm -rf $dir`;
     `mkdir $dir`;
     
     my $i;

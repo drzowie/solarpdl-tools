@@ -71,7 +71,8 @@ sub purge{
     `rm -rf 04-tab; mkdir 04-tab`;
 
 ### Initialize the SQLite databases
-    `rm -f swamis.sdb`;
+    `cat /dev/null > swamis.sdb`;
+
     my $dbh;
     my $sth;
     $dbh = DBI->connect("dbi:SQLite:dbname=swamis.sdb","","");
