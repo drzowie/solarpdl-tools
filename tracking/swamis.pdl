@@ -70,7 +70,8 @@ sub swamis{
         }
     }
 
-    my ($data, $mask, $id, $assoc, $tab);
+    #my ($data, $mask, $id, $assoc, $tab);
+    my (@data, @mask, @id, @assoc, @tab);
     my $tabs;
 
 ### Run the individual programs
@@ -101,10 +102,16 @@ sub swamis{
             } else {
                 $detect_start_frame = $num_seen;
             }            
-            $data = diskcache(\@datafiles,{ro=>1,bless=>1});
-            $mask = diskcache(\@maskfiles,{rw=>1,bless=>1});
-            frag_detect($data, {diag=>2,masks=>$mask,thresh=>$thresh,start_frame=>$detect_start_frame});
-            $mask->sync;
+            #$data = diskcache(\@datafiles,{ro=>1,bless=>1});
+            #$mask = diskcache(\@maskfiles,{rw=>1,bless=>1});
+            @data = mrfits(@datafiles);
+            @mask = map {(-e $_) ? rfits($_) : undef } @maskfiles;
+            frag_detect(\@data, {diag=>2,masks=>\@mask,thresh=>$thresh,start_frame=>$detect_start_frame,behind=>$n_back});
+            #$mask->sync;
+            my $i = 0;
+            foreach (@mask) {
+                $_->wfits($maskfiles[$i++]);
+            }
             #$dbh->selectall_arrayref('UPDATE files SET data_processed=2');
             my $file_num = 0;
             foreach (@filenames) {
@@ -119,7 +126,7 @@ sub swamis{
             }
         }
     }
-    
+
     # FRAG_ID
     $res = $dbh->selectall_arrayref('SELECT data_path,mask_path,id_path FROM files WHERE mask_processed=0 AND data_processed=2 ORDER BY filename');
     if (@$res) {
@@ -131,11 +138,15 @@ sub swamis{
             push @maskfiles, @$_[1];
             push @idfiles, @$_[2];
         }
-        $data = diskcache(\@datafiles,{ro=>1,bless=>1});
-        $mask = diskcache(\@maskfiles,{ro=>1,bless=>1});
-        $id = diskcache(\@idfiles,{rw=>1,bless=>1});
-        frag_id($data,$mask,{method=>$method,diag=>1,ids=>$id,verbose=>1,monitor=>0,min_size=>$min_sz});
-        $id->sync;
+        @data = mrfits(@datafiles);
+        @mask = mrfits(@maskfiles);
+        @id = map {(-e $_) ? rfits($_) : undef } @idfiles;
+        frag_id(\@data,\@mask,{method=>$method,diag=>1,ids=>\@id,verbose=>1,monitor=>0,min_size=>$min_sz});
+        #$id->sync;
+        my $i = 0;
+        foreach (@id) {
+            $_->wfits($idfiles[$i++]);
+        }
         $dbh->selectall_arrayref('UPDATE files SET mask_processed=2 WHERE data_processed=2');
     }
     
@@ -166,10 +177,14 @@ sub swamis{
             } else {
                 $assoc_start_frame = $num_seen;
             }            
-            $id = diskcache(\@idfiles,{ro=>1,bless=>1});
-            $assoc = diskcache(\@assocfiles,{rw=>1,bless=>1});
-            frag_assoc($id,{assoc=>$assoc, monitor=>0, verbose=>1, start_frame=>$assoc_start_frame, start_id=>($max_id + 1)});
-            $assoc->sync;
+            @id = mrfits(@idfiles);
+            @assoc = map {(-e $_) ? rfits($_) : undef } @assocfiles;
+            frag_assoc(\@id,{dbh=>$dbh,assoc=>\@assoc, monitor=>0, verbose=>1, start_frame=>$assoc_start_frame, start_id=>($max_id + 1)});
+            #$assoc->sync;
+            my $i = 0;
+            foreach (@assoc) {
+                $_->wfits($assocfiles[$i++]);
+            }
             #$dbh->selectall_arrayref('UPDATE files SET id_processed=2 WHERE mask_processed>0');
             my $file_num = 0;
             foreach (@filenames) {
@@ -185,6 +200,9 @@ sub swamis{
         }
     }
     
+    $dbh->disconnect();
+    exit 0;
+
     # FRAG_TAB
     $res = $dbh->selectall_arrayref('SELECT data_path,assoc_path,tab_path FROM files WHERE assoc_processed=0 AND id_processed>0 ORDER BY filename');
     if (@$res) {
@@ -196,12 +214,16 @@ sub swamis{
             push @assocfiles, @$_[1];
             push @tabfiles, @$_[2];
         }
-        $data = diskcache(\@datafiles,{ro=>1,bless=>1});
-        $assoc = diskcache(\@assocfiles,{ro=>1,bless=>1});
-        $tab = diskcache(\@tabfiles,{rw=>1,bless=>1});
-        $tabs = frag_tabulate_range($assoc,$data,{verbose=>1,tab=>$tab,sz_min=>$sz_min,t_min=>$t_min,v_min=>$v_min,start_frame=>$num_frames});
+        @data = mrfits(@datafiles);
+        @assoc = mrfits(@assocfiles);
+        @tab = map {(-e $_) ? rfits($_) : undef } @tabfiles;
+        $tabs = frag_tabulate_range(\@assoc,\@data,{dbh=>$dbh,verbose=>1,tab=>\@tab,sz_min=>$sz_min,t_min=>$t_min,v_min=>$v_min,start_frame=>$num_frames});
         #wfits($tabs,'tabs.fits');
-        $tab->sync;
+        #$tab->sync;
+        my $i = 0;
+        foreach (@tab) {
+            $_->wfits($tabfiles[$i++]);
+        }
         $dbh->selectall_arrayref('UPDATE files SET assoc_processed=2 WHERE id_processed>0');
     }
     
@@ -214,13 +236,13 @@ sub swamis{
             push @datafiles, @$_[0];
             push @tabfiles, @$_[1];
         }
-        $data = diskcache(\@datafiles,{ro=>1,bless=>1});
-        $tab = diskcache(\@tabfiles,{ro=>1,bless=>1});
-        my $hist = frag_hist($tabs,$tab,$data,{verbose=>1,sep=>5,ratio=>0.5});
+        @data = mrfits(@datafiles);
+        @tab = mrfits(@tabfiles);
+        my $hist = frag_hist($tabs,\@tab,\@data,{dbh=>$dbh,verbose=>1,sep=>5,ratio=>0.5});
         #$hist->wfits('hist.fits');
         $dbh->selectall_arrayref('UPDATE files SET tab_processed=2 WHERE assoc_processed>0');
         
-        emergence_movie($hist,$tabs,$data,$tab,{dir=>'swamis_movie',size=>[8,8],range=>[-300,300],evmask=>[0,0,0,0,0,0],id_feats=>0,contour=>2,format=>'ppm'});   
+        emergence_movie($hist,$tabs,\@data,\@tab,{dir=>'swamis_movie',size=>[8,8],range=>[-300,300],evmask=>[0,0,0,0,0,0],id_feats=>0,contour=>2,format=>'ppm'});   
 ### Done!
     }
     

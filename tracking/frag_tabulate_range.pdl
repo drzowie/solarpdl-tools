@@ -100,6 +100,8 @@ sub frag_tabulate_range {
     
     my($start_frame) = $opt->{start_frame} || 0;
 
+    my($dbh) = $opt->{dbh} || undef;
+  
     ##############################
     ## Allocate the features table
     
@@ -295,8 +297,6 @@ if (a feature is filtered){
     my($sum2) = $summary->(append(pdl(0),$ok_ids),:,:)->sever;
 
     # Write the information to a SQLite database
-    my $dbh;
-    my $sth;
     my $id;
     my $num_ids;
     my $frame;
@@ -306,8 +306,7 @@ if (a feature is filtered){
     my $x;
     my $y;
 
-    $dbh = DBI->connect("dbi:SQLite:dbname=swamis.sdb","","");
-    $sth = $dbh->prepare('INSERT INTO tabs VALUES (?, ?, ?, ?, ?, ?)');
+    my $sth = $dbh->prepare('INSERT INTO tabs VALUES (?, ?, ?, ?, ?, ?)');
 
     $num_ids = $summary->dim(0);
     $num_frames = $summary->dim(1);
@@ -328,8 +327,6 @@ if (a feature is filtered){
     $sth = $dbh->prepare('UPDATE params SET cur_num_frames=?');
     $sth->execute($frame);
     $sth->finish;
-
-    $dbh->disconnect;
 
     print "cleaning up...\n";
     undef $summary;

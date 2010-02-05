@@ -82,7 +82,9 @@ sub frag_assoc {
                                                 # is last frame processed)
   
   my($nextid) = $opt->{start_id} || 1;  # nextid is next frag id to use
- 
+
+  my($dbh) = $opt->{dbh} || undef;
+  
   my($frame);                           # Frame no. we are working on
    
   my($w,$h) = $ids->[0]->dims;          # Size
@@ -104,7 +106,8 @@ sub frag_assoc {
   # If we are not starting on the first frame, set the previous frame
   # ($curr at this point) to the last one (first one passed in).
   if ($start_frame > 0) {
-    $curr .= $id_out->[0];
+    #$curr .= $id_out->[0];
+    $curr .= $id_out->[$start_frame - 1]->range([-1,-1], [$w+2,$h+2], 't')->sever;
   }
 
   for $frame($start_frame..$#$ids) {
@@ -207,16 +210,11 @@ print "Next ID: $nextid\n";
   $win->close if $opt->{monitor};
 
   ## Update the current max ID in the DB
-  my $dbh;
   my $sth;
   
-  $dbh = DBI->connect("dbi:SQLite:dbname=swamis.sdb","","");
-
   $sth = $dbh->prepare('UPDATE params SET cur_max_id=?');
   $sth->execute($nextid - 1);
   $sth->finish;
-
-  $dbh->disconnect;
   
   return $id_out;
 }
