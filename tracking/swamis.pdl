@@ -200,9 +200,6 @@ sub swamis{
         }
     }
     
-    $dbh->disconnect();
-    exit 0;
-
     # FRAG_TAB
     $res = $dbh->selectall_arrayref('SELECT data_path,assoc_path,tab_path FROM files WHERE assoc_processed=0 AND id_processed>0 ORDER BY filename');
     if (@$res) {
@@ -227,6 +224,9 @@ sub swamis{
         $dbh->selectall_arrayref('UPDATE files SET assoc_processed=2 WHERE id_processed>0');
     }
     
+    $dbh->disconnect();
+    exit 0;
+
     # FRAG_HIST
     $res = $dbh->selectall_arrayref('SELECT data_path,tab_path FROM files WHERE tab_processed=0 AND assoc_processed>0 ORDER BY filename');
     if (@$res) {

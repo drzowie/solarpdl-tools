@@ -312,20 +312,20 @@ if (a feature is filtered){
     $num_frames = $summary->dim(1);
     for ($id=0; $id<$num_ids; $id++)
     {
-        for ($frame=$start_frame; $frame<$num_frames; $frame++)
+        for ($frame=0; $frame<$num_frames; $frame++)
         {
             $flux = $summary->(($id), ($frame), (0));
             $size = $summary->(($id), ($frame), (1));
             $x = $summary->(($id), ($frame), (2));
             $y = $summary->(($id), ($frame), (3));
-            $sth->execute($id, $frame, $flux, $size, $x, $y);
+            $sth->execute($id, $start_frame + $frame, $flux, $size, $x, $y);
             $sth->finish;
         }
     }
 
     ## Update the current number of frames in the DB
     $sth = $dbh->prepare('UPDATE params SET cur_num_frames=?');
-    $sth->execute($frame);
+    $sth->execute($start_frame + $frame);
     $sth->finish;
 
     print "cleaning up...\n";
