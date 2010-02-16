@@ -52,9 +52,14 @@ HISTORY:
 
 Craig DeForest, 27-Nov-2001.  Based on code and algorithms developed by
 Parnell and by Hagenaar.
+
 Derek Lamb, 24-Jul-2003. Updated display commands for OO.
+
 ARD 04/07/04 Fixed bug whereby 0 was being used as valid frag id.
+
 ARD 04/10/04 Removed feature history processing from frag_assoc.
+
+Joe Peterson 15-Feb-2010 add pipeline/database ability
 
 =cut
 

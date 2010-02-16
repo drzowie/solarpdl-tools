@@ -1,0 +1,127 @@
+=pod
+
+=head2 frag_hist
+
+=for ref
+
+Tabulate features in an associated set of frames
+
+=for usage
+
+$tabs = frag_hist(\@frag_tab_list,{options});
+
+Combs the database table created by frag_tab and removes ids that do not
+meet the critera.
+
+OPTIONS
+
+=over 3
+
+=item v_min (default 8)
+
+A feature with a total volume (total number of pixels in the x-y-t sense) 
+smaller than this value will get filtered as noise.
+
+=item t_min (default 4)
+
+A feature with a lifetime (in frames) smaller than this value will get 
+filtered as noise.
+
+=item sz_min (default 4)
+
+A feature with a maximum size smaller than this value will get filtered as 
+noise.
+
+=item tab
+
+Set this option to an array ref or DiskCache object to prevent the assoc 
+files from being changed in place.
+
+=item verbose
+
+Chat.
+
+=item DEBUG
+
+Sets verbose option to 2.
+
+=back
+
+BUGS
+
+None at this time (12/31/2007).
+
+HISTORY
+
+Joe Peterson 15-Feb-2010 moved filter (using database) functionality here.
+
+=cut
+
+use strict;
+use PDL;
+use PDL::NiceSlice;
+use PDL::ImageND;
+use DBI;
+
+sub frag_filt {
+    my($opt,$id_list) = find_opt(@_);
+    local($_);
+    
+    ##############################
+    ## Set up options
+    $opt->{tab} = $id_list    unless(defined $opt->{tab}); 
+    
+    #barf "frag_hist called with all filtering options<=0. Refusing to continue." if ($opt->{v_min}<=0 && $opt->{t_min}<=0 && $opt->{sz_min}<=0);
+
+    $opt->{verbose} = 2 if($opt->{DEBUG});
+    
+    my($dbh) = $opt->{dbh} || undef;
+    my $sth;
+    my $res;
+    my $num_results;
+    my $max_id;
+    
+    # Grab params from the database
+    my ($thresh, $method, $min_sz, $v_min, $t_min, $sz_min, $n_back, $max_id, $num_frames);
+    $res = $dbh->selectall_arrayref('SELECT * FROM params');
+    $num_results = 0;
+    foreach (@$res) {
+        $num_results += 1;
+        if ($num_results > 1) {
+            print "Error: More than one param row!\n";
+            exit 1;
+        }
+        
+        $thresh = [@$_[0], @$_[1]];
+        $method = @$_[2];
+        $min_sz = @$_[3];
+        $v_min  = @$_[4];
+        $t_min  = @$_[5];
+        $sz_min = @$_[6];
+        $n_back = @$_[7];
+        $max_id = @$_[8];
+        $num_frames = @$_[9];
+    }
+
+    # Cycle through the IDs, filtering when necessary
+    for (my $search_id=1; $search_id<=$max_id; $search_id++)
+    {
+        print("Looking at ID=$search_id\n");
+        my ($id, $frame, $flux, $size, $x, $y);
+        $sth = $dbh->prepare('SELECT * FROM tabs WHERE ID=? ORDER BY frame');
+        $sth->execute($search_id);
+        $res = $sth->fetchall_arrayref;
+        $sth->finish;
+        foreach (@$res) {
+            $id     = @$_[0];
+            $frame  = @$_[1];
+            $flux   = @$_[2];
+            $size   = @$_[3];
+            $x      = @$_[4];
+            $y      = @$_[5];
+            print("  $frame, $size\n");
+        }
+    }
+    
+    print "frag_filt completed successfully.\n";
+}

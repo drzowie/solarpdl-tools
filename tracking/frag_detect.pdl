@@ -93,6 +93,8 @@ Parnell.
 13-January-2008 Derek Lamb fixed a bug whereby not all the pixels
 were picked up in some special cases.
 
+Joe Peterson 15-Feb-2010 add pipeline ability
+
 =cut
 
 use Carp;

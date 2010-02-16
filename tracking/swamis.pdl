@@ -214,7 +214,7 @@ sub swamis{
         @data = mrfits(@datafiles);
         @assoc = mrfits(@assocfiles);
         @tab = map {(-e $_) ? rfits($_) : undef } @tabfiles;
-        $tabs = frag_tabulate_range(\@assoc,\@data,{dbh=>$dbh,verbose=>1,tab=>\@tab,sz_min=>$sz_min,t_min=>$t_min,v_min=>$v_min,start_frame=>$num_frames});
+        $tabs = frag_tab(\@assoc,\@data,{dbh=>$dbh,verbose=>1,tab=>\@tab,start_frame=>$num_frames});
         #wfits($tabs,'tabs.fits');
         #$tab->sync;
         my $i = 0;
@@ -222,6 +222,9 @@ sub swamis{
             $_->wfits($tabfiles[$i++]);
         }
         $dbh->selectall_arrayref('UPDATE files SET assoc_processed=2 WHERE id_processed>0');
+
+        # Now do some post filtering of the database
+        frag_filt(\@tab,{dbh=>$dbh,verbose=>1});
     }
     
     $dbh->disconnect();
