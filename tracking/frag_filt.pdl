@@ -41,6 +41,14 @@ files from being changed in place.
 
 Chat.
 
+=item start_frame
+
+Frame number to start with
+
+=item window
+
+Number of frames to examine
+
 =item DEBUG
 
 Sets verbose option to 2.
@@ -74,7 +82,11 @@ sub frag_filt {
     #barf "frag_hist called with all filtering options<=0. Refusing to continue." if ($opt->{v_min}<=0 && $opt->{t_min}<=0 && $opt->{sz_min}<=0);
 
     $opt->{verbose} = 2 if($opt->{DEBUG});
-    
+
+    my($start_frame) = $opt->{start_frame} || 0;
+
+    my($window) = $opt->{window} || 8;
+
     my($dbh) = $opt->{dbh} || undef;
     my $sth;
     my $res;
@@ -103,13 +115,29 @@ sub frag_filt {
         $num_frames = @$_[9];
     }
 
+    # Find the first frame to examine, based on the passed in start frame
+    # (which is the first frame never examined) and the window to examine.
+    if (($num_frames - $window - 2) < $start_frame)
+    {
+        $start_frame = ($num_frames - $window - 2);
+        if ($start_frame < 0)
+        {
+            $start_frame = 0;
+        }
+    }
+
     # Cycle through the IDs, filtering when necessary
-    for (my $search_id=1; $search_id<=$max_id; $search_id++)
+    for (my $search_id=0; $search_id<=$max_id; $search_id++)
     {
         print("Looking at ID=$search_id\n");
+        my $volume = 0;
+        my $lifetime = 0;
+        my $max_size = 0;
+        my $born = 1;
+        my $dead = 1;
         my ($id, $frame, $flux, $size, $x, $y);
-        $sth = $dbh->prepare('SELECT * FROM tabs WHERE ID=? ORDER BY frame');
-        $sth->execute($search_id);
+        $sth = $dbh->prepare('SELECT * FROM tabs WHERE ID=? AND frame>=? ORDER BY frame');
+        $sth->execute($search_id, $start_frame);
         $res = $sth->fetchall_arrayref;
         $sth->finish;
         foreach (@$res) {
@@ -119,7 +147,42 @@ sub frag_filt {
             $size   = @$_[3];
             $x      = @$_[4];
             $y      = @$_[5];
-            print("  $frame, $size\n");
+
+            if ($frame == $start_frame)
+            {
+                $born = 0;
+            }
+            
+            if ($frame == ($num_frames - 1))
+            {
+                $dead = 0;
+            }
+            
+            $volume += $size;
+            $lifetime += 1;
+            if ($size > $max_size)
+            {
+                $max_size = $size;
+            }
+            print("  frame=$frame, size=$size\n");
+        }
+
+        print("    vol=$volume, life=$lifetime, max=$max_size\n");
+        if ($born && $dead)
+        {
+            if (($volume < $v_min) ||
+                ($lifetime < $t_min) ||
+                ($max_size < $sz_min))
+            {
+                print("      *** Does not meet mins ($v_min, $t_min, $sz_min)!\n");
+                $sth = $dbh->prepare('DELETE FROM tabs WHERE ID=?');
+                $sth->execute($search_id);
+                $sth->finish;
+            }
+        }
+        else
+        {
+            print("      --Born before start or still alive...\n");
         }
     }
     

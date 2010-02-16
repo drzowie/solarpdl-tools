@@ -190,7 +190,7 @@ sub frag_tab {
 
     ## Update the current number of frames in the DB
     $sth = $dbh->prepare('UPDATE params SET cur_num_frames=?');
-    $sth->execute($start_frame + $frame);
+    $sth->execute($start_frame + $num_frames);
     $sth->finish;
 
     print "frag_tab completed successfully.\n";
