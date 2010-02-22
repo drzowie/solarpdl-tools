@@ -224,7 +224,7 @@ sub swamis{
         $dbh->selectall_arrayref('UPDATE files SET assoc_processed=2 WHERE id_processed>0');
 
         # Now do some post filtering of the database
-        frag_filt(\@tab,{dbh=>$dbh,verbose=>1,start_frame=>$num_frames});
+        frag_filt(\@assoc,{dbh=>$dbh,verbose=>1,start_frame=>$num_frames});
     }
     
     $dbh->disconnect();

@@ -65,13 +65,13 @@ sub purge{
     my $n_back = defined($opt->{n_back})   ? $opt->{n_back}   :  3;
     
 ### Create the directories
-    `rm -rf 01-mask; mkdir 01-mask`;
-    `rm -rf 02-id; mkdir 02-id`;
-    `rm -rf 03-assoc; mkdir 03-assoc`;
-    `rm -rf 04-tab; mkdir 04-tab`;
+#    `rm -rf 01-mask; mkdir 01-mask`;
+#    `rm -rf 02-id; mkdir 02-id`;
+#    `rm -rf 03-assoc; mkdir 03-assoc`;
+#    `rm -rf 04-tab; mkdir 04-tab`;
 
 ### Initialize the SQLite databases
-    `rm -f swamis.sdb`;
+#    `rm -f swamis.sdb`;
 
     my $dbh;
     my $sth;

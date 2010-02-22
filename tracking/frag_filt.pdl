@@ -4,11 +4,11 @@
 
 =for ref
 
-Tabulate features in an associated set of frames
+Filter out features not meeting criteria
 
 =for usage
 
-$tabs = frag_hist(\@frag_tab_list,{options});
+$tabs = frag_filt(\@frag_assoc_list,{options});
 
 Combs the database table created by frag_tab and removes ids that do not
 meet the critera.
@@ -16,26 +16,6 @@ meet the critera.
 OPTIONS
 
 =over 3
-
-=item v_min (default 8)
-
-A feature with a total volume (total number of pixels in the x-y-t sense) 
-smaller than this value will get filtered as noise.
-
-=item t_min (default 4)
-
-A feature with a lifetime (in frames) smaller than this value will get 
-filtered as noise.
-
-=item sz_min (default 4)
-
-A feature with a maximum size smaller than this value will get filtered as 
-noise.
-
-=item tab
-
-Set this option to an array ref or DiskCache object to prevent the assoc 
-files from being changed in place.
 
 =item verbose
 
@@ -77,15 +57,12 @@ sub frag_filt {
     
     ##############################
     ## Set up options
-    $opt->{tab} = $id_list    unless(defined $opt->{tab}); 
     
-    #barf "frag_hist called with all filtering options<=0. Refusing to continue." if ($opt->{v_min}<=0 && $opt->{t_min}<=0 && $opt->{sz_min}<=0);
+    #barf "frag_filt called with all filtering options<=0. Refusing to continue." if ($opt->{v_min}<=0 && $opt->{t_min}<=0 && $opt->{sz_min}<=0);
 
     $opt->{verbose} = 2 if($opt->{DEBUG});
 
     my($start_frame) = $opt->{start_frame} || 0;
-
-    my($window) = $opt->{window} || 8;
 
     my($dbh) = $opt->{dbh} || undef;
     my $sth;
@@ -115,6 +92,8 @@ sub frag_filt {
         $num_frames = @$_[9];
     }
 
+    my($window) = $opt->{window} || $n_back * 4;
+
     # Find the first frame to examine, based on the passed in start frame
     # (which is the first frame never examined) and the window to examine.
     if (($num_frames - $window - 2) < $start_frame)
@@ -135,11 +114,13 @@ sub frag_filt {
         my $max_size = 0;
         my $born = 1;
         my $dead = 1;
+        my $ft_sgn = 0;
         my ($id, $frame, $flux, $size, $x, $y);
         $sth = $dbh->prepare('SELECT * FROM tabs WHERE ID=? AND frame>=? ORDER BY frame');
         $sth->execute($search_id, $start_frame);
         $res = $sth->fetchall_arrayref;
         $sth->finish;
+        my @frames = ();
         foreach (@$res) {
             $id     = @$_[0];
             $frame  = @$_[1];
@@ -148,6 +129,27 @@ sub frag_filt {
             $x      = @$_[4];
             $y      = @$_[5];
 
+            if ($flux < 0.0)
+            {
+                if ($ft_sgn == 1)
+                {
+                    print("Differing flux sign between frames!\n");
+                    exit(1);
+                }
+                
+                $ft_sgn = -1;
+            }
+            else
+            {
+                if ($ft_sgn == -1)
+                {
+                    print("Differing flux sign between frames!\n");
+                    exit(1);
+                }
+                
+                $ft_sgn = 1;
+            }
+                
             if ($frame == $start_frame)
             {
                 $born = 0;
@@ -164,6 +166,9 @@ sub frag_filt {
             {
                 $max_size = $size;
             }
+
+            push(@frames, $frame);
+            
             print("  frame=$frame, size=$size\n");
         }
 
@@ -175,9 +180,37 @@ sub frag_filt {
                 ($max_size < $sz_min))
             {
                 print("      *** Does not meet mins ($v_min, $t_min, $sz_min)!\n");
-                $sth = $dbh->prepare('DELETE FROM tabs WHERE ID=?');
-                $sth->execute($search_id);
-                $sth->finish;
+                
+                # Now check to see if there are other close features to
+                # this one, and don't delete if so.
+                my $k = ones(3,3);
+                my $close = 0;
+                for $frame(@frames)
+                {
+                    my ($mins,$maxes)=whichND($id_list->[$frame]->abs==$id)->xchg(0,1)->minmaximum;
+                    
+                    my $sub_idlist = $id_list->[$frame]->range($mins-2,$maxes-$mins+4,'t');
+                    my $dilated = convolveND($sub_idlist == $id * $ft_sgn, $k)>0;
+                    
+                    my $localids = $sub_idlist->where($dilated)->uniq;
+                    
+                    # localids should at least have $id in it,
+                    # and we don't care about 0.
+                    if((($localids != $id*$ft_sgn) & ($localids!=0))->any)
+                    {
+                        $close = 1;
+                        last;
+                    }
+                }
+
+                if (!$close)
+                {
+                    print("       * And no close neighbors...deleting\n");
+                    
+                    $sth = $dbh->prepare('DELETE FROM tabs WHERE ID=?');
+                    $sth->execute($search_id);
+                    $sth->finish;
+                }
             }
         }
         else
