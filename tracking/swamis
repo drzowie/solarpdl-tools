@@ -1,0 +1,72 @@
+#!/usr/bin/env perl
+
+use Getopt::Long;
+
+usage() if (! GetOptions('reset' => \$reset,
+                         'tmpdir=s' => \$tmpdir,
+                         'file|f=s' => \$file,
+                         'thrDetHi=f' => \$thrDetHi,
+                         'thrDetLo=f' => \$thrDetLo,
+                         #'scaleMask=i' => \$,
+                         'minSize=i' => \$minSize,
+                         #'feaDist=i' => \$feaDist,
+                         'feaMethod=s' => \$feaMethod,
+                         #'maxEta=f' => \$maxEta,
+                         #'timeAtMax=i' => \$timeAtMax,
+                         #'senseGrowth' => \$senseGrowth,
+                         #'thrGrowth=f' => \$thrGrowth,
+                         #'timeGrowth=i' => \$timeGrowth,
+                         'thrFlLo=f' => \$thrFlLo,
+                         'thrFlHi=f' => \$thrFlHi,
+                         'help|?' => \$help)
+            or defined $help);
+
+if (!defined $reset) { $reset = 0; }
+if (!defined $thrDetHi) { $thrDetHi = 300.0; }
+if (!defined $thrDetLo) { $thrDetLo = 100.0; }
+if (!defined $minSize) { $minSize = 2; }
+if (!defined $feaDist) { $feaDist = 4; }
+if (!defined $feaMethod) { $feaMethod = 'clump'; }
+if (!defined $maxEta) { $maxEta = 60.0; }
+if (!defined $timeAtMax) { $timeAtMax = 2; }
+if (!defined $senseGrowth) { $senseGrowth = 0; }
+
+if (!defined $tmpdir)
+{
+    print "Must define tmpdir\n";
+    exit 1;
+}
+    
+if ($reset)
+{
+    ### Create the directories
+    `rm -rf $tmpdir/00-data; mkdir $tmpdir/00-data`;
+    `rm -rf $tmpdir/01-mask; mkdir $tmpdir/01-mask`;
+    `rm -rf $tmpdir/02-id; mkdir $tmpdir/02-id`;
+    `rm -rf $tmpdir/03-assoc; mkdir $tmpdir/03-assoc`;
+    `rm -rf $tmpdir/04-tab; mkdir $tmpdir/04-tab`;
+    
+    ### Initialize the SQLite databases
+    `rm -f $tmpdir/swamis.sdb`;
+
+    #purge(thresh=>[$thrDetLo, $thrDetHi], method=>$feaMethod)
+}
+else
+{
+    if (!defined $file)
+    {
+        print "Filename missing\n";
+        exit 1;
+    }
+
+    `cp $file $tmpdir/00-data`;
+
+    #swamis();
+}
+
+sub usage()
+{
+    print "Unknown option: @_\n" if ( @_ );
+    print "usage: swamis [--file <file>] [--help|-?]\n";
+    exit;
+}
