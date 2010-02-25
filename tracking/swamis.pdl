@@ -46,7 +46,7 @@ sub swamis{
 ### Populate files table with the set of new files and paths
     my(@datafiles,@maskfiles,@idfiles,@assocfiles,@tabfiles);
 
-    @datafiles = <00-data/*.fits>;
+    @datafiles = <$tmpdir/00-data/*.fits>;
     #@maskfiles = map { ($a=$_)=~s/00-data/01-mask/; $a } @datafiles;
     #@idfiles = map { ($a=$_)=~s/00-data/02-id/; $a } @datafiles;
     #@assocfiles = map { ($a=$_)=~s/00-data/03-assoc/; $a } @datafiles;
@@ -233,9 +233,8 @@ sub swamis{
         frag_filt(\@assoc,{dbh=>$dbh,verbose=>1,start_frame=>$num_frames});
     }
     
-    $dbh->disconnect();
-    exit 0;
-
+    if (0)
+    {
     # FRAG_HIST
     $res = $dbh->selectall_arrayref('SELECT data_path,tab_path FROM files WHERE tab_processed=0 AND assoc_processed>0 ORDER BY filename');
     if (@$res) {
@@ -254,6 +253,7 @@ sub swamis{
         emergence_movie($hist,$tabs,\@data,\@tab,{dir=>'swamis_movie',size=>[8,8],range=>[-300,300],evmask=>[0,0,0,0,0,0],id_feats=>0,contour=>2,format=>'ppm'});   
 ### Done!
     }
+}
     
     $dbh->disconnect();
 }

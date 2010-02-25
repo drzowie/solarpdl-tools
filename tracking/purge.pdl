@@ -77,7 +77,7 @@ sub purge{
     $sth = $dbh->prepare('CREATE TABLE files (filename varchar(128) NOT NULL, data_path varchar(128), mask_path varchar(128), id_path varchar(128), assoc_path varchar(128), tab_path varchar(128), data_processed boolean, mask_processed boolean, id_processed boolean, assoc_processed boolean, tab_processed boolean, PRIMARY KEY(filename))');
     $sth->execute();
     $sth->finish;
-    $sth = $dbh->prepare('CREATE TABLE tabs (id int NOT NULL, frame int NOT NULL, flux double, size int, x int, y int, PRIMARY KEY(id, frame))');
+    $sth = $dbh->prepare('CREATE TABLE tabs (id int NOT NULL, frame int NOT NULL, flux double, size int, x int, y int, closeness boolean, PRIMARY KEY(id, frame))');
     $sth->execute();
     $sth->finish;
     $sth = $dbh->prepare('CREATE TABLE hist (id int NOT NULL, birth_frame int, birth_method int, birth_id int, death_frame int, death_method int, death_id int, lifetime int, birth_x int, birth_y int, death_x int, death_y int, PRIMARY KEY(id))');
