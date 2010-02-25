@@ -1,35 +1,65 @@
 #!/usr/bin/env perl
 
+use strict;
+use warnings;
+use PDL;
+use PDL::AutoLoader;
 use Getopt::Long;
+
+sub usage()
+{
+    print "Unknown option: @_\n" if ( @_ );
+    print "usage: swamis [--file <file>] [--help|-?]\n";
+    exit;
+}
+
+my $reset = 0;
+my $tmpdir;
+my $numFilesKept = 50;
+my $file;
+my $thrDetHi = 300.0;
+my $thrDetLo = 100.0;
+my $scaleMask = 0xff;
+my $minSize = 2;
+my $feaDist = 4;
+my $feaMethod = 'clump';
+my $maxEta = 60.0;
+my $timeAtMax = 2;
+my $senseGrowth = 0;
+my $thrGrowth;
+my $timeGrowth;
+my $thrFlLo;
+my $thrFlHi;
+my $minVol = 0;
+my $minLife = 4;
+my $minMaxSize = 4;
+my $nBack = 3;
+
+my $help;
 
 usage() if (! GetOptions('reset' => \$reset,
                          'tmpdir=s' => \$tmpdir,
+                         'numFilesKept=i' => \$tmpdir,
                          'file|f=s' => \$file,
                          'thrDetHi=f' => \$thrDetHi,
                          'thrDetLo=f' => \$thrDetLo,
-                         #'scaleMask=i' => \$,
+                         'scaleMask=i' => \$scaleMask,
                          'minSize=i' => \$minSize,
-                         #'feaDist=i' => \$feaDist,
+                         'feaDist=i' => \$feaDist,
                          'feaMethod=s' => \$feaMethod,
-                         #'maxEta=f' => \$maxEta,
-                         #'timeAtMax=i' => \$timeAtMax,
-                         #'senseGrowth' => \$senseGrowth,
-                         #'thrGrowth=f' => \$thrGrowth,
-                         #'timeGrowth=i' => \$timeGrowth,
+                         'maxEta=f' => \$maxEta,
+                         'timeAtMax=i' => \$timeAtMax,
+                         'senseGrowth' => \$senseGrowth,
+                         'thrGrowth=f' => \$thrGrowth,
+                         'timeGrowth=i' => \$timeGrowth,
                          'thrFlLo=f' => \$thrFlLo,
                          'thrFlHi=f' => \$thrFlHi,
+                         'minVol=i' => \$minVol,
+                         'minLife=i' => \$minLife,
+                         'minMaxSize=i' => \$minMaxSize,
+                         'nBack=i' => \$nBack,
                          'help|?' => \$help)
             or defined $help);
-
-if (!defined $reset) { $reset = 0; }
-if (!defined $thrDetHi) { $thrDetHi = 300.0; }
-if (!defined $thrDetLo) { $thrDetLo = 100.0; }
-if (!defined $minSize) { $minSize = 2; }
-if (!defined $feaDist) { $feaDist = 4; }
-if (!defined $feaMethod) { $feaMethod = 'clump'; }
-if (!defined $maxEta) { $maxEta = 60.0; }
-if (!defined $timeAtMax) { $timeAtMax = 2; }
-if (!defined $senseGrowth) { $senseGrowth = 0; }
 
 if (!defined $tmpdir)
 {
@@ -49,7 +79,24 @@ if ($reset)
     ### Initialize the SQLite databases
     `rm -f $tmpdir/swamis.sdb`;
 
-    #purge(thresh=>[$thrDetLo, $thrDetHi], method=>$feaMethod)
+    my $thresh = [$thrDetLo, $thrDetHi];
+    purge({tmpdir=>$tmpdir,
+           thresh=>$thresh,
+           method=>$feaMethod,
+           scaleMask=>$scaleMask,
+           feaDist=>$feaDist,
+           maxEta=>$maxEta,
+           timeAtMax=>$timeAtMax,
+           senseGrowth=>$senseGrowth,
+           thrGrowth=>$thrGrowth,
+           timeGrowth=>$timeGrowth,
+           thrFlLo=>$thrFlLo,
+           thrFlHi=>$thrFlHi,
+           min_sz=>$minSize,
+           v_min=>$minVol,
+           t_min=>$minLife,
+           sz_min=>$minMaxSize,
+           n_back=>$nBack});
 }
 else
 {
@@ -61,12 +108,5 @@ else
 
     `cp $file $tmpdir/00-data`;
 
-    #swamis();
-}
-
-sub usage()
-{
-    print "Unknown option: @_\n" if ( @_ );
-    print "usage: swamis [--file <file>] [--help|-?]\n";
-    exit;
+    swamis({tmpdir=>$tmpdir});
 }

@@ -5,10 +5,16 @@ use PDL::DiskCache;
 use DBI;
 
 sub swamis{
+    my $opt = shift || {};
+    die "Hash ref expected as first argument of purge!\n" unless (!defined($opt)   or  ref($opt) eq 'HASH');
+
+    my $tmpdir = defined($opt->{tmpdir})   ? $opt->{tmpdir}   :  ".";
+
     my $dbh;
     my $sth;
     my $res;
-    $dbh = DBI->connect("dbi:SQLite:dbname=swamis.sdb","","");
+
+    $dbh = DBI->connect("dbi:SQLite:dbname=$tmpdir/swamis.sdb","","");
 
 ### Grab params from the database (set in purge())
     my ($thresh, $method, $min_sz, $v_min, $t_min, $sz_min, $n_back, $max_id, $num_frames);
