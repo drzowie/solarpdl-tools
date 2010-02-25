@@ -1,0 +1,104 @@
+=head2 tabs3d - render a SWAMIS tabs file as a 3-D network of lines
+
+=for usage
+
+tabs3d($tabs)
+
+=for ref
+
+Accepts an old-style tabs summary file and renders it in 3-D for visualization.
+
+=cut
+use PDL::Graphics::TriD;
+
+sub tabs3d {
+    my $tabs = shift;
+    my $hist = shift;
+    my $opt = shift;
+
+    if(!defined($opt) && (ref($hist) eq 'HASH')) {
+        $opt = $hist;
+        $hist = undef;
+    }
+    $pointscale = 1.5;
+    $stepsperdecade =5;
+    $decades = 2;
+    $sm = 10;
+    $th = xvals($stepsperdecade * $decades  +  1) / $stepsperdecade;
+    @thresh = ($sm * (10 ** $th))->list;
+
+
+    if($opt->{lines}) {
+    # (Doesn't work yet...)
+	$t2 = $tabs->copy;
+        $yv = yvals($t2->(:,:,(0)))+1;
+        $yvfilt = $yv * ($t2->(:,:,(1)) != 0) - 1;
+        $starts = ($yvfilt+(100000*($yvfilt<0)))->mv(1,0)->minimum;
+        $ends = $yvfilt->mv(1,0)->maximum;
+        $coords = yvals(2,$t2->dim(0));
+        $coords->((1)) .= $starts;
+        $normalized = $t2->range($coords,[0,$t2->dim(1)],'t')->sever;
+        $t2->(:,:,(1)) *= ( 2*($t2->(:,:,(0))>=0) - 1);
+        $t2->(:,:,(0)) .= yvals($t2->(:,:,(0)));
+        $offsets = $ends - $starts + 1;
+        $coords->((1)) .= $offsets;
+        $normalized->range($coords,[0,$t2->dim(1)],'t') .= $normalized->range($coords+pdl(0,-1),[0,1],'t');
+        
+        $val = $normalized->(:,:,(1));
+	$vmax = $val->abs->sqrt->max;
+        $red = ($val * ($val>0))->sqrt->mv(1,0)/$vmax;
+        $green = (($val->abs)->sqrt / 2)->mv(1,0)/$vmax;
+        $blue = ($val * ($val<0) * -1)->sqrt->mv(1,0)/$vmax;
+
+        $x = $normalized->(:,:,(2))->mv(1,0);
+        $y = $normalized->(:,:,(3))->mv(1,0);
+        $z = $normalized->(:,:,(0))->mv(1,0);
+
+
+	line3d([$x,$y,$z],[$red,$green,$blue],{LineWidth=>2});
+	hold3d;
+    }
+	$filt = ones($tabs->(:,:,(0)));
+        if($opt->{xr}) {
+	    $xr=pdl($opt->{xr});
+	    $filt &= ($tabs->(:,:,(2))<=$xr->(1));
+	    $filt &= ($tabs->(:,:,(2))>=$xr->(0));
+	}
+	if($opt->{yr}) {
+	    $yr = pdl($opt->{yr});
+	    $filt &= ($tabs->(:,:,(3))<=$yr->(1));
+	    $filt &= ($tabs->(:,:,(3))>=$yr->(0));
+	}
+    
+    for $i(0..$#thresh) {
+
+        if($i<$#thresh) {
+            $coords = whichND(  ($tabs->(:,:,(1)) >= $thresh[$i]) &
+                                ($tabs->(:,:,(1)) <  $thresh[$i+1] & $filt)
+                );
+        } else {
+            $coords = whichND(  ($tabs->(:,:,(1)) >= $thresh[$i]) & $filt );
+        }
+	next unless($coords->nelem);
+        $x = $tabs->(:,:,(2))->indexND($coords);
+        $y = $tabs->(:,:,(3))->indexND($coords);
+        $z = $coords->((1));
+        $sign = ($tabs->(:,:,(0))->indexND($coords)>0) * 2 - 1;
+        nokeeptwiddling3d;
+        $grey = ones($x)*($i/$#thresh);
+        $red = $grey*0.5 + ($sign<0) * $grey * 0.5 + 0.25;
+        $green = $grey*0.5 + 0.25;
+        $blue = $grey*0.5+($sign>0)*$grey*0.5 + 0.25; 
+
+        points3d([$x,$y,$z],[$red,$green,$blue],{PointSize=>int(sqrt($thresh[$i])*$pointscale/2)});
+
+        hold3d;
+    }
+
+
+    keeptwiddling3d;
+    release3d;
+    twiddle3d;
+}
+
+        

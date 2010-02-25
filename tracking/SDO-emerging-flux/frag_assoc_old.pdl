@@ -1,0 +1,226 @@
+=head2 frag_assoc2
+=for ref
+
+Associate magnetic features in adjacent frames of a sequence of id masks
+
+=for usage
+
+$assoc_ids = frag_assoc2(\@frag_id_list, {options})
+
+The frag_id_list is the output from frag_id. 
+
+The output is an array of masks with regularized fragment ids.
+The fragment ids are consecutive in absolute-value space, though the
+sign bit corresponds to the sign of each fragment.
+
+=for options
+
+=over 3
+
+=item start_id
+
+If this gets passed in, IDs start here rather than at +/- 1.
+
+=item diag
+
+Nonzero if diagonals are considered neighbors.  There are a bunch of
+levels of diag:
+
+0 -  6 neighbors (no diagonals)
+1 - 10 neighbors (image plane diagonals only)
+2 - 18 neighbors (single-plane diagonals only)
+3 - 26 neighbors all diagonals allowed)
+
+=item assoc
+
+This is an array ref for passing in an array to take the indentified
+image planes.  Helpful if you want to store them in a DiskCache object.
+
+=item continue
+
+If set, then this should contain a fits image containing the last image
+of the previous data set.
+
+=back
+
+=for bugs
+
+None (of course)
+
+=for history
+
+Craig DeForest, 27-Nov-2001.  Based on code and algorithms developed by
+Parnell and by Hagenaar.
+Derek Lamb, 24-Jul-2003. Updated display commands for OO.
+Derek Lamb, 8-Aug-2003. Implemented "continue" option.
+=cut
+
+use Carp;
+
+
+
+sub frag_assoc2 {
+  my($opt,$ids) = find_opt(@_);
+  local($_);
+
+  ##############################
+  ## Set up options
+  
+  my($id_out) = (defined $opt->{assoc}) ? $opt->{assoc} : [];
+
+  ## Dirs gets directions: offsets indexed as (index,dim).
+ 	 my($dirs) =
+    pdl([-1, 0, 0],[ 1, 0, 0],[ 0,-1, 0],
+	[ 0, 1, 0],[ 0, 0,-1],[ 0, 0, 1])
+      ->xchg(0,1);
+  $dirs = $dirs->append(
+    pdl([-1,-1, 0],[-1, 1, 0],[ 1,-1, 0],[ 1, 1, 0])
+			->xchg( 0, 1)) if($opt->{diag} >  0);
+  $dirs = $dirs->append(
+    pdl([-1, 0,-1],[-1, 0, 1],[ 1, 0,-1],[ 1, 0, 1],
+	[ 0,-1,-1],[ 0,-1, 1],[ 0, 1,-1],[ 0, 1, 1])
+			->xchg(0,1)) if($opt->{diag} > 1);
+  $dirs = $dirs->append(
+    pdl([-1,-1,-1],[-1,-1, 1],[-1, 1,-1],[-1, 1, 1],
+	[ 1,-1,-1],[ 1,-1, 1],[ 1, 1,-1],[ 1, 1, 1])
+			->xchg(0,1)) if($opt->{diag} > 2);
+
+  ##############################
+  ## Set up variables
+  ##
+
+  my($continue)=rfits($opt->{continue}) if($opt->{continue});
+  my($nextid)=defined($continue) ? $continue->hdr->{NEXTID} :
+		($opt->{start_id}||1); 	# nextid is next frag id to use
+
+  my($frame);                           # Frame no. we are working on
+  my($frags);                           # Output variable
+   
+  my($w,$h) = $ids->[0]->dims;          # Size
+  my($imp) = zeroes($w+2,$h+2);         # Padded image - input workspace
+  my($im) = $imp(1:$w,1:$h);            # Cut out unpadded image
+
+  my($curr) = zeroes($w+2,$h+2);        # Current regularized mask
+  $curr->(1:$w,1:$h).=$continue if($opt->{continue});
+  					#preserves the $prev,$curr assignment 
+					#order in the main loop
+
+  my($prev) = zeroes($w+2,$h+2);        # Previous regularized mask
+
+  my($xs) = xvals($imp);                # Coordinate arrays
+  my($ys) = yvals($imp);
+
+  ##############################
+  # main loop
+
+  print "frag_assoc: processing $#$ids mask images...\n";
+ 
+  for $frame(0..$#$ids) {
+    next unless defined($ids->[$frame]);
+ print "Starting ID: $nextid\n";
+
+    $im .= $ids->[$frame];
+
+    $prev .= $curr;         # elemental assignment copies
+    $curr = zeroes($curr);  # Zero out current id map
+    my($im_ids) = uniq($im->flat);
+    printf "\nassociating frame %d (%d ids)\n",$frame,$im_ids->nelem if($opt->{verbose});
+    
+    # Start with first valid frame id (1 not 0)!
+    my($n)=0;
+    for(my($i)=1;$i<$im_ids->nelem;$i++) {
+      my($im_id) = $im_ids($i);
+      my($fid);
+      
+      ### Find the locus of points associated with the frame id
+      my($locus,$plocus,$olocus,$lx,$ly) = where($imp,$prev,$curr,$xs,$ys,$imp == $im_id);
+      
+      ### Figure out where (and if) it overlaps with the previous stuff
+      ### Overlap: previous frame must have same sign as current (and be 
+      ### nonzero).
+      my($ovl) = where($plocus,($locus * $plocus > 0));
+
+      if($ovl->nelem == 0) {
+	### No overlap: create new fragment
+
+	$fid = $nextid++ * ($im_id<0 ? -1 : 1);
+	$frags->[abs($fid)]->{events}->[$frame]->{origin}="spontaneous";
+	$frags->[abs($fid)]->{f0} = $frame;
+
+      } else {
+
+	### There's some overlap.  Figure out its extent and act (')
+	### accordingly.  We take the ID of the largest prior 
+	### spot for whom we are the largest forward spot.
+	### If there is no prior spot for whom we are the largest
+	### forward spot, then we take a new ID.
+
+	my($pov_list) = uniq2($ovl);  # pov_list gets ids in prev frame
+	                               # that overlap with current frame
+	my($pov_id);
+	for $pov_id($pov_list->list) {
+	  
+	  my($pov_rgn,$curr_pov_rgn) = where($prev,$imp,
+					     ($prev == $pov_id) & ($imp != 0));
+
+	  my($curr_pov_list) = uniq2($curr_pov_rgn);
+	  
+	  # Extra nelem check should go away when slicing is fixed.
+	  if($curr_pov_list->nelem > 0 && $curr_pov_list->at(0) == $im_id) {
+	    ## Current spot is the largest forward overlap from this
+	    ## spot on the previous frame
+	    
+	    $fid = $pov_id;
+	    last;
+	    
+	  }
+	}
+	
+	#
+	# Handle complex origins (no $fid found by above criterion) and
+	# marking of mergers
+	#
+	if(defined $fid) {
+	  print "f" if($opt->{verbose}>1);
+	  ### We found a well-defined parent.  If we have more than
+	  ### one overlap, mark it as a merger.
+	  if($pov_list->nelem > 1)  {
+	    print "m" if($opt->{verbose}>1);
+	    print "pov_list = $pov_list" if($opt->{verbose}>1);
+	    $frags->[abs($fid)]->{events}->[$frame]->{merge} = 
+	      uniq2($ovl->where($ovl != $fid));
+	  }
+	} else {
+	  print "c" if($opt->{verbose}>1);
+	  ### We're not anybody's largest forward spot.  Form a new
+	  ### id and mark it as a complex origin
+	  $fid = $nextid++ * ($im_id<0 ? -1 : 1);
+	  $frags->[abs($fid)]->{events}->[$frame]->{origin}="complex";
+	  $frags->[abs($fid)]->{events}->[$frame]->{merge} = $pov_list->copy;
+	}
+	print "." if($opt->{verbose} && (($n++ %10 ==0) || $opt->{verbose}>1));
+	
+      } # end of overlap query
+      
+      $olocus .= $fid;
+      print "-" if($opt->{verbose}>1);
+      
+    } # end of new-id loop.
+    
+    $id_out->[$frame] = $curr->(1:$w,1:$h);
+    $$head{NEXTID}=$nextid;
+    $id_out->[$frame]->sethdr($head);
+    ## 
+    ## Other types of association go here 
+    ##
+    print "\n" if($opt->{verbose});
+    if($opt->{monitor}){
+     $win->close if($frame);
+     $win=pgwin(xs,size=>[6,6]);
+     $win->imag($curr);
+     }
+p "Next ID: $nextid\n";
+    }
+  print "frag_assoc completed successfully\n";  
+  return $frags;
+}

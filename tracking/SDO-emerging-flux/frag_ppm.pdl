@@ -1,0 +1,33 @@
+use strict;
+
+sub frag_ppm {
+   my ($files, $tabs) = @_;
+   my $frags;
+   my $a;
+   my $filename;
+   my $pi = 3.14;
+   my ($z, $radius);
+   my ($i, $j);
+   my $flag;
+   my $fragnum;
+   
+   for ($i=0;$i<=$#{$files};$i++) {
+      print "Frame: $i\n";
+      $frags = which($tabs(:,$i,(1)) > 0.0)->sever;
+      $file = sprintf "pgplot%.3d.ppm/ppm", $i;
+      $a = pgwin(Dev=>$file, size=>[10,10]);
+#      $a = pgwin(Dev=>'/xw', size=>[10,10]) unless ($flag++);
+      $a->imag($files->[$i],-100,100);
+      $a->hold;
+      for ($j=0;$j<=$frags->nelem-1;$j++) {
+         $z = $tabs(($frags($j)));
+	 $radius = sqrt($z->at($i,1)/$pi);
+	 $fragnum = $frags->at($j);
+#         $a->ellipse($z($i,2),$z($i,3),$radius,$radius,0,{npoints => 100, FILL => 2,color=>3 });
+        $a->circle($z->at($i,2),$z->at($i,3),$radius,{fill => 2, color=>3});
+        $a->text("$fragnum", $z->at($i,2)+$radius+3,$z->at($i,3),{charsize=>-1, color=>5});
+      }
+      $a->close;
+      $a->release;
+   }
+}

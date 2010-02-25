@@ -1,0 +1,225 @@
+=pod
+
+=head2 frag_assoc
+
+=for ref
+
+Associate magnetic features in adjacent frames of a sequence of id masks
+
+=for usage
+
+$assoc_ids = frag_assoc(\@frag_id_list, {options})
+
+The frag_id_list is the output from frag_id. 
+
+The output is an array of masks with regularized feature ids.
+The feature ids are consecutive in absolute-value space, though the
+sign bit corresponds to the sign of each feature.
+
+=for options
+
+=over 3
+
+=item start_frame
+
+Frame to start with (if non-zero, there are "lookback frames" before)
+
+=item start_id
+
+If this gets passed in, IDs start here rather than at +/- 1.
+
+=item assoc
+
+List ref (or PDL::DiskCache object) of the output cross-frame associated IDs.
+
+=item monitor
+
+Display the progress in a PDL::Graphics::PGPLOT::Window object.
+
+=item verbose
+
+Chat.  Levels 0 (minimal), 1 (some), and 2 (more).
+
+=back
+
+BUGS
+
+None (of course)
+
+=for history
+
+HISTORY:
+
+Craig DeForest, 27-Nov-2001.  Based on code and algorithms developed by
+Parnell and by Hagenaar.
+
+Derek Lamb, 24-Jul-2003. Updated display commands for OO.
+
+ARD 04/07/04 Fixed bug whereby 0 was being used as valid frag id.
+
+ARD 04/10/04 Removed feature history processing from frag_assoc.
+
+Joe Peterson 15-Feb-2010 add pipeline/database ability
+
+=cut
+
+use Carp;
+use strict;
+use PDL::NiceSlice;
+use DBI;
+
+sub frag_assoc {
+  my($opt,$ids) = find_opt(@_);
+  local($_);
+
+  ##############################
+  ## Set up options
+  
+  my($id_out) = $opt->{assoc} || [];
+
+
+  ##############################
+  ## Set up variables
+  ##
+
+  my($start_frame) = $opt->{start_frame} || 0;  # real starting frame
+                                                # (if more than 0, previous
+                                                # is last frame processed)
+  
+  my($nextid) = $opt->{start_id} || 1;  # nextid is next frag id to use
+
+  my($dbh) = $opt->{dbh} || undef;
+  
+  my($frame);                           # Frame no. we are working on
+   
+  my($w,$h) = $ids->[0]->dims;          # Size
+  my($imp) = zeroes($w+2,$h+2);         # Padded image - input workspace
+  my($im) = $imp(1:$w,1:$h);            # Cut out unpadded image
+
+  my($curr) = zeroes($w+2,$h+2);        # Current regularized mask
+  my($prev) = zeroes($w+2,$h+2);        # Previous regularized mask
+
+  my($xs) = xvals($imp);                # Coordinate arrays
+  my($ys) = yvals($imp);
+
+  ##############################
+  # main loop
+
+  print "frag_assoc: processing ".($#$ids+1)." mask images...\n";
+  my $win=pgwin('xs',size=>[6,6]) if $opt->{monitor};
+
+  # If we are not starting on the first frame, set the previous frame
+  # ($curr at this point) to the last one (first one passed in).
+  if ($start_frame > 0) {
+    #$curr .= $id_out->[0];
+    $curr .= $id_out->[$start_frame - 1]->range([-1,-1], [$w+2,$h+2], 't')->sever;
+  }
+
+  for $frame($start_frame..$#$ids) {
+    next unless defined($ids->[$frame]);
+
+    $im .= $ids->[$frame];
+
+    $prev .= $curr;         # elemental assignment copies
+    $curr = zeroes($curr);  # Zero out current id map
+    my($im_ids) = where($im, $im != 0)->flat->uniq;  # 0 is not a valid id.
+    printf "\nassociating frame %d (%d ids)\n",$frame,$im_ids->nelem if($opt->{verbose});
+    
+    
+    # Start with first valid frame id (1 not 0)!
+    my($n)=0;
+    for my $i(0..$im_ids->nelem-1){
+      my($im_id) = $im_ids($i);
+      my($fid);
+      
+      ### Find the locus of points associated with the frame id
+      my($locus,$plocus,$olocus,$lx,$ly) = where($imp,$prev,$curr,$xs,$ys,$imp == $im_id);
+      
+      ### Figure out where (and if) it overlaps with the previous stuff
+      ### Overlap: previous frame must have same sign as current (and be 
+      ### nonzero).
+      my($ovl) = where($plocus, (floor($locus * $plocus) > 0));
+
+      if($ovl->nelem == 0) {
+	### No overlap: create new feature
+
+	$fid = $nextid++ * ($im_id<0 ? -1 : 1);
+      } else {
+
+	### There's some overlap.  Figure out its extent and act (')
+	### accordingly.  We take the ID of the largest prior 
+	### spot for whom we are the largest forward spot.
+	### If there is no prior spot for whom we are the largest
+	### forward spot, then we take a new ID.
+
+	my($pov_list) = uniq2($ovl);  # pov_list gets ids in prev frame
+	                               # that overlap with current frame
+	my($pov_id);
+	for $pov_id($pov_list->list) {
+	  
+	  my($pov_rgn,$curr_pov_rgn) = where($prev,$imp,
+					     ($prev == $pov_id) & ($imp != 0));
+
+	  my($curr_pov_list) = uniq2($curr_pov_rgn);
+
+	  # Extra nelem check should go away when slicing is fixed.
+	  if($curr_pov_list->nelem > 0 && $curr_pov_list->at(0) == $im_id) {
+	    ## Current spot is the largest forward overlap from this
+	    ## spot on the previous frame
+	    $fid = $pov_id;
+
+	    last;
+	    
+	  }
+	}
+	
+	#
+	# Handle complex origins (no $fid found by above criterion) and
+	# marking of mergers
+	#
+	if(defined $fid) {
+	  print "f" if($opt->{verbose}>1);
+	  ### We found a well-defined parent.  If we have more than
+	  ### one overlap, mark it as a merger.
+	  if($pov_list->nelem > 1)  {
+	    print "m" if($opt->{verbose}>1);
+	    print "pov_list = $pov_list" if($opt->{verbose}>1);
+	  }
+	} else {
+	  print "c" if($opt->{verbose}>1);
+	  ### We're not anybody's largest forward spot.  Form a new
+	  ### id and mark it as a complex origin
+	  $fid = $nextid++ * ($im_id<0 ? -1 : 1);
+	}
+	print "." if($opt->{verbose} && (($n++ %10 ==0) || $opt->{verbose}>1));
+	
+      } # end of overlap query
+      
+      $olocus .= $fid;
+      print "-" if($opt->{verbose}>1);
+      
+    } # end of new-id loop.
+    
+    $id_out->[$frame] = $curr->(1:$w,1:$h);
+    
+    ## 
+    ## Other types of association go here 
+    ##
+    print "\n" if($opt->{verbose});
+    if($opt->{monitor}){
+     $win->imag($curr);
+     }
+print "Next ID: $nextid\n";
+    }
+  print "frag_assoc completed successfully\n";  
+  $win->close if $opt->{monitor};
+
+  ## Update the current max ID in the DB
+  my $sth;
+  
+  $sth = $dbh->prepare('UPDATE params SET cur_max_id=?');
+  $sth->execute($nextid - 1);
+  $sth->finish;
+  
+  return $id_out;
+}
