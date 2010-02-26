@@ -68,37 +68,24 @@ sub frag_filt {
     my $sth;
     my $res;
     my $num_results;
-    my $max_id;
+
+
     
     # Grab params from the database
-    my ($thresh, $method, $min_sz, $v_min, $t_min, $sz_min, $n_back, $max_id, $num_frames);
-    $res = $dbh->selectall_arrayref('SELECT * FROM params');
-    $num_results = 0;
-    foreach (@$res) {
-        $num_results += 1;
-        if ($num_results > 1) {
-            print "Error: More than one param row!\n";
-            exit 1;
-        }
-        
-        $thresh = [@$_[0], @$_[1]];
-        $method = @$_[2];
-        $min_sz = @$_[3];
-        $v_min  = @$_[4];
-        $t_min  = @$_[5];
-        $sz_min = @$_[6];
-        $n_back = @$_[7];
-        $max_id = @$_[8];
-        $num_frames = @$_[9];
-    }
 
-    my($window) = $opt->{window} || $n_back * 4;
+    $res = $dbh->selectall_arrayref('SELECT name,value FROM params');
+    die "Swamis: couldn't get parameters from database (something is seriously wrong!)\n" unless(@$res);
+    my $p = { map { @$_ } @$res };
+
+
+
+    my($window) = $opt->{window} || $p->{nBack} * 4;
 
     # Find the first frame to examine, based on the passed in start frame
     # (which is the first frame never examined) and the window to examine.
-    if (($num_frames - $window - 2) < $start_frame)
+    if (($p->{curMaxTbFr} - $window - 2) < $start_frame)
     {
-        $start_frame = ($num_frames - $window - 2);
+        $start_frame = ($p->{curMaxTbFr} - $window - 2);
         if ($start_frame < 0)
         {
             $start_frame = 0;
@@ -106,7 +93,7 @@ sub frag_filt {
     }
 
     # Cycle through the IDs, filtering when necessary
-    for (my $search_id=0; $search_id<=$max_id; $search_id++)
+    for (my $search_id=0; $search_id<=$p->{curMaxId}; $search_id++)
     {
         print("Looking at ID=$search_id\n");
         my $volume = 0;
@@ -156,7 +143,7 @@ sub frag_filt {
                 $born = 0;
             }
             
-            if ($frame == ($num_frames - 1))
+            if ($frame == ($p->{curMaxTbFr} - 1))
             {
                 $dead = 0;
             }
@@ -176,11 +163,11 @@ sub frag_filt {
         print("    vol=$volume, life=$lifetime, max=$max_size\n");
         if ($born && $dead)
         {
-            if (($volume < $v_min) ||
-                ($lifetime < $t_min) ||
-                ($max_size < $sz_min))
+            if (($volume   < $p->{minVol}) ||
+                ($lifetime < $p->{minLife}) ||
+                ($max_size < $p->{minMaxSize}))
             {
-                print("      *** Does not meet mins ($v_min, $t_min, $sz_min)!\n");
+                print("      *** Does not meet mins ($p->{minVol}, $p->{minLife}, $p->{minMaxSize})!\n");
                 if (!$close)
                 {
                     print("       * And no close neighbors...deleting\n");

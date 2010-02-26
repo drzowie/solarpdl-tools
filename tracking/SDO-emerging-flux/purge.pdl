@@ -23,7 +23,7 @@ This is a list ref containing (low,high) thresholds for feature detection.
 
 This is either 'downhill' or 'clump' (default is 'clump') and specifies the feature ID method.
 
-=item min_size
+=item min_sz
 
 This is the minimum allowed feature size in a given frame, in pixels; below that, the feature is 
 ignored.
@@ -44,6 +44,10 @@ This is the smallest maximum size (in pixels) below which a feature is ignored.
 
 How many frames to look back during detect.
 
+=item tmpdir
+
+Location to stash temporary files
+
 =back
 
 =cut
@@ -58,36 +62,77 @@ sub purge{
     my $opt = shift || {};
     die "Hash ref expected as first argument of purge!\n" unless (!defined($opt)   or  ref($opt) eq 'HASH');
 
-    my $tmpdir = defined($opt->{tmpdir})   ? $opt->{tmpdir}   :  ".";
-    my $thresh = defined($opt->{thresh})   ? $opt->{thresh}   :  [28*2, 28*4];
-    my $method = defined($opt->{method})   ? $opt->{method}   :  'downhill';
-    my $min_sz = defined($opt->{min_size}) ? $opt->{min_size} :  undef;
-    my $v_min  = defined($opt->{v_min})    ? $opt->{v_min}    :  0;
-    my $t_min  = defined($opt->{t_min})    ? $opt->{t_min}    :  4;
-    my $sz_min = defined($opt->{sz_min})   ? $opt->{sz_min}   :  4;
-    my $n_back = defined($opt->{n_back})   ? $opt->{n_back}   :  3;
+    # force hard-coded defaults for $opt.  Only these options will be allowed!
+    # Each keyword points to an array ref with the default value (or undef if 
+    # the result should be NULL - this preserves "undef" through the DB), and an 
+    # explanatory help string (which may or may not eventually be used, but which
+    # imposes microscopic overhead and serves as a useful comment).
+    my $defaults = {
+	newdir 	=>    [undef,   'Absolute path to a directory where new files can be found'],
+	tmpdir 	=>    [undef,   'Absolute path to a writeable directory where SWAMIS can store state'],
+	thrDetHi =>   [200,     'High threshold (in incoming image dataunits) for the feature detection step'],
+	thrDetLo =>   [100,     'Low threshold (in incoming image data units) for the feature detection step'],
+	scaleMask =>  [0b111100,'Bit mask indicating which scales are to be examined, by power of two'],
+	minSize =>    [2,       'Minimum number of macropixels a feature must have to be recognized as one, in a given frame'],
+	minVol  =>    [4,       'Minimum volume (pixels * frames) a feature must exist to be counted'],
+	minLife =>    [2,       'Minimum lifespan of a feature before it is historified'],
+	minMaxSize=>  [3,       'Minimum max size a feature must have (in pixels) to be counted'],
+	feaDist	=>    [4,       'Dilation radius, in macropixels, for associated-feature search'],
+	feaMethod =>  ['clump', 'Valid values are "clump" and "downhill".'],
+	maxEta 	=>    [60,      'Maximum angle from disk center, in degrees, for new-feature detection'],
+	timeAtMax =>  [2,       'How many frames to wait after a local maximum in flux before closing an event'],
+	senseGrowth=> [0,       'Report non-merging growth events of existing features'],
+	thrGrowth =>  [undef,   'growth rate, in image data units per time step, for growth rate reporting'],
+	timeGrowth => [undef,   'number of frames the feature must be growing to be reported'],
+	thrFlLo =>    [undef,   'Minimum flux in a feature for an event to be created, in image data unit * pixels.'],
+	thrFlHi =>    [undef,   'Minimum flux in a feature for the event to be closed (and not deleted).'],
+	nBack   =>    [3,       'Number of frames to use for look-behind'],
+
+	curMaxId =>   [undef,   'Highest currently assigned feature ID [auto-updated]'],
+	curMaxGlFr => [undef,   'Global frame number of last ingested image file [auto-updated]'],
+	curMaxTbFr => [undef,   'Global frame number of last tab-processed file [auto-updated]'],
+    };
+    
+    my %opt2 = %$opt;  # copy options hash so we can cross off options against the defaults
+    my $opt_ok = {};
+
+    # Assign option or its default for each case.
+    for my $k(keys %$defaults) {
+	$opt_ok->{$k} = (exists $opt->{$k}) ? $opt->{$k} : $defaults->{$k}->[0];
+	delete $opt2{$k};
+    }
+    die "Unexpected option(s) in command: ".join(",",sort keys %opt2)."\n" if(keys %opt2);
+
+    ## Now $opt_ok contains all valid option keys with appropriate command-line overrides.
+    ## $defaults still contains the default values and help strings.
+
     
     my $dbh;
     my $sth;
+    my $tmpdir = $opt->{tmpdir} || ".";
+    unlink("$tmpdir/swamis.sdb") if(-e "$tmpdir/swamis.sdb");
     $dbh = DBI->connect("dbi:SQLite:dbname=$tmpdir/swamis.sdb","","");
 
-    $sth = $dbh->prepare('CREATE TABLE params (thresh_low int, thresh_high int, method char(64), min_size int, min_vol int, min_lifetime int, min_maxsize int, lookback_frames int, cur_max_id int, cur_num_frames int)');
-    $sth->execute();
+    $sth = $dbh->prepare('CREATE TABLE params (name char(64), value char(64), help char(80))');
+    $sth->execute;
+
+    # Insert default params into params table
+    $sth = $dbh->prepare('INSERT INTO params VALUES (?, ?, ?)');
+    for my $k(keys %$opt_ok) {
+	$sth->execute($k, $opt_ok->{$k}, $defaults->{$k}->[1]);
+    }
     $sth->finish;
+    
     $sth = $dbh->prepare('CREATE TABLE files (filename varchar(128) NOT NULL, data_path varchar(128), mask_path varchar(128), id_path varchar(128), assoc_path varchar(128), tab_path varchar(128), data_processed boolean, mask_processed boolean, id_processed boolean, assoc_processed boolean, tab_processed boolean, PRIMARY KEY(filename))');
     $sth->execute();
     $sth->finish;
-    $sth = $dbh->prepare('CREATE TABLE tabs (id int NOT NULL, frame int NOT NULL, flux double, size int, x int, y int, closeness boolean, PRIMARY KEY(id, frame))');
+    $sth = $dbh->prepare('CREATE TABLE tabs (id int NOT NULL, frame int NOT NULL, flux double, size int, x double, y double, closeness boolean, PRIMARY KEY(id, frame))');
     $sth->execute();
     $sth->finish;
     $sth = $dbh->prepare('CREATE TABLE hist (id int NOT NULL, birth_frame int, birth_method int, birth_id int, death_frame int, death_method int, death_id int, lifetime int, birth_x int, birth_y int, death_x int, death_y int, PRIMARY KEY(id))');
     $sth->execute();
     $sth->finish;
 
-    # Insert default params into params table
-    $sth = $dbh->prepare('INSERT INTO params VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    $sth->execute(@$thresh[0], @$thresh[1], $method, $min_sz, $v_min, $t_min, $sz_min, $n_back, 0, 0);
-    $sth->finish;
 
     $dbh->disconnect();
 }

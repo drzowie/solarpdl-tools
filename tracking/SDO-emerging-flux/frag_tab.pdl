@@ -21,7 +21,11 @@ crashes you have to remake them, but at least it reduces the egregiousness
 of the disk waste.
 
 This is a variant of frag_tabulate written for the SDO weather-prediction pipeline. (It 
-is probably useful for more than that).
+is probably useful for more than that).  Although it still returns the summary PDL, the 
+database side effects are more important.  It is intended to be called with only a few images
+at a time. 
+
+frag_tab processes the entire frag_id_list at once
 
 OPTIONS
 
@@ -38,10 +42,6 @@ files from being changed in place.
 =item verbose
 
 Chat.
-
-=item start_frame
-
-Frame number to start with
 
 =item DEBUG
 
@@ -87,6 +87,9 @@ use DBI;
 sub frag_tab {
     my($opt,$id_list,$im_list) = find_opt(@_);
     local($_);
+
+
+
     
     ##############################
     ## Set up options
@@ -95,9 +98,15 @@ sub frag_tab {
     
     $opt->{verbose} = 2 if($opt->{DEBUG});
     
-    my($start_frame) = $opt->{start_frame} || 0;
+    my($dbh) = $opt->{dbh};
+    die "frag_tab: needs an active DBH passed in for the swamis temp db!\n" unless(defined $dbh);
+    
 
-    my($dbh) = $opt->{dbh} || undef;
+    $res = $dbh->selectall_arrayref('SELECT name,value FROM params');
+    die "Swamis: couldn't get parameters from database (something is seriously wrong!)\n" unless(@$res);
+    my $p = { map { @$_ } @$res };
+
+
   
     ##############################
     ## Allocate the features table
@@ -207,14 +216,19 @@ sub frag_tab {
 
                 my $x = $summary->(($id), ($frame), (2));
                 my $y = $summary->(($id), ($frame), (3));
-                $sth->execute($id, $start_frame + $frame, $flux, $size, $x, $y, $c);
+
+		##
+		#
+                $sth->execute($id, $p->{curMaxTbFr} + $frame, $flux, $size, $x, $y, $c);
+		print "frag_tab: INSERTing: id=$id, frame=".($start_frame+$frame).", flux=$flux, size=$size, x=$x, y=$y, c=$c\n";
+
                 $sth->finish;
             }
         }
     }
 
     ## Update the current number of frames in the DB
-    $sth = $dbh->prepare('UPDATE params SET cur_num_frames=?');
+    $sth = $dbh->prepare('UPDATE params SET value=? WHERE name="curMaxTbFr"');
     $sth->execute($start_frame + $num_frames);
     $sth->finish;
 

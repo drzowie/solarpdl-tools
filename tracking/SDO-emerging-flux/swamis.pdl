@@ -8,49 +8,25 @@ sub swamis{
     my $opt = shift || {};
     die "Hash ref expected as first argument of purge!\n" unless (!defined($opt)   or  ref($opt) eq 'HASH');
 
-    my $tmpdir = defined($opt->{tmpdir})   ? $opt->{tmpdir}   :  ".";
-
     my $dbh;
     my $sth;
     my $res;
 
+    my $tmpdir = $opt->{tmpdir} || ".";
+
     $dbh = DBI->connect("dbi:SQLite:dbname=$tmpdir/swamis.sdb","","");
 
 ### Grab params from the database (set in purge())
-    my ($thresh, $method, $min_sz, $v_min, $t_min, $sz_min, $n_back, $max_id, $num_frames);
-    $sth = $dbh->prepare('SELECT * FROM params');
-    $sth->execute();
-    $res = $sth->fetchall_arrayref;
-    $sth->finish;
-    my $num_results = 0;
-    foreach (@$res) {
-        $num_results += 1;
-        if ($num_results > 1) {
-            print "Error: More than one param row!\n";
-            exit 1;
-        }
-        
-        $thresh = [@$_[0], @$_[1]];
-        $method = @$_[2];
-        $min_sz = @$_[3];
-        $v_min  = @$_[4];
-        $t_min  = @$_[5];
-        $sz_min = @$_[6];
-        $n_back = @$_[7];
-        $max_id = @$_[8];
-        $num_frames = @$_[9];
-    }
 
-    #print "Params: $thresh, $method, $min_sz, $v_min, $t_min, $sz_min, $n_back, $max_id\n";
+    $res = $dbh->selectall_arrayref('SELECT name,value FROM params');
+    die "Swamis: couldn't get parameters from database (something is seriously wrong!)\n" unless(@$res);
+    my $p = { map { @$_ } @$res};
+
 
 ### Populate files table with the set of new files and paths
     my(@datafiles,@maskfiles,@idfiles,@assocfiles,@tabfiles);
 
     @datafiles = <$tmpdir/00-data/*.fits>;
-    #@maskfiles = map { ($a=$_)=~s/00-data/01-mask/; $a } @datafiles;
-    #@idfiles = map { ($a=$_)=~s/00-data/02-id/; $a } @datafiles;
-    #@assocfiles = map { ($a=$_)=~s/00-data/03-assoc/; $a } @datafiles;
-    #@tabfiles = map { ($a=$_)=~s/00-data/04-tab/; $a} @datafiles;
 
     foreach (@datafiles) {
         my $datafile = $_;
@@ -81,39 +57,57 @@ sub swamis{
     my $tabs;
 
 ### Run the individual programs
+
     # FRAG_DETECT
+    
+    ##########
+    ## Grab all still-in-play files from the list in the DB.
+    ## We are assured that lexical order is also chronological order.
+    ##
     $res = $dbh->selectall_arrayref('SELECT data_path,mask_path,data_processed,filename FROM files WHERE data_processed<2 ORDER BY filename');
+
+    ##########
+    # If we got anything, process 'em
+    # 
     if (@$res) {
         @datafiles = ();
         @maskfiles = ();
         my @filenames = ();
         my $num_seen = 0;
         my $num_not_seen = 0;
-        foreach (@$res) {
-            push @datafiles, @$_[0];
-            push @maskfiles, @$_[1];
-            push @filenames, @$_[3];
 
+
+	##############################
+	## Loop over the file names we found
+	##
+
+        foreach (@$res) {
+            push @datafiles, @$_[0];  # data_path (directory)
+            push @maskfiles, @$_[1];  # mask_path (directory)
+            push @filenames, @$_[3];  # filename 
+
+	    # Check data_processed semaphore.  0=completely unseen, 1=touched by frag_detect
             if ((@$_[2] + 0) == 1) {
                 $num_seen++;
             } else {
                 $num_not_seen++;
             }
         }
+
         my $num_files = $num_seen + $num_not_seen;
+
         if ($num_not_seen > 0) {
             my $detect_start_frame;
-            if ($num_seen > $n_back) {
-                $detect_start_frame = $n_back;
+            if ($num_seen > $p->{nBack}) {
+                $detect_start_frame = $num_seen - $p->{nBack}; # count n_back backwards from the end.
             } else {
-                $detect_start_frame = $num_seen;
+                $detect_start_frame = $num_seen;           # start at the first unseen one
             }            
-            #$data = diskcache(\@datafiles,{ro=>1,bless=>1});
-            #$mask = diskcache(\@maskfiles,{rw=>1,bless=>1});
+
             @data = mrfits(@datafiles);
             @mask = map {(-e $_) ? rfits($_) : undef } @maskfiles;
-            frag_detect(\@data, {diag=>2,masks=>\@mask,thresh=>$thresh,start_frame=>$detect_start_frame,behind=>$n_back});
-            #$mask->sync;
+            frag_detect(\@data, {diag=>2,masks=>\@mask,thresh=> [$p->{thrDetLo}, $p->{thrDetHi}], start_frame=>$detect_start_frame,behind=>$p->{nBack}});
+
             my $i = 0;
             foreach (@mask) {
                 $_->wfits($maskfiles[$i++]);
@@ -122,7 +116,7 @@ sub swamis{
             my $file_num = 0;
             foreach (@filenames) {
                 $sth = $dbh->prepare('UPDATE files SET data_processed=? WHERE filename=?');
-                if ($file_num < ($num_files - $n_back)) {
+                if ($file_num < ($num_files - $p->{nBack})) {
                     $sth->execute(2, $_);
                 } else {
                     $sth->execute(1, $_);
@@ -147,7 +141,7 @@ sub swamis{
         @data = mrfits(@datafiles);
         @mask = mrfits(@maskfiles);
         @id = map {(-e $_) ? rfits($_) : undef } @idfiles;
-        frag_id(\@data,\@mask,{method=>$method,diag=>1,ids=>\@id,verbose=>1,monitor=>0,min_size=>$min_sz});
+        frag_id(\@data,\@mask,{method=>$p->{feaMethod},diag=>1,ids=>\@id,verbose=>1,monitor=>0,min_size=>$p->{minSize}});
         #$id->sync;
         my $i = 0;
         foreach (@id) {
@@ -185,7 +179,7 @@ sub swamis{
             }            
             @id = mrfits(@idfiles);
             @assoc = map {(-e $_) ? rfits($_) : undef } @assocfiles;
-            frag_assoc(\@id,{dbh=>$dbh,assoc=>\@assoc, monitor=>0, verbose=>1, start_frame=>$assoc_start_frame, start_id=>($max_id + 1)});
+            frag_assoc(\@id,{dbh=>$dbh,assoc=>\@assoc, monitor=>0, verbose=>1, start_frame=>$assoc_start_frame, start_id=>($p->{curMaxId} + 1)});
             #$assoc->sync;
             my $i = 0;
             foreach (@assoc) {
@@ -220,7 +214,7 @@ sub swamis{
         @data = mrfits(@datafiles);
         @assoc = mrfits(@assocfiles);
         @tab = map {(-e $_) ? rfits($_) : undef } @tabfiles;
-        $tabs = frag_tab(\@assoc,\@data,{dbh=>$dbh,verbose=>1,tab=>\@tab,start_frame=>$num_frames});
+        $tabs = frag_tab(\@assoc,\@data,{dbh=>$dbh,verbose=>1,tab=>\@tab,start_frame=>$p->{CurMaxTbFr}});
         #wfits($tabs,'tabs.fits');
         #$tab->sync;
         my $i = 0;
@@ -230,7 +224,7 @@ sub swamis{
         $dbh->selectall_arrayref('UPDATE files SET assoc_processed=2 WHERE id_processed>0');
 
         # Now do some post filtering of the database
-        frag_filt(\@assoc,{dbh=>$dbh,verbose=>1,start_frame=>$num_frames});
+        frag_filt(\@assoc,{dbh=>$dbh,verbose=>1,start_frame=>$p->{CurMaxGlFr}});
     }
     
     if (0)

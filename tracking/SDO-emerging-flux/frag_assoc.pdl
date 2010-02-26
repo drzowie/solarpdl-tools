@@ -217,7 +217,7 @@ print "Next ID: $nextid\n";
   ## Update the current max ID in the DB
   my $sth;
   
-  $sth = $dbh->prepare('UPDATE params SET cur_max_id=?');
+  $sth = $dbh->prepare('UPDATE params SET value=? where NAME="cur_max_id"');
   $sth->execute($nextid - 1);
   $sth->finish;
   

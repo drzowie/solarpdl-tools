@@ -4,6 +4,8 @@ use strict;
 use warnings;
 use PDL;
 use PDL::AutoLoader;
+do $ENV{HOME}."/.perldlrc";
+
 use Getopt::Long;
 
 sub usage()
@@ -82,8 +84,7 @@ if ($reset)
     # Initialize the DB and set up processing parameters
     my $thresh = [$thrDetLo, $thrDetHi];
     purge({tmpdir=>$tmpdir,
-           thresh=>$thresh,
-           method=>$feaMethod,
+           feaMethod=>$feaMethod,
            scaleMask=>$scaleMask,
            feaDist=>$feaDist,
            maxEta=>$maxEta,
@@ -93,11 +94,11 @@ if ($reset)
            timeGrowth=>$timeGrowth,
            thrFlLo=>$thrFlLo,
            thrFlHi=>$thrFlHi,
-           min_sz=>$minSize,
-           v_min=>$minVol,
-           t_min=>$minLife,
-           sz_min=>$minMaxSize,
-           n_back=>$nBack});
+           minSize=>$minSize,
+           minVol=>$minVol,
+           minLife=>$minLife,
+           minMaxSize=>$minMaxSize,
+           nBack=>$nBack});
 }
 else
 {

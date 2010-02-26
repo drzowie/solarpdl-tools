@@ -144,6 +144,8 @@ Derek Lamb 01/11/07 Added pixel-overlap sensitivity to
 
 Derek Lamb 07/01/08 Fixed interaction bug for when feature id > short.
 
+Craig DeForest 24-Feb-2010 updated for use with MySQL and the SDO pipeline
+
 =cut
 
 use strict;
@@ -192,6 +194,8 @@ sub frag_hist {
 
     ##############################
     ## Set up options
+
+    my($start_frame) = $opt->{start_frame} || 0;
     
     $opt->{sep} = 3 unless defined($opt->{sep});
     $opt->{sep} = $opt->{sep}->at(0) if(UNIVERSAL::isa($opt->{sep},'PDL'));
