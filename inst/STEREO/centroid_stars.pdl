@@ -1,0 +1,47 @@
+=head2 centroid_stars - find the centroid of stars in each of a collection of stellar windows
+
+=for ref 
+
+This is currently really boneheaded-- it uses the PDL::Transform Gaussian interpolation/blurring to 
+expand the window, then does a local maximum operation on the expanded window.  
+
+You feed in the original image, the collection of centers, the window size in pixels, the 
+expansion factor, and the (optional) threshold to use.  You get out the more-precise stellar locations.
+
+=cut
+
+sub centroid_stars {
+    my $image = shift;
+    my $centers = shift;
+    my $wsize = shift || 5;
+    my $expansion = shift || 10;
+    my $thresh = shift || undef;
+
+    my $corners = $centers - (($wsize-1)/2);
+
+    my $windows = ( $image                               # W x H
+                 ->range( $corners,                    # N_centers x wsize x wsize
+                          [$wsize, $wsize],
+                          't'
+                 )
+                 ->mv(0,-1)                              # wsize x wsize x N_centers
+                 ->match([$expansion*$wsize,             # wsize*exp x wsize*exp x N_centers
+                          $expansion*$wsize],
+                         {m=>'j',blur=>2})  # Gaussian blurring
+        );
+our	$cswin = $windows;
+    if(!defined($thresh)) {
+        $thresh = $windows->maximum->maximum->minimum;
+    }
+        
+    my ($mval, $mx, $my) = $windows->max2d_ind;          # N_centers
+
+    $mx->where($mval<$thresh) .= -1;
+    $my->where($mval<$thresh) .= -1;
+
+    my $maxloc = ( pdl($mx, $my)                         # N_centers x 2
+                   ->mv(0,-1)                            # 2 x N_centers
+                   )/ $expansion + $corners; 
+    
+    return $maxloc;  # 2 x N_centers
+}

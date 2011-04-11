@@ -1,0 +1,10 @@
+# Move the "A" coordinate system to the "main" coordinate system.
+sub a_to_main {
+    my $a = shift;
+    if(ref $a eq 'PDL') {
+	$a = $a->hdr;
+    }
+    for( qw/CRVAL1 CRVAL2 CTYPE1 CTYPE2 CRPIX1 CRPIX2 PV2_1 CUNIT1 CUNIT2 PC1_1 PC1_2 PC2_1 PC2_2 CDELT1 CDELT2/ ) {
+        $a->{$_} = $a->{$_."A"};
+    }
+}

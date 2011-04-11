@@ -1,0 +1,18 @@
+=head2 find_stars - identify stellar windows in an image to the nearest pixel 
+
+=for ref
+
+You feed in an image, you get back locations of stars above some threshold, in pixel
+coordinates.  Just a simple local-maximum finder...
+
+=cut
+
+sub find_stars {
+    my $image = shift;
+    my $thresh = shift || 10;
+
+    my $imr = $image->range(ndcoords(3,3)-1, [$image->dims], 't')->clump(2)->sever;
+    my $mask = ($imr->((4)) > $thresh) & ($imr->maximum_ind==4);
+    
+    return scalar(whichND($mask));
+}

@@ -1,0 +1,10 @@
+=head2 delaunay - Delaunay triangulate of a collection of 2-PDLs
+
+=for ref
+
+You feed in a 2xN PDL containing coordinates of some points.  You get
+back a 2xM PDL containing (vertex, neighbor) pairs for all vertices. 
+Note that each edge is represented twice.
+
+=cut
+
