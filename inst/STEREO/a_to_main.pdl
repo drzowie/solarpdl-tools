@@ -1,4 +1,12 @@
-# Move the "A" coordinate system to the "main" coordinate system.
+=head2 a_to_main - move the FITS "A" coordinate system to the "main" coordinate system in a header
+
+=for ref
+
+This is a stupid, quick hack to copy the alternate coordinate system to the main.   It overwrites the 
+main coordinate system, so it's not reversible.  
+
+=cut
+
 sub a_to_main {
     my $a = shift;
     if(ref $a eq 'PDL') {

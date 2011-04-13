@@ -1,0 +1,124 @@
+=head2 remove_f_corona - remove the F corona from a sequence of coronagraph/HI images
+
+=for usage
+
+ $ret = remove_f_corona( $images , $opt );
+
+ $images should be either a hash ref containing the images to be processed as a 3-D PDL in the "RAW_CUBE" field,
+ or a list ref of images.  If the RAW_CUBE field is used, the hash should also contain a RAW_HDRS list ref.
+
+ $opt is an options hash.
+
+ To handle mixed-binning STEREO data, the code (as a special case) 2x2-bins 2048x2048 images down to 1024x1024 by
+ default, and leaves 1024x1024 images alone.  To avoid this behavior, set the option 'bin' to 0 or undef.
+ 
+=for ref
+
+=cut
+
+use PDL::NiceSlice;
+use PDL::Transform;
+use PDL::Bad;
+sub  remove_f_corona {
+     local($PDL::BIGPDL) = 1;
+     
+     # Read parameters
+     my $in = shift;
+     my $opt = shift;
+     $opt = {} unless defined($opt);
+
+     # Set default values for options
+     $opt->{'neg'}    = "bad"  unless( exists( $opt->{'neg'}  )  ); # how to handle negative values
+     $opt->{'pct'}    = 5      unless( exists( $opt->{'pct'}  )  ); # percentile for background
+     $opt->{'sm'}     = [7,30] unless( exists( $opt->{'sm'}   )  ); # smoothing of background
+     $opt->{'bin'}    = 1      unless( exists( $opt->{'bin'}  )  ); # whether to deal with multiply binned full-frame images
+
+     print cards($opt);
+     # Make sure we have a data cube in usable form
+     my $ims, $hdrs;
+     if(ref $in eq 'HASH') {
+	 if(defined($in->{'RAW_CUBE'}) && defined($in->{'RAW_HDRS'}) ) {
+	     $ims = $in->{'RAW_CUBE'};
+	 } else {
+	     die "remove_f_corona: input hash needs both RAW_CUBE and RAW_HDRS fields\n";
+	 }
+     } elsif( ref $in eq 'ARRAY') {
+	 # prefrobnicate 2048x2048 images down to 1024x1024
+	 if($opt->{'bin'}) {
+	     for $i(0..$#$in) {
+		 if( $in->[$i]->dim(0) == 2048 &&
+		     $in->[$i]->dim(1) == 2048
+		     ) {
+		     # Explicit binning
+		     my $im2 = (   $in->[$i]->(0:-2:2,0:-2:2) 
+				 + $in->[$i]->(1:-1:2,0:-2:2)
+				 + $in->[$i]->(0:-2:2,1:-1:2)
+				 + $in->[$i]->(1:-1:2,1:-1:2)
+			 ) / 4;
+
+		     # Patch up header in the binned image
+		     $im2->sethdr($in->[$i]->hdr_copy);
+
+		     # CRPIX is off-by-one.  The -0.5 moves the origin to the lower-left corner of the 
+		     # lower-left pixel, and the +0.5 moves it back to the center of the lower-left pixel.
+		     $im2->hdr->{CRPIX1} = ($in->[$i]->hdr->{CRPIX1}-0.5)/2 + 0.5;
+		     $im2->hdr->{CRPIX2} = ($in->[$i]->hdr->{CRPIX2}-0.5)/2 + 0.5;
+
+		     $im2->hdr->{CDELT1} *= 2;
+		     $im2->hdr->{CDELT2} *= 2;
+
+		     $in->[$i] = $im2;
+		     print "i=$i; 2048x2048 -> 1024x1024 (/4)\n";
+		 }
+	     }
+	 }
+	 $ims = pdl(float, @{$in});
+	 $in = {
+	     RAW_CUBE => $ims,
+	     RAW_HDRS => [ map { $_->hdr } @$in ],
+	 };
+     } else {
+	 die "remove_f_corona: need a hash ref or an array ref as first argument\n";
+     }
+     
+
+     ##############################
+     # Handle negative values - BAD or maxval
+     if($opt->{'neg'} eq 'bad') {
+	 $ims->setbadif($ims<0);
+     } elsif($opt->{'neg'} eq 'max') {
+	 $ims->where($ims<0) .= $ims->max;
+     } else {
+	 die("remove_f_corona: neg option must be 'bad' or 'max'\n");
+     }
+
+     ##############################
+     # Sort the cube by value to find a percentile image
+     my $sorted = $ims->mv(-1,0)->qsort->sever;
+
+     ##############################
+     # Find the index of the closest value to the desired percentile
+     my $sn = $sorted->dim(0) * ($opt->{'pct'}/100) + 0.5;
+     # Take the percentile and smooth as necessary
+
+     my $bk;;
+     if(ref($opt->{'sm'}) eq 'ARRAY') {
+	 my $smsiz= $opt->{'sm'}->[0];
+	 my $smpct = $opt->{'sm'}->[1];
+	 my $smdex = ($smsiz * $smsiz)  * ($smpct /100) + 0.5;
+	 $bk = $sorted
+	     ->(($sn))
+	     ->range(  ndcoords($smsiz,$smsiz)->clump(1,2)-3,  [$sorted->(($sn))->dims],  'e')
+	     ->qsort
+	     ->(($smdex));
+     } else {
+	 $bk = $sorted->(($sn));
+     }
+     
+     my $out = $in;
+     $out->{SORTED} = $sorted;
+     $out->{FBK} = $bk;
+     $out->{BKSUB_CUBE} = $ims - $bk;
+
+     return $out;
+}

@@ -2,12 +2,25 @@ use strict;
 
 =head2 correlate_patch 
 
+=for usage
+
+ $of = correlate_patch($im0, $im1, $loc0, $of0, $size0, $patchr0, $corr_thresh);
+
 =for ref
 
-Cross-correlate starfield image patches to identify their offsets.  Returns the offset, or undef in case 
-of error.
+Cross-correlate starfield image patches to identify their offsets.
+Returns the offset, or undef in case of error.  Uses amoeba to perform
+the close fitting.
+
+You feed in two images, a location in one, an offset vector to the
+corresponding location in the other (all in pixel coordinates, of
+course), a size of a region to consider, a patch radius, and a minimum
+correlation coefficient below which the fit is rejected.
+
+You get back out a new offset vector.
 
 =cut
+
 our $ww0;
 
 sub correlate_patch {

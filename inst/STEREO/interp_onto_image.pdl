@@ -10,6 +10,8 @@ The values are weighted as 1/r^2, rounded to the nearest pixel.
 
 By default the neighborhood of a point is 100x100 pixels.
 
+This is pretty cheesy and should be replaced with a Delaunay triangulation or something similar.
+
 =for author
 
 Craig DeForest, 8-Mar-2011

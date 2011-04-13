@@ -1,3 +1,12 @@
+=head2 t_nl - custom nonlinear transformation generator for HI-2
+
+=for ref
+
+Generates a parameterized PDL::Transform mapping from STEREO HI-2 image plane pixel coordinates to celestial coordinates.
+Used by the HI-2 pipeline code to generate image-to-image mappings.
+
+=cut
+
 use PDL::NiceSlice;
 sub t_nl {
     my $hdr = shift;  $hdr=$hdr->hdr if(ref($hdr) eq 'PDL');

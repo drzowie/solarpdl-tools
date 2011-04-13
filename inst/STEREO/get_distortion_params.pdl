@@ -1,0 +1,1 @@
+=head2 get_distortion_params - load or generate distortion parameters for a sequence of HI-2 images

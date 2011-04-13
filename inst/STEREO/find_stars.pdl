@@ -3,7 +3,10 @@
 =for ref
 
 You feed in an image, you get back locations of stars above some threshold, in pixel
-coordinates.  Just a simple local-maximum finder...
+coordinates.  Just a simple local-maximum finder.  Not actually used in the fitting process,
+since centroiding stars is not as reliable/precise as correlating two patches of starfield.  
+(The problem is subpixel gradients in the detector on HI-2, which can offset the measured
+centroid by a significant fraction of a pixel).
 
 =cut
 
