@@ -6,7 +6,8 @@
 
 =for ref
 
-     Accepts a list of FITS files, returns a list of FITS files with the background-subtracted version.
+     Accepts a list of FITS files, generates a collection of FITS files in a specified output
+     directory.
 
 =cut
 
