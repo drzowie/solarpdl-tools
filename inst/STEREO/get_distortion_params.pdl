@@ -1,1 +1,268 @@
 =head2 get_distortion_params - load or generate distortion parameters for a sequence of HI-2 images
+
+=for usage
+
+ $hash = get_distortion_params($hash, $opt);
+
+hash is a values hash ref returned by remove_f_corona or similar.  opt
+is an options hash ref..
+
+=for ref
+    
+Adds distortion parameters to the options hash, retrieving them as
+necessary to calculate the interframe distortion function between any
+two images in the data set.  If necessary, the distortion function is
+measured directly, otherwise it is loaded from the ancillary file
+named in the options hash (or its default value).  Ditto the actual
+analytic distortion function parameters, which are either fitted
+directly from the distortion function measurements or retrieved from a
+cached disk file.
+
+=cut
+use PDL::IO::Dumper;
+use Date::Parse;
+use PDL::Transform;
+use PDL::Transform::Cartography;
+
+sub get_distortion_params {
+    my $hash = shift;
+    my $opt = shift;
+
+    $opt = {} unless(defined $opt);
+
+    ##############################
+    # Set default values for options hash
+
+    $opt->{'DIST_CORR_FNAME'}  = "correlations.pl"      unless(exists($opt->{'DIST_CORR_FNAME'}));
+    $opt->{'DIST_PARAM_FNAME'} = "distortion-params.pl" unless(exists($opt->{'DIST_PARAM_FNAME'}));
+    $opt->{'DIST_CORR_NSAMP'}  = 50                     unless(exists($opt->{'DIST_CORR_NSAMP'}));
+    $opt->{'DIST_CORR_RSIZE'}  = 15                     unless(exists($opt->{'DIST_CORR_RSIZE'}));
+    $opt->{'DIST_CORR_PSIZE'}  = 20                    unless(exists($opt->{'DIST_CORR_PSIZE'}));
+    $opt->{'DIST_MIN_PCORR'}   = 0.95                   unless(exists($opt->{'DIST_MIN_PCORR'}));
+    $opt->{'DIST_CORRTIME'}    = 10                      unless(exists($opt->{'DIST_CORRTIME'}));
+
+
+    ##############################
+    # Convert timestamps to UNIX time...
+    # Add in "EXPTIME"/2 to get the average time of the exposure. 
+    my @times = map { str2time($_->{"DATE-OBS"}) + $_->{"EXPTIME"}/2 } @{$hash->{"RAW_HDRS"}};
+    my $times = pdl(@times);
+    $hash->{'UTIME'} = $times;
+
+    my $tmid = ($times->((0)) + $times->((-1)))/2;
+    my $trange = $times->((-1)) - $times->((0));
+
+    ##############################
+    # Time consistency checks...
+    if(any($times->(1:-1) - $times->(0:-2)) < 0) {
+	die("get_distortion_params: times appear not to be monotonic.  Fix that!\n");
+    }
+
+    ##############################
+    # Try to find a correlations file and, if it doesn't exist, generate a new one.
+
+    if( -e $opt->{'DIST_CORR_FNAME'}) {
+	printf("get_distortion_params - restoring tiepoint information from $opt->{'DIST_CORR_FNAME'}...\n");
+	my $h = frestore($opt->{'DIST_CORR_FNAME'});
+	$hash->{'CORR'} = $h;
+    } else {
+	printf("get_distortion_params - file '$opt->{'DIST_CORR_FNAME'}' not found -- making new correlation fit...\n");
+	my $n = 0;
+	my ($i,$j);
+
+	##############################
+	# Make sure we have a long enough interval....
+	if(  $times->((-1))-$times->((0)) < 3 * 24 * 3600   ) {
+	    die("get_distortion_params: you need at least 3 days worth of data\n");
+	}
+
+	##########
+	# Pick two images near the middle of the data set, nominally 5 days apart...
+	my $tstart = $tmid - $opt->{'DIST_CORRTIME'}*3600*24 / 2;
+	my $st_dex;
+	if($times->((0))<=$tstart) {
+	    $st_dex = max( which($times <= $tstart) );
+	} else {
+	    $st_dex = 0;
+	}
+
+	my $tend = $times->($st_dex) + $opt->{'DIST_CORRTIME'} * 3600 * 24;
+	my $en_dex;
+	if($times->((-1))>=$tend) {
+	    $en_dex = min( which($times >= $tend) );
+	} else {
+	    $en_dex = $times->dim(0)-1;
+	}
+
+
+	
+	my $im0 = $hash->{'BKSUB_CUBE'}->(:,:,($st_dex))->sever;
+	my $im1 = $hash->{'BKSUB_CUBE'}->(:,:,($en_dex))->sever;
+	my $t0 = $times->(($st_dex));
+	my $t1 = $times->(($en_dex));
+
+	$im0->sethdr($hash->{'RAW_HDRS'}->[$st_dex]);
+	$im1->sethdr($hash->{'RAW_HDRS'}->[$en_dex]);
+
+	my $guess_offset = ($t1 - $t0)/3600/24   /    5   *   72;
+	my $deltat = ($t1-$t0)/3600/24;
+
+	print "Correlating between frame $st_dex and frame $en_dex -- interval is $deltat days...\n";
+
+
+	my @of = ();
+	for( $i=0; $i < $opt->{'DIST_CORR_NSAMP'}; $i++ ) {
+	    for($j=0; $j < $opt->{'DIST_CORR_NSAMP'}; $j++) {
+		print "** i=$i, j=$j - finished ".($i*$opt->{'DIST_CORR_NSAMP'}+$j)." of ".($opt->{'DIST_CORR_NSAMP'}**2).", kept $n\n";
+		push(@of, correlate_patch($im0->clip(0)->sqrt, $im1->clip(0)->sqrt,
+					  pdl( ($i+0.5) * ($hash->{'BKSUB_CUBE'}->dim(0)/$opt->{'DIST_CORR_NSAMP'}),
+					       ($j+0.5) * ($hash->{'BKSUB_CUBE'}->dim(1)/$opt->{'DIST_CORR_NSAMP'})
+					  ),
+					  pdl( $guess_offset, 0 ),
+					  $opt->{'DIST_CORR_RSIZE'},
+					  $opt->{'DIST_CORR_PSIZE'},
+					  $opt->{'DIST_MIN_PCORR'})
+		    );
+		$n++ if(defined($of[$#of]));
+	    }
+	}
+	 
+	my $of0 = pdl(@of);
+	print "making mask.  of0 is $of0; guess offset is $guess_offset, nsamp is $opt->{'DIST_CORR_NSAMP'}\n";
+	my $looplocs = ((ndcoords($opt->{'DIST_CORR_NSAMP'},$opt->{'DIST_CORR_NSAMP'})+0.5)*( pdl( $hash->{'BKSUB_CUBE'}->dims )->(0:1) )/$opt->{'DIST_CORR_NSAMP'})  -> mv(2,1)->clump(1,2);
+	print "looplocs=$looplocs\n";
+
+	my $mask = 
+	    ( ($of0->((0))!=0) & 
+	      (($of0->((0))-$guess_offset)->abs < 6) & 
+	      (($of0->((1)))->abs < 6) &
+	      ((($looplocs-512)*($looplocs-512))->sumover->sqrt < 400)
+	    );
+	     
+
+	print "mask=$mask\n";
+
+	print "mask components:\n";
+	print "of0 nonzero: ",($of0->((0)) != 0),"\n";
+	print "of0 near guess offset: ",(($of0->((0))-$guess_offset)->abs < 6),"\n";
+	print "of0 horizontal: ",($of0->((1))->abs<6),"\n";
+	print "locations near center: ",((($looplocs-512)*($looplocs-512))->sumover->sqrt < 400),"\n";
+
+
+	my $loc = $looplocs->(:, which($mask));
+	my $of = $of0->(:, which($mask));
+	my $h = { of     => $of, 
+		  loc    => $loc, 
+		  deltat => $deltat, 
+		  guess  => $guess_offset, 
+		  hdr0   => $hash->{'RAW_HDRS'}->[$st_dex], 
+		  hdr1   => $hash->{'RAW_HDRS'}->[$en_dex]
+	};
+
+	fdump( $h, $opt->{'DIST_CORR_FNAME'} );
+	$hash->{'CORR'} = $h;
+    }
+
+    ##############################
+    # Now check if theres's a dump file for the actual parameterized fit.
+    if( -e $opt->{'DIST_PARAM_FNAME'} ) {
+	printf("get_distortion_params - restoring parameter information from $opt->{'DIST_PARAM_FNAME'}\n");
+	
+	my $h = frestore($opt->{'DIST_PARAM_FNAME'});
+	$hash->{'D_PARAMS'} = $h;
+    } else {
+	printf("get_distortion_params -- fitting correlation info...\n");
+	
+	##############################
+	# No dump file -- perform the actual fit.  
+	
+	# Define convenience variables for the centroids
+	my $ct1 = $hash->{'CORR'}->{loc};
+	my $ct2 = $hash->{'CORR'}->{of} + $ct1;
+	my $ii=0;
+
+	# Identify maximum horizontal range...
+	$xr = pdl(max_horiz_range($hash));
+	
+	# Calculate pixel offset of each boundary toward the middle using the guess rotation rate...
+	my $dt_to_center = ($hash->{'UTIME'}->((-1)) - $hash->{'UTIME'}->((0)))/2  / 3600 / 24;
+	my $margin = $dt_to_center / $hash->{'CORR'}->{'deltat'} * $hash->{'CORR'}->{'guess'};
+	
+	# shrink horizontal range by the pixel offset calculated, with an extra 10% margin.
+	$xr += pdl(1,-1) * $margin * 1.1;
+	$xr = floor($xr+0.5);
+	print "column range is $xr "."(margin is $margin)\n";
+	
+	my $master_hdr = $hash->{'RAW_HDRS'}->[(0+@{$hash->{'RAW_HDRS'}})/2];
+	
+	my $ct1a;
+	my $ct2a;
+
+	# Define a fit heuristic -- RMS error in location
+	my $heur = sub {
+	    my $dx = shift;
+	    my ($delta1, $delta2, $deltamu, $roll_angle, $r2, $orbital_rotation, $q, $qq) = $dx->list;
+	    $deltamu /= 10;
+	    $delta1 /= 100;
+	    $delta2 /= 100;
+	    our $tnl_params = [$master_hdr,$deltamu, $roll_angle, $r2, $delta1, $delta2, $q, $qq];
+
+	    my $tnl = t_nl(@$tnl_params);
+	    my $to =  t_linear(pre=>[$orbital_rotation,0]);
+
+	    my $t_heur = !$tnl x $to x $tnl;
+
+	    $ct1a = $ct1->apply( $t_heur );
+	    $ct2a = $ct2->apply( !$t_heur);
+
+	    my $dists = (($ct1a - $ct2a)*($ct1a - $ct2a))->sumover->sqrt;
+	    $avg = $dists->avg;
+	    $avg = 1e6 if(!isfinite($avg));
+	    $avg = 1e6 if(any(isbad($dists)));
+
+	    print "NL fit to ".($ct1a->dim(1))." points: ii=$ii; dx: $dx; heur=$avg\n";
+
+	    return $avg;
+	};
+	
+	my $siz = 1;
+
+	our $nlx = pdl(0,0,0,0,0,0);
+	our @nlx = ();
+	$ii = 0;
+	
+	# Initial fit -- "basic six" parameters
+	for(;$ii<15;$ii++) {
+	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-5, 1e-8, 1e4);
+	    push(@nlx, $nlx);
+	}
+	print "fitted with the basic six -- refining....\n";
+	$nlx = $nlx->append(pdl(0,0));
+
+	print "new loop...\n";
+	for(;$ii<40;$ii++) {
+	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-5, 1e-8, 1e4);
+	    push(@nlx, $nlx);
+	}
+
+	my ($delta1, $delta2, $deltamu, $roll_angle, $r2, $orbital_rotation, $q, $qq) = $nlx->list;
+	$deltamu /= 10;
+	$delta1 /= 100;
+	$delta2 /= 100;
+	$params = {
+	    tnl_params=> [$master_hdr, $deltamu, $roll_angle, $r2, $delta1, $delta2, $q, $qq],
+	    params => $nlx,
+	    ospeed => $orbital_rotation * 2 / $hash->{'CORR'}->{'deltat'}, # degrees per day
+	    t0=> ($hash->{'UTIME'}->((-1)) + $hash->{'UTIME'}->((0)))/2,
+	    xr=>$xr,
+	    yr=>pdl(150,870)
+	};
+	
+	$hash->{'D_PARAMS'} = $params;
+	fdump($hash->{'D_PARAMS'}, $opt->{'DIST_PARAM_FNAME'});
+    }
+
+    return $hash;
+}
+
+	

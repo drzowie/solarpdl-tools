@@ -1,0 +1,35 @@
+=head2 null_stars - hi2 pipeline component
+
+=cut
+
+sub null_stars {
+    my $hash = shift;
+    my $opt = shift;
+
+    $opt = {} unless defined($opt);
+
+    $opt->{NULL_SMOOTH_SIZE} = 9 unless(defined($opt->{NULL_SMOOTH_SIZE}));
+    $opt->{NULL_MIN_PCT}     = 10 unless(defined($opt->{NULL_MIN_PCT}));
+
+
+    print "null_stars: finding median....\n";
+    {
+        my $median_image = $hash->{CEL_CUBE}->mv(2,0)->medover;
+	$hash->{CEL_CUBE} -= $median_image;
+    }
+    
+    print "null_stars: median-smoothing...\n";
+    for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
+	$hash->{CEL_CUBE}->(:,:,($i)) .= $hash->{CEL_CUBE}->(:,:,($i))->med2d(ones($opt->{NULL_SMOOTH_SIZE},$opt->{NULL_SMOOTH_SIZE}));
+    }
+    
+    print "null_stars: sorting smoothed images by value...\n";
+    {
+	my $qs = $hash->{CEL_CUBE}->mv(-1,0)->qsort;
+	my $dex = ($hash->{CEL_CUBE}->dim(2)*($opt->{NULL_MIN_PCT}/100));
+	print "dex=$dex\n";
+	$hash->{CEL_CUBE} -= $qs->(($dex),:,:)
+    }
+    return $hash;
+}
+    

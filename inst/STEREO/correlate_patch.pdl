@@ -20,6 +20,7 @@ correlation coefficient below which the fit is rejected.
 You get back out a new offset vector.
 
 =cut
+use PDL::NiceSlice;
 
 our $ww0;
 
@@ -40,57 +41,14 @@ sub correlate_patch {
     my $field0 = $im0->range( $loc0        - $size- $patchr, $patchr*2 + $size*2 + 1,'t');
     my $field1 = $im1->range( $loc0 + $of0 - $size- $patchr, $patchr*2 + $size*2 + 1,'t');
 
-    unless(defined $ww0) {
-	$ww0 = pgwin(dev=>"/null",size=>[7.5,4.5],nx=>4,ny=>2);
-    }
     print "field0: range starts at (",$loc0-$size-$patchr,"); size is ",$patchr*2+$size*2 + 1,"\n";
-    $ww0->imag($field0,{title=>"im0: loc=".($loc0-$size-$patchr),charsize=>2});
-    $ww0->imag($field1,{title=>"im1: loc=".($loc0+$of0-$size-$patchr),charsize=>2});
-    print ".\n";
 
-#    if( ($field0->isbad->any) || ($field1->isbad->any) ) {
-#	print "   out-of-bounds ($loc0) ...\n";
-#	return undef;
-#    }
+    if(defined($ww0)){
+        $ww0->imag($field0,{title=>"im0: loc=".($loc0-$size-$patchr),charsize=>2});
+	$ww0->imag($field1,{title=>"im1: loc=".($loc0+$of0-$size-$patchr),charsize=>2});
+    }
     
-#    if( ($field0<=0)->any || ($field1<=0)->any ) {
-#	print "   contains zero values...\n";
-#	return undef;
-#    }
-     
 
-    ##########
-    # step 1: 1-pixel offsets to scan for a close match
-    my $ofs = ndcoords( (2 * $size + 1)->list ) - $size;
-    my $p0 = $im0->range( $loc0 +        $ofs - $patchr, $patchr * 2 + 1, 't' )->clump(2,3)->mv(2,0);
-    my $p1 = $im1->range( $loc0 + $of0 - $ofs - $patchr, $patchr * 2 + 1, 't' )->clump(2,3)->mv(2,0);
-    print "-\n";
-    my $p0av = $p0->average;
-    my $p0p  = $p0 - $p0av->(*1);
-    my $p0sd = ( $p0p * $p0p )->average->sqrt;
-    print "*\n";
-    my $p1av = $p1->average;
-    my $p1p = $p1 - $p1av->(*1);
-    my $p1sd = ( $p1p * $p1p )->average->sqrt;
-    print ":\n";
-    our $corr = ($p0p * $p1p)->average / $p0sd / $p1sd;
-    our $mc = $corr->max;
-
-    $ww0->imag($corr);
-print "|\n";    
-    print "mc=$mc\ncorr=$corr\n";
-    print "wnd=".(0+whichND($corr==$mc))."\n";
-    my $of_best = $ofs->mv(0,-1)->indexND(scalar(whichND($corr==$mc)));
-    print "..\n";
-    if($of_best->nelem == 0) {
-	print "no max\n";
-	return undef;
-    }
-    print "==\n";
-    if($of_best->dim(1) > 1) {
-	$of_best = $of_best->(:,(0));
-    }
-    print ",,\n";
     ##########
     # Step 2: try to maximize correlation with subpixel precision
     use PDL::Transform;
@@ -100,15 +58,16 @@ print "|\n";
     my $corr;
     my $patch0;
     my $patch1;
-    print "step 2\n";
+
     my $heur = sub {
        my $dx = shift;
        my ($deltax,$deltay) = $dx->list;
        our $heurcount;
 
-       $patch0 = $im0->map(t_linear(pre=> pdl(- $loc0        - $of_best - $dx->(0:1)  ), rot=>-$dx->((2)), post=>$patchr), $pdims, $mparams);
-       $patch1 = $im1->map(t_linear(pre=> pdl(- $loc0 - $of0 + $of_best + $dx->(0:1)  ), rot=>$dx->((2)), post=>$patchr), $pdims, $mparams);
-       unless($heurcount++ % 10) {
+
+       $patch0 = $im0->map(t_linear(pre=> pdl(- $loc0        - $dx->(0:1)  ), rot=>-$dx->((2)), post=>$patchr), $pdims, $mparams);
+       $patch1 = $im1->map(t_linear(pre=> pdl(- $loc0 - $of0 + $dx->(0:1)  ), rot=>$dx->((2)), post=>$patchr), $pdims, $mparams);
+       if(defined($ww0)){
 	   $ww0->imag($patch0-$patch1,-0.5,0.5,{dr=>1,title=>"Diff. (x=$dx; corr=$corr)",charsize=>2}) ;
 	   $ww0->hold;
        }
@@ -124,14 +83,14 @@ print "|\n";
        my $p1sd = ( $p1p * $p1p )->average->sqrt;
        $corr = ($p0p * $p1p)->average / $p0sd / $p1sd;
 
-       # print "dx=$dx; corr=$corr; loc0=$loc0; of_best=$of_best; dx=$dx\n";
-
        return 1.0 - $corr;
     };
 
-    my $x = amoeba($heur, pdl(-0.5,-0.5,-0.5),1,1e-2,1e-5,1e3);
+    my $x = amoeba($heur, pdl(-0.5,-0.5,-0.5),1,1e-3,1e-5,1e3);
 
-    $ww0->release;
+    if(defined($ww0)) {
+	$ww0->release;
+    }
     unless(defined $x) {
 	print " fit failed!\n";
 	return undef;
@@ -142,10 +101,10 @@ print "|\n";
 	return undef;
     }
 
-    print "  corr=$corr\n";
+#    print "  corr=$corr\n";
 
     # print "Final offset: $of0 - 2*($of_best) - 2*($x)\n";
-    return ( $of0 - $of_best*2 - $x->(0:1)*2 );
+    return ( $of0 - $x->(0:1)*2 );
 }
 
 

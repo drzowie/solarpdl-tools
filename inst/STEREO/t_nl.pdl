@@ -15,14 +15,13 @@ sub t_nl {
     my $roll2 = shift;
     my $delta1 = shift;
     my $delta2 = shift;
-    my $mag = shift;
     my $q = shift;             # extra term
     my $qq = shift;
 
     my $tp = t_perspective( r0 => -$hdr->{PV2_1} + $deltamu,
                             p  => [0, 0, $roll1],
                             o  => [$hdr->{CRVAL1}, $hdr->{CRVAL2} + $roll2 ],
-                            mag => $mag/100 + 1,
+                            mag => 1,
                             mask => 'far'
         );
     

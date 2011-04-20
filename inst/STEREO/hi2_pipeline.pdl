@@ -1,0 +1,39 @@
+=head2 hi2_pipeline - invoke the background-subtraction pipeline on a batch of hi2 data.
+
+=for usage
+     
+     $out = hi2_pipeline( $in_list, $opt );
+
+=for ref
+
+     Accepts a list of FITS files, returns a list of FITS files with the background-subtracted version.
+
+=cut
+
+sub hi2_pipeline {
+    my $in_list = shift;
+    my $opt = shift;
+
+    $opt->{OUTPUT_DIR} = "processed" unless(defined($opt->{OUTPUT_DIR}));
+    $opt->{OUTPUT_FILES} = 1 unless(defined ($opt->{OUTPUT_FILES}));
+
+    our $hash = remove_f_corona($in_list, $opt);
+    $hash = get_distortion_params($hash, $opt);
+    $hash = shift_to_celestial($hash, $opt);
+    $hash = null_stars($hash, $opt);
+    $hash = remove_polynomials($hash,$opt);
+    $hash = motion_filter($hash,$opt);
+    $hash = shift_to_instrument($hash,$opt);
+
+    # Dump output to files...
+    `mkdir $opt->{OUTPUT_DIR}`;
+    if($opt->{OUTPUT_FILES}) {
+	for $i(0..$hash->{CLEAN_CUBE}->dim(2)-1) {
+	    my $im = $hash->{CLEAN_CUBE}->(:,:,($i))->copy;
+	    $im->sethdr($hash->{RAW_HDRS}->[$i]);
+	    my $fname = sprintf ("%s/clean-%s--BATCH-%s.fits", $opt->{OUTPUT_DIR}, $im->hdr->{'DATE-OBS'}, $hash->{RAW_HDRS}->[0]->{'DATE-OBS'});
+	    printf("Writing file %d of %d: %s\n",  $i,  $hash->{CLEAN_CUBE}->dim(2) - 1,  $fname);
+	    wfits($im, $fname);
+	}
+    }    
+}

@@ -1,0 +1,36 @@
+=head2 remove_polynomials - hi2 pipeline component
+
+=cut
+use PDL::Slatec;
+use PDL::NiceSlice;
+
+sub remove_polynomials {
+    my $hash = shift;
+    my $opt = shift;
+    $opt = {} unless defined($opt);
+
+    $opt->{MIN_SMOOTH_SIZE} = 4 unless(defined($opt->{MIN_SMOOTH_SIZE}));
+
+    $n = $hash->{CEL_CUBE}->dim(2);
+    print "fitting polynomials...";
+
+    my($ndeg, $r, $ierr, $a) = polyfit( xvals($n), $hash->{CEL_CUBE}->mv(2,0), ones($n), 3, $eps );
+
+    print "removing polynomials...";
+    $hash->{CEL_CUBE}->mv(2,0) -= $r;
+
+    # accumulate minimum so as not to eat too much memory...
+    print "accumulating minimum....";
+    my $ones = ones($opt->{MIN_SMOOTH_SIZE}, $opt->{MIN_SMOOTH_SIZE});
+    $min = $hash->{CEL_CUBE}->(:,:,(0))->med2d( $ones )->(:,:,*2);
+    for $i(1..$hash->{CEL_CUBE}->dim(2)-1) {
+	print "$i...";
+	$min->(:,:,(1)) .= $hash->{CEL_CUBE}->(:,:,($i))->med2d( $ones );
+	$min->(:,:,(0)) .= $min->mv(2,0)->minimum;
+    }
+
+    print "subtracting minimum smoothed value...\n";
+    $hash->{CEL_CUBE} -= $min->(:,:,(0));
+ 
+    return $hash;
+}

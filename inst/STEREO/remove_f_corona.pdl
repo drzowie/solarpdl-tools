@@ -43,34 +43,58 @@ sub  remove_f_corona {
 	     die "remove_f_corona: input hash needs both RAW_CUBE and RAW_HDRS fields\n";
 	 }
      } elsif( ref $in eq 'ARRAY') {
-	 # prefrobnicate 2048x2048 images down to 1024x1024
-	 if($opt->{'bin'}) {
-	     for $i(0..$#$in) {
-		 if( $in->[$i]->dim(0) == 2048 &&
-		     $in->[$i]->dim(1) == 2048
-		     ) {
-		     # Explicit binning
-		     my $im2 = (   $in->[$i]->(0:-2:2,0:-2:2) 
-				 + $in->[$i]->(1:-1:2,0:-2:2)
-				 + $in->[$i]->(0:-2:2,1:-1:2)
-				 + $in->[$i]->(1:-1:2,1:-1:2)
-			 ) / 4;
 
-		     # Patch up header in the binned image
-		     $im2->sethdr($in->[$i]->hdr_copy);
-
-		     # CRPIX is off-by-one.  The -0.5 moves the origin to the lower-left corner of the 
-		     # lower-left pixel, and the +0.5 moves it back to the center of the lower-left pixel.
-		     $im2->hdr->{CRPIX1} = ($in->[$i]->hdr->{CRPIX1}-0.5)/2 + 0.5;
-		     $im2->hdr->{CRPIX2} = ($in->[$i]->hdr->{CRPIX2}-0.5)/2 + 0.5;
-
-		     $im2->hdr->{CDELT1} *= 2;
-		     $im2->hdr->{CDELT2} *= 2;
-
-		     $in->[$i] = $im2;
-		     print "i=$i; 2048x2048 -> 1024x1024 (/4)\n";
+	 # Handle case where an array of FITS files is entered
+	 if( ref $in->[0] eq 'PDL' ) {
+	     # prefrobnicate 2048x2048 images down to 1024x1024
+	     if($opt->{'bin'}) {
+		 my $ndc = ndcoords(1024,1024);
+		 
+		 for $i(0..$#$in) {
+		     if( $in->[$i]->dim(0) == 2048 &&
+			 $in->[$i]->dim(1) == 2048
+			 ) {
+			 # Explicit binning
+			 
+			 # Sum over quads of pixels (2x2 binning).  The first 
+			 # (commented out) case doesnt' work, apparently due to a problem
+			 # with the binning in the STEREO pipeline.
+			 my $im2;
+			 
+			 $im2 = (   $in->[$i]->(0:-2:2,0:-2:2) 
+				    + $in->[$i]->(1:-1:2,0:-2:2)
+				    + $in->[$i]->(0:-2:2,1:-1:2)
+				    + $in->[$i]->(1:-1:2,1:-1:2)
+			     ) / 4;
+			 print "i=$i; 2048x2048 -> 1024x1024 (/4)\n";
+			 
+			 # Patch up header in the binned image
+			 $im2->sethdr($in->[$i]->hdr_copy);
+			 
+			 # CRPIX is off-by-one.  The -0.5 moves the origin to the lower-left corner of the 
+			 # lower-left pixel, and the +0.5 moves it back to the center of the lower-left pixel.
+			 $im2->hdr->{CRPIX1} = ($in->[$i]->hdr->{CRPIX1}-0.5)/2 + 0.5; 
+			 $im2->hdr->{CRPIX2} = ($in->[$i]->hdr->{CRPIX2}-0.5)/2  +0.5;
+			 $im2->hdr->{CDELT1} *= 2;
+			 $im2->hdr->{CDELT2} *= 2;
+			 
+			 $in->[$i] = $im2;
+			 
+		     }
 		 }
 	     }
+	 } else {
+	     # Handle case where an array of FITS file names is entered
+	     my @cube;
+	     for my $fname(@$in) {
+		 my $im = float rfits($fname,{hdrcpy=>1});
+		 if($im->dim(0) != 1024 || $im->dim(1) != 1024) {
+		     print "File $fname isn't 1024x1024.  Skipping.\n";
+		 } else {
+		     push @cube, $im;
+		 }
+	     }
+	     $in = \@cube;
 	 }
 	 $ims = pdl(float, @{$in});
 	 $in = {

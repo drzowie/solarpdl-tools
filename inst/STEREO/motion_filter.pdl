@@ -1,0 +1,58 @@
+=head2 motion_filter - hi2 pipeline component
+
+=cut
+
+sub motion_filter {
+    my $hash = shift;
+    my $opt = shift;
+
+    $opt = {} unless defined($opt);
+
+    $opt->{FILTER_SLOP}= 0.33 unless defined($opt->{FILTER_SLOP});
+
+    my $filtslop = $opt->{FILTER_SLOP};
+    my $filtfunc = sub {
+        my $a = shift;
+	my $b = shift;
+	$out = $a < $b * (1.0 - $filtslop);
+	$splice = ($a >= $b * (1.0 - $filtslop)) & ($a <= $b * (1.0 + $filtslop));
+	my $hump = cos( (3.14159/2) * ($a - $b*(1.0-$filtslop))/(2*$b*$filtslop) );
+	return( float($out) + ($hump * $hump * $splice));
+    };
+
+    print "FFT...";
+    my $c3 = $hash->{CEL_CUBE};
+    my $c3i = zeroes($c3);
+    fftnd($c3, $c3i);
+    
+    print "filtering...";
+
+    my $filt = ones(float,$c3->dims);
+    my $cutoff = 1;
+    my $nd = ndcoords($c3->(:,:,(0)));
+    my $dims = pdl($c3->dim(0),$c3->dim(1));
+    $nd -= pdl($dims) * ($nd > $dims/2);
+    $nd /= ($dims/2);
+    my $rv = ($nd*$nd)->sumover->sqrt;
+    
+    for $i(1..$c3->dim(2)/2) {
+	$filtplane = &$filtfunc($rv, $i * $cutoff / $c3->dim(2)/2);
+	$c3->(:,:,($i)) *= $filtplane;
+	$c3i->(:,:,($i)) *= $filtplane;
+	$c3->(:,:,(-$i)) *= $filtplane;
+	$c3i->(:,:,(-$i)) *= $filtplane;
+    }
+
+    $c3->(:,:,(0)) .= 0;
+    $c3i->(:,:,(0)) .= 0;
+
+    print "inverse FFT...";
+    ifftnd($c3, $c3i);
+    
+    print "Finding minima...";
+    $bk = $c3->convolveND(ones(25,25,5)/25/25/5)->mv(-1,0)->minimum;
+    $c3 -= $bk;
+    
+    return $hash;
+}
+    
