@@ -1,0 +1,98 @@
+=head2 merge_batches - merge a dataset from the hi-2 pipeline
+
+=for usage 
+
+ merge_batches( \@files, \%opt );
+
+=for ref
+
+You feed in a collection of file names and an optional options hash, and the files are merged into a single set of FITS files in the destination directory ("merged" by default or set by the option "MERGED_DIR").
+
+=cut
+
+sub merge_batches {
+    my $files = shift;
+    my $opt = shift;
+    
+    $opt = {} unless defined($opt);
+    $opt->{MERGED_DIR} = "merged" unless(defined $opt->{MERGED_DIR});
+    $opt->{PROCESSES} = 6 unless(defined $opt->{PROCESSES});
+    
+    my %filenames = ();
+    
+    print "Sorting ".(0+@$files)." files based on name...\n";
+
+    for $file(@$files) {
+	$f2 = $file;
+	$f2 =~ s:.*/::;
+	unless($f2 =~ m/clean\-(.*)\-\-BATCH.*/) {
+	    print "File $f2 doesn't match -- skipping\n";
+	    next;
+	} 
+	$fdate = $1;
+	print "fdate=$fdate\n";
+	unless(exists($filenames{$fdate})){
+	    $filenames{$fdate} = [];
+	}
+
+	push(@{$filenames{$fdate}}, $file);
+    }
+
+    `mkdir $opt->{MERGED_DIR}`;
+
+    # Now the filenames have been sorted.  Begin accumulating.
+    my $k = 1 + cos(rvals(41,41)*3.14159/20);
+    $k /= $k->sum;
+
+    my %pids = ();
+
+    for $f(sort keys %filenames) {
+
+	next unless(@{$filenames{$f}} > 1);
+
+    	while( (0 + keys %pids) >= $opt->{PROCESSES} ) {
+	  $pid = wait();
+	  if($pid<0) {
+	      %pids = ();
+	  }
+	  delete $pids{$pid};
+	}
+
+	if((0 + keys %pids) < $opt->{PROCESSES}) {
+	    $pid = fork();
+	    if($pid<0) {
+		die "fork failed\n";
+	    } 
+	    if($pid) {
+		# parent
+		$pids{$pid}=1;
+	    } else {
+		# daughter
+		eval {
+		    print "$f: ".(0+@{$filenames{$f}})." files...";
+		    @cube = mrfits(@{$filenames{$f}});
+		    $cube = pdl(@cube)->mv(-1,0)->sever;
+		    $badmask = ($cube == 0.0);
+		    for $i(0..$badmask->dim(0)-1) {
+			print ",";
+			$badmask->(($i)) .= $badmask->(($i))->convolveND(ones(41,41),{method=>'direct'});
+		    }
+		    $mask= ($badmask==0)->float;
+		    for $i(0..$mask->dim(0)-1) {
+			print ".";
+			$mask->(($i)) .= $mask->(($i))->convolveND($k);
+		    }
+		    
+		    $avg = ($cube*$mask)->sumover / $mask->sumover;
+		    $avg->sethdr($cube[0]->gethdr);
+		    $fname = sprintf("%s/merged-%s.fits",($opt->{MERGED_DIR} || "."),$f) ;
+		    print "writing $fname\n";
+		    wfits( $avg, $fname);
+		};
+		exit 0;
+	    }
+	} else {
+	    print "Hmmm...\n";
+	}
+    }
+}    
