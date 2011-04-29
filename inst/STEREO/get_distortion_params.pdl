@@ -37,10 +37,12 @@ sub get_distortion_params {
     $opt->{'DIST_PARAM_FNAME'} = "distortion-params.pl" unless(exists($opt->{'DIST_PARAM_FNAME'}));
     $opt->{'DIST_CORR_NSAMP'}  = 50                     unless(exists($opt->{'DIST_CORR_NSAMP'}));
     $opt->{'DIST_CORR_RSIZE'}  = 15                     unless(exists($opt->{'DIST_CORR_RSIZE'}));
-    $opt->{'DIST_CORR_PSIZE'}  = 20                    unless(exists($opt->{'DIST_CORR_PSIZE'}));
-    $opt->{'DIST_MIN_PCORR'}   = 0.95                   unless(exists($opt->{'DIST_MIN_PCORR'}));
+    $opt->{'DIST_CORR_PSIZE'}  = 20                      unless(exists($opt->{'DIST_CORR_PSIZE'}));
+    $opt->{'DIST_MIN_PCORR'}   = 0.95                    unless(exists($opt->{'DIST_MIN_PCORR'}));
     $opt->{'DIST_CORRTIME'}    = 10                      unless(exists($opt->{'DIST_CORRTIME'}));
-
+    $opt->{'DIST_GUESS_DRIFTRATE'} = 72/5                unless(exists($opt->{'DIST_GUESS_DRIFTRATE'}));
+    $opt->{'NPROC'} = 8                                  unless(exists($opt->{'NPROC'}));
+    $opt->{'YRANGE'} = pdl(150,870) unless(exists($opt->{'YRANGE'}));
 
     ##############################
     # Convert timestamps to UNIX time...
@@ -104,29 +106,69 @@ sub get_distortion_params {
 	$im0->sethdr($hash->{'RAW_HDRS'}->[$st_dex]);
 	$im1->sethdr($hash->{'RAW_HDRS'}->[$en_dex]);
 
-	my $guess_offset = ($t1 - $t0)/3600/24   /    5   *   72;
+	my $guess_offset = ($t1 - $t0)/3600/24   * $opt->{DIST_GUESS_DRIFTRATE};
 	my $deltat = ($t1-$t0)/3600/24;
 
 	print "Correlating between frame $st_dex and frame $en_dex -- interval is $deltat days...\n";
-
-
+	
 	my @of = ();
+	my %proc = ();
+	`mkdir tmp`;
 	for( $i=0; $i < $opt->{'DIST_CORR_NSAMP'}; $i++ ) {
 	    for($j=0; $j < $opt->{'DIST_CORR_NSAMP'}; $j++) {
-		print "** i=$i, j=$j - finished ".($i*$opt->{'DIST_CORR_NSAMP'}+$j)." of ".($opt->{'DIST_CORR_NSAMP'}**2).", kept $n\n";
-		push(@of, correlate_patch($im0->clip(0)->sqrt, $im1->clip(0)->sqrt,
-					  pdl( ($i+0.5) * ($hash->{'BKSUB_CUBE'}->dim(0)/$opt->{'DIST_CORR_NSAMP'}),
-					       ($j+0.5) * ($hash->{'BKSUB_CUBE'}->dim(1)/$opt->{'DIST_CORR_NSAMP'})
-					  ),
-					  pdl( $guess_offset, 0 ),
-					  $opt->{'DIST_CORR_RSIZE'},
-					  $opt->{'DIST_CORR_PSIZE'},
-					  $opt->{'DIST_MIN_PCORR'})
-		    );
+
+		while(0+keys(%proc) >= $opt->{'NPROC'}) {
+		    my $pid = wait();
+		    if($pid < 0) {
+			%proc = ();
+		    } else {
+			delete $proc{$pid};
+			$s = sprintf("tmp/proc-%d-output.pl",$pid);
+			push(@of, frestore($s));
+			unlink($s);
+			$n++ if(defined($of[$#of]));
+		    }
+		}
+		
+		print "** i=$i, j=$j - ".($i*$opt->{'DIST_CORR_NSAMP'}+$j)." of ".($opt->{'DIST_CORR_NSAMP'}**2).", kept $n, nproc=".(0+keys(%proc))."\n";
+		
+		my $pid = fork();
+		if ($pid < 0) {
+		    print STDERR "Fork failed!\n";
+		    exit(-1);
+		}
+		unless($pid) {
+		    ## daughter
+		    eval {
+			$a = correlate_patch($im0->clip(0)->sqrt, $im1->clip(0)->sqrt,
+					     pdl( ($i+0.5) * ($hash->{'BKSUB_CUBE'}->dim(0)/$opt->{'DIST_CORR_NSAMP'}),
+						  ($j+0.5) * ($hash->{'BKSUB_CUBE'}->dim(1)/$opt->{'DIST_CORR_NSAMP'})
+					     ),
+					     pdl( $guess_offset, 0 ),
+					     $opt->{'DIST_CORR_RSIZE'},
+					     $opt->{'DIST_CORR_PSIZE'},
+					     $opt->{'DIST_MIN_PCORR'});
+			fdump($a,sprintf("tmp/proc-%d-output.pl",$$));
+		    };
+		    exit(0);
+		}
+		$proc{$pid}=1;
+	    }
+	}
+
+	while(0+keys(%proc)) {
+	    my $pid = wait();
+	    if($pid < 0) {
+		%proc = ();
+	    } else {
+		delete $proc{$pid};
+		my $s = sprintf("tmp/proc-%d-output.pl",$pid);
+		push(@of,frestore($s));
+		unlink($s);
 		$n++ if(defined($of[$#of]));
 	    }
 	}
-	 
+	
 	my $of0 = pdl(@of);
 	print "making mask.  of0 is $of0; guess offset is $guess_offset, nsamp is $opt->{'DIST_CORR_NSAMP'}\n";
 	my $looplocs = ((ndcoords($opt->{'DIST_CORR_NSAMP'},$opt->{'DIST_CORR_NSAMP'})+0.5)*( pdl( $hash->{'BKSUB_CUBE'}->dims )->(0:1) )/$opt->{'DIST_CORR_NSAMP'})  -> mv(2,1)->clump(1,2);
@@ -182,7 +224,12 @@ sub get_distortion_params {
 	my $ii=0;
 
 	# Identify maximum horizontal range...
-	$xr = pdl(max_horiz_range($hash));
+	
+	if($opt->{PIXEL_XRANGE}) {
+	    $xr = pdl($opt->{PIXEL_XRANGE});
+	} else {
+	    $xr = pdl(max_horiz_range($hash,$opt));
+	}
 	
 	# Calculate pixel offset of each boundary toward the middle using the guess rotation rate...
 	my $dt_to_center = ($hash->{'UTIME'}->((-1)) - $hash->{'UTIME'}->((0)))/2  / 3600 / 24;
@@ -255,7 +302,7 @@ sub get_distortion_params {
 	    ospeed => $orbital_rotation * 2 / $hash->{'CORR'}->{'deltat'}, # degrees per day
 	    t0=> ($hash->{'UTIME'}->((-1)) + $hash->{'UTIME'}->((0)))/2,
 	    xr=>$xr,
-	    yr=>pdl(150,870)
+	    yr=>$opt->{YRANGE}
 	};
 	
 	$hash->{'D_PARAMS'} = $params;

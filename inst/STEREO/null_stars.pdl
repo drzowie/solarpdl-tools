@@ -11,18 +11,28 @@ sub null_stars {
     $opt->{NULL_SMOOTH_SIZE} = 9 unless(defined($opt->{NULL_SMOOTH_SIZE}));
     $opt->{NULL_MIN_PCT}     = 10 unless(defined($opt->{NULL_MIN_PCT}));
 
+    print "null_stars: nulling errors...\n";
+    for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
+	my $im = $hash->{CEL_CUBE}->(:,:,($i));
+    }
+
+    my $badpixels = $hash->{CEL_CUBE}->where($hash->{CEL_CUBE}>5000);
+    $badpixels .= 0;
 
     print "null_stars: finding median....\n";
     {
         my $median_image = $hash->{CEL_CUBE}->mv(2,0)->medover;
 	$hash->{CEL_CUBE} -= $median_image;
     }
+    $badpixels .= 0;
     
     print "null_stars: median-smoothing...\n";
     for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
 	$hash->{CEL_CUBE}->(:,:,($i)) .= $hash->{CEL_CUBE}->(:,:,($i))->med2d(ones($opt->{NULL_SMOOTH_SIZE},$opt->{NULL_SMOOTH_SIZE}));
     }
-    
+
+    $badpixels .= 0;
+
     print "null_stars: sorting smoothed images by value...\n";
     {
 	my $qs = $hash->{CEL_CUBE}->mv(-1,0)->qsort;

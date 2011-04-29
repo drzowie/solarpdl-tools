@@ -28,7 +28,7 @@ sub  remove_f_corona {
      $opt = {} unless defined($opt);
 
      # Set default values for options
-     $opt->{'neg'}    = "bad"  unless( exists( $opt->{'neg'}  )  ); # how to handle negative values
+     $opt->{'neg'}    = "mask"  unless( exists( $opt->{'neg'}  )  ); # how to handle negative values
      $opt->{'pct'}    = 5      unless( exists( $opt->{'pct'}  )  ); # percentile for background
      $opt->{'sm'}     = [7,30] unless( exists( $opt->{'sm'}   )  ); # smoothing of background
      $opt->{'bin'}    = 1      unless( exists( $opt->{'bin'}  )  ); # whether to deal with multiply binned full-frame images
@@ -112,6 +112,10 @@ sub  remove_f_corona {
 	 $ims->setbadif($ims<0);
      } elsif($opt->{'neg'} eq 'max') {
 	 $ims->where($ims<0) .= $ims->max;
+     } elsif($opt->{'neg'} eq 'zero') {
+	 $ims->where($ims<0) .= 0;
+     } elsif($opt->{'neg'} eq 'mask') {
+	 $ims->where($ims<0) .= $ims->max + 10000;
      } else {
 	 die("remove_f_corona: neg option must be 'bad' or 'max'\n");
      }
@@ -138,11 +142,15 @@ sub  remove_f_corona {
      } else {
 	 $bk = $sorted->(($sn));
      }
-     
+
      my $out = $in;
      $out->{SORTED} = $sorted;
      $out->{FBK} = $bk;
      $out->{BKSUB_CUBE} = $ims - $bk;
 
+     if($opt->{'neg'} eq 'mask') {
+	 $out->{BKSUB_CUBE}->where($ims>10000) .= 10000;
+     }
+     
      return $out;
 }

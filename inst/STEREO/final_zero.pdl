@@ -1,0 +1,10 @@
+sub final_zero {
+    my $hash = shift;
+    for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
+    my $z = $hash->{CEL_CUBE}->(:,:,($i));
+    my $zsort = $z->convolveND(ones(5,5)/25)->clump(2)->qsort;
+    my $zval = $zsort->(($zsort->dim(0)*0.03));
+    $z -= $zval;
+    print "$i: zero was $zval\n";
+}
+}

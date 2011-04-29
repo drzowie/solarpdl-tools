@@ -2,7 +2,7 @@
 
 =for usage
 
- $xr = max_horiz_range($hash)
+ $xr = max_horiz_range($hash,$opt)
 
 =for ref
 
@@ -12,10 +12,19 @@ The input hash should have have the BKSUB_CUBE element.  This routine is normall
 
 sub max_horiz_range {
     my $hash = shift;
-    
-    my $badthresh = 50;  # how many DN/sec to be bad?
-    my $badcount = 250;  # how many bad pixels allowed in a column before the col is marked bad?
-    my $margin = 20;     # how much margin do we leave before the bad cols?
+    my $opt = shift;
+
+    $opt = {} unless defined($opt);
+
+    $opt->{HORIZ_BADTHRESH} = 100  unless( exists($opt->{HORIZ_BADTHRESH}) );
+    $opt->{HORIZ_BADCOUNT}  = 250  unless( exists($opt->{HORIZ_BADCOUNT}) );
+    $opt->{HORIZ_MARGIN}    = 20   unless( exists($opt->{HORIZ_MARGIN}) );
+    $opt->{HORIZ_XMIN}      = 150  unless( exists($opt->{HORIZ_XMIN}) );
+    $opt->{HORIZ_XMAX}      = 875  unless( exists($opt->{HORIZ_XMAX}) );
+
+    my $badthresh = $opt->{HORIZ_BADTHRESH};  # how many DN/sec to be bad?
+    my $badcount = $opt->{HORIZ_BADCOUNT};    # how many bad pixels allowed in a column before the col is marked bad?
+    my $margin = $opt->{HORIZ_MARGIN};        # how much margin do we leave before the bad cols?
 
     # Identify (X,t) of columns that are OK -- $okcols is 2-D.
     my $okcols = ($hash->{'BKSUB_CUBE'}->mv(1,0) > $badthresh)->sumover < $badcount;
@@ -27,10 +36,10 @@ sub max_horiz_range {
     my $i;
 
     # Walk out from the center to identify the range.
-    for( $i=$center; $all_ok->(($i)); $i++) {}
+    for( $i=$center; $all_ok->(($i)) && $i <= $opt->{HORIZ_XMAX}; $i++) {}
     my $maxcol = $i - $margin;
     
-    for( $i=$center; $all_ok->(($i)); $i--) {}
+    for( $i=$center; $all_ok->(($i)) && $i >= $opt->{HORIZ_XMIN}; $i--) {}
     my $mincol = $i + $margin;
 
     if($maxcol - $mincol < 100) {

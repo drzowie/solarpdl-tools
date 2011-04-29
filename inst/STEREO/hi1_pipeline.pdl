@@ -1,0 +1,57 @@
+=head2 hi1_pipeline - invoke the background-subtraction pipeline on a batch of hi1 data.
+
+=for usage
+     
+     $out = hi1_pipeline( $in_list, $opt );
+
+=for ref
+
+     Accepts a list of FITS files, generates a collection of FITS files in a specified output
+     directory.
+
+=cut
+
+sub hi1_pipeline {
+    my $in_list = shift;
+    my $opt = shift;
+
+    my $opt_defaults = 
+    {
+	OUTPUT_DIR		=> 'processed',  # where to put output files
+	OUTPUT_FILES            => 1,            # whether to put output files
+	DIST_GUESS_DRIFTRATE	=> 260/5,	 # observed stellar drift in pixels per day
+	DIST_CORRTIME        	=> 2,            # 2 days for correlations due to faster apparent drift
+	DIST_CORR_NSAMP      	=> 25,           # 25x25 works OK
+	NULL_SMOOTH_SIZE     	=> 5,            
+	HORIZ_XMIN           	=> 50,
+	HORIZ_XMAX           	=> 975,
+	YRANGE               	=> pdl(24,1000)
+    };
+
+    my $k;
+    for $k(keys %$opt_defaults) {
+	$opt->{$k} = $opt_defaults->{$k} unless(defined($opt->{$k}));
+    }
+
+    our $hash;
+    $hash = remove_f_corona($in_list, $opt);      # initial f coronal background sub
+    $hash = get_distortion_params($hash, $opt);   # measure stellar drift
+    $hash = shift_to_celestial($hash, $opt);      # nullify stellar drift
+    $hash = null_stars($hash, $opt);              # try to cancel out the starfield
+    $hash = remove_polynomials($hash,$opt);       # remove slow background drift
+    $hash = motion_filter($hash,$opt);            # FFT for moving stuff
+    $hash = final_zero($hash);                    # take out HI1 brain damaged exposure variation
+    $hash = shift_to_instrument($hash,$opt);      # put back in instrument coordinates
+
+    # Dump output to files...
+    `mkdir $opt->{OUTPUT_DIR}`;
+    if($opt->{OUTPUT_FILES}) {
+	for $i(0..$hash->{CLEAN_CUBE}->dim(2)-1) {
+	    my $im = $hash->{CLEAN_CUBE}->(:,:,($i))->copy;
+	    $im->sethdr($hash->{RAW_HDRS}->[$i]);
+	    my $fname = sprintf ("%s/clean-%s--BATCH-%s.fits", $opt->{OUTPUT_DIR}, $im->hdr->{'DATE-OBS'}, $hash->{RAW_HDRS}->[0]->{'DATE-OBS'});
+	    printf("Writing file %d of %d: %s\n",  $i,  $hash->{CLEAN_CUBE}->dim(2) - 1,  $fname);
+	    wfits($im, $fname);
+	}
+    }    
+}

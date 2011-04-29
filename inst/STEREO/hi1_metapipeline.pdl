@@ -1,0 +1,101 @@
+=head2 hi1_metapipeline - process a bunch of hi1 L1 files in batches
+
+=cut
+
+use Date::Parse;
+use PDL::NiceSlice;
+
+sub hi1_metapipeline {
+    my $files = shift;	
+    my $opt = shift;
+
+    $opt = {} unless defined($opt);
+    
+    $opt->{BATCH_LENGTH} = 4 unless defined($opt->{BATCH_LENGTH});        
+    $opt->{BATCH_STEP} = 1 unless defined($opt->{BATCH_STEP});            # daily 
+    $opt->{PROCESSES} = 4 unless defined($opt->{PROCESSES});              # Hog the CPU
+
+    print "*********\nHI-1 metapipeline - found ".(0+@$files)." files to process.  Reading their headers...\n";
+    my @headers = map { rfits($_,{data=>0}) } @$files;
+
+    my @times = map { str2time($_->{"DATE-OBS"}) + $_->{"EXPTIME"}/2 } @headers;
+    my $times = pdl(@times);
+
+    my $last_start = $times[$#times] - $opt->{BATCH_LENGTH}*0.75 * 3600 * 24;
+    my $t;
+
+    my @start_times = ();
+    for($t=$times[0]; $t<$last_start; $t += $opt->{BATCH_STEP} * 3600 * 24) {
+	push(@start_times, $t);
+    }
+
+    print "Running ".(0+@start_times)." batches of $opt->{BATCH_LENGTH} days (separated by $opt->{BATCH_STEP} days)...\n";
+
+    my %pids = ();
+
+    for $batchno(0..$#start_times) {
+
+	# Reap as necessary before spawning a new process...
+	
+	while( (0 + keys(%pids)) >= $opt->{PROCESSES} ) {
+	    print "Waiting for a process to exit..."; 
+	    $exitpid = wait();
+	    print "wait returned $exitpid\n\n";
+	    if($exitpid<0) {
+		%pids = ();
+	    } else {
+		delete $pids{$exitpid};
+	    }
+	}
+	# stoopid but effective - generate a list of files in the given time range
+	my @batchfiles = ();
+	for $i(0..$#times){
+	    $bt = $times[$i];
+	    if($bt >= $start_times[$batchno] && $bt <= $start_times[$batchno] + 24 * 3600 * $opt->{'BATCH_LENGTH'}) {
+		push(@batchfiles,$files->[$i]);
+	    }
+	}
+	
+	print "Batch $batchno - sending ".(0+@batchfiles)." files to subprocess: \n".(join(",\t",@batchfiles))."\n\n";
+
+	$pid = fork();
+	if($pid<0) {
+	    die "FORK FAILED!";
+	} 
+	if($pid) {
+	    # Parent
+	    $pids{$pid}=$batchno;
+	} else {
+	    #Daughter
+	    $opt->{OUTPUT_DIR}       =  sprintf("batch-%3.3d",$batchno);
+	    $opt->{DIST_CORR_FNAME}  =  sprintf("corr-batch%3.3d.pl",$batchno);
+	    $opt->{DIST_PARAM_FNAME} =  sprintf("param-batch%3.3d.pl",$batchno);
+
+	    eval {
+		open STDOUT,sprintf(">log-batch-%3.3d",$batchno);
+		open STDERR,STDOUT;
+		hi1_pipeline(\@batchfiles,
+			$opt);
+	    };
+	    exit(0);
+	}
+    }	
+
+    # Clean up any leftover processes.
+    while( (0 + keys(%pids)) > 0 ) {
+	print "Finishing up: waiting for a process to exit..."; 
+	$exitpid = wait();
+
+	print "wait returned $exitpid\n\n";
+
+	if($exitpid<0) {
+	    %pids = ();
+	} else {
+	    delete $pids{$exitpid};
+	}
+    }
+
+}
+
+
+    

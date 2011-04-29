@@ -37,4 +37,6 @@ sub hi2_pipeline {
 	    wfits($im, $fname);
 	}
     }    
+
+    return $hash;
 }
