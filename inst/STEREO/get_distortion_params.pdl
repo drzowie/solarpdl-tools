@@ -42,7 +42,8 @@ sub get_distortion_params {
     $opt->{'DIST_CORRTIME'}    = 10                      unless(exists($opt->{'DIST_CORRTIME'}));
     $opt->{'DIST_GUESS_DRIFTRATE'} = 72/5                unless(exists($opt->{'DIST_GUESS_DRIFTRATE'}));
     $opt->{'NPROC'} = 8                                  unless(exists($opt->{'NPROC'}));
-    $opt->{'YRANGE'} = pdl(150,870) unless(exists($opt->{'YRANGE'}));
+    $opt->{'PIXEL_YRANGE'} = pdl(150,870) unless(exists($opt->{'PIXEL_YRANGE'}));
+    $opt->{'PIXEL_XRANGE'} = undef        unless(exists($opt->{'PIXEL_XRANGE'}));
 
     ##############################
     # Convert timestamps to UNIX time...
@@ -225,21 +226,37 @@ sub get_distortion_params {
 
 	# Identify maximum horizontal range...
 	
-	if($opt->{PIXEL_XRANGE}) {
-	    $xr = pdl($opt->{PIXEL_XRANGE});
+	if(defined $opt->{PIXEL_XRANGE}) {
+	    $xr = pdl($opt->{'PIXEL_XRANGE'});
 	} else {
 	    $xr = pdl(max_horiz_range($hash,$opt));
 	}
+
+	my $yr = $opt->{PIXEL_YRANGE};
+
+	# Trim fit points to the region of interest.
+	$ctwhich = which($ct1->((0)) >= $xr->((0)) &	
+			 $ct1->((0)) <= $xr->((1)) &
+			 $ct2->((0)) >= $xr->((0)) &
+			 $ct2->((0)) <= $xr->((1)) &
+			 $ct1->((1)) >= $yr->((0)) &
+			 $ct1->((1)) <= $yr->((1)) &
+			 $ct2->((1)) >= $yr->((0)) &
+			 $ct2->((1)) <= $yr->((1)));
+	$ct1 = $ct1->(:,$ctwhich)->sever;
+	$ct2 = $ct2->(:,$ctwhich)->sever;
+	print "kept ".$ct1->dim(1)." points for fit (xr=$xr, yr=$yr)...\n";
 	
 	# Calculate pixel offset of each boundary toward the middle using the guess rotation rate...
 	my $dt_to_center = ($hash->{'UTIME'}->((-1)) - $hash->{'UTIME'}->((0)))/2  / 3600 / 24;
 	my $margin = $dt_to_center / $hash->{'CORR'}->{'deltat'} * $hash->{'CORR'}->{'guess'};
+
 	
 	# shrink horizontal range by the pixel offset calculated, with an extra 10% margin.
 	$xr += pdl(1,-1) * $margin * 1.1;
 	$xr = floor($xr+0.5);
 	print "column range is $xr "."(margin is $margin)\n";
-	
+
 	my $master_hdr = $hash->{'RAW_HDRS'}->[(0+@{$hash->{'RAW_HDRS'}})/2];
 	
 	my $ct1a;

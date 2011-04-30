@@ -1,0 +1,35 @@
+sub visualize_errors {
+    my $locs = shift;
+    my $ofs = shift;
+    my $nlx = shift;
+    my $master_hdr = shift;
+    my $size = shift;
+    $size = 17 unless defined($size);
+    
+    my ($delta1, $delta2, $deltamu, $roll_angle, $r2, $orbital_rotation, $q, $qq) = $nlx->list;
+    $deltamu /= 10;
+    $delta1 /= 100;
+    $delta2 /= 100;
+    our $tnl_params = [$master_hdr,$deltamu, $roll_angle, $r2, $delta1, $delta2, $q, $qq];
+    
+    my $tnl = t_nl(@$tnl_params);
+    my $to = t_linear(pre=>[$orbital_rotation,0]);
+    
+    my $x0 = $locs;
+    my $x1 = $locs + $ofs;
+    
+    my $t = !$tnl x $to x $tnl;
+    
+    my $x0p = $x0->apply($t);
+    my $x1p = $x1->apply(!$t);
+    
+    my $imx = zeroes(1024,1024);
+    my $imy = zeroes(1024,1024);
+    my $imxr = $imx->range($locs+$ofs/2 - pdl($size-1,$size-1)/2,[$size,$size],'e');
+    my $imyr = $imy->range($locs+$ofs/2 - pdl($size-1,$size-1)/2,[$size,$size],'e');
+
+    $imxr .= $x1p->((0))-$x0p->((0));
+    $imyr .= $x1p->((1))-$x0p->((1));
+
+    return pdl($imx,$imy);
+}
