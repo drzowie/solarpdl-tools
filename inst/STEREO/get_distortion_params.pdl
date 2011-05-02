@@ -232,7 +232,7 @@ sub get_distortion_params {
 	    $xr = pdl(max_horiz_range($hash,$opt));
 	}
 
-	my $yr = $opt->{PIXEL_YRANGE};
+	my $yr = pdl($opt->{PIXEL_YRANGE});
 
 	# Trim fit points to the region of interest.
 	$ctwhich = which($ct1->((0)) >= $xr->((0)) &	
@@ -263,7 +263,7 @@ sub get_distortion_params {
 	my $ct2a;
 
 	# Define a fit heuristic -- RMS error in location
-	my $heur = sub {
+	our $heur = sub {
 	    my $dx = shift;
 	    my ($delta1, $delta2, $deltamu, $roll_angle, $r2, $orbital_rotation, $q, $qq) = $dx->list;
 	    $deltamu /= 10;
@@ -285,6 +285,18 @@ sub get_distortion_params {
 	    $avg = 1e6 if(any(isbad($dists)));
 
 	    print "NL fit to ".($ct1a->dim(1))." points: ii=$ii; dx: $dx; heur=$avg\n";
+	    if($opt->{DISPLAY}) {
+		our $ww0;
+		unless(defined $ww0) {
+		    $ww0=pgwin(xs,size=>[6,3],nx=>2);
+		}
+		$diffs = $ct2a-$ct1a;
+		$z = zeroes(256,256,2);
+		$zr = $z->range(($ct2a+$ct1a)/8-5,[11,11],'e');
+		$zr->mv(-1,0) .= $ct2a-$ct1a;
+		$ww0->panel(1); $ww0->imag($z->(:,:,(0)),-2,2); $ww0->hold;
+		$ww0->panel(2); $ww0->imag($z->(:,:,(1)),-2,2); $ww0->hold;
+	    }
 
 	    return $avg;
 	};
@@ -296,18 +308,34 @@ sub get_distortion_params {
 	$ii = 0;
 	
 	# Initial fit -- "basic six" parameters
-	for(;$ii<15;$ii++) {
-	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-5, 1e-8, 1e4);
+	for(;$ii<5;$ii++) {
+	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-7, 1e-9, 1e4);
 	    push(@nlx, $nlx);
 	}
 	print "fitted with the basic six -- refining....\n";
 	$nlx = $nlx->append(pdl(0,0));
 
 	print "new loop...\n";
-	for(;$ii<40;$ii++) {
-	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-5, 1e-8, 1e4);
+	my $ii_targ = $ii+25;
+	for(;$ii<$ii_targ;$ii++) {
+	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-7, 1e-9, 1e4);
 	    push(@nlx, $nlx);
 	}
+
+	# Discard the worst 20% of the distances (ad hoc) to remove occasional missed stars
+	$dists = (($ct1a-$ct2a)*($ct1a-$ct2a))->sumover->sqrt;
+	$dqs = $dists->qsorti;
+	$ct1 = $ct1->(:,$dqs->(0:$dqs->dim(0)*0.8));
+	$ct2 = $ct2->(:,$dqs->(0:$dqs->dim(0)*0.8));
+
+	my $ii_targ = $ii+25;
+	my $ii0 = $ii;
+	for(;$ii0<$ii_targ;$ii0++) {
+	    $ii = "loop $ii0 of reduced round\n";
+	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-7, 1e-9, 1e4);
+	    push(@nlx, $nlx);
+	}
+
 
 	my ($delta1, $delta2, $deltamu, $roll_angle, $r2, $orbital_rotation, $q, $qq) = $nlx->list;
 	$deltamu /= 10;
