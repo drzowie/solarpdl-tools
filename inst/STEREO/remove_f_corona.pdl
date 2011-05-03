@@ -148,9 +148,20 @@ sub  remove_f_corona {
      $out->{FBK} = $bk;
      $out->{BKSUB_CUBE} = $ims - $bk;
 
+     print "Making badval masks...\n";
+     $out->{MASK_CUBE} = zeroes(byte, $out->{BKSUB_CUBE}->dims);
+
+     my $rvm = ( rvals($out->{BKSUB_CUBE}->(:,:,(0))) < 500 )->byte;
+
+     for $i(0..$out->{BKSUB_CUBE}->dim(2)-1) {
+	 $out->{MASK_CUBE}->(:,:,($i)) .= $rvm * (! ($out->{BKSUB_CUBE}->(:,:,($i))->med2d(ones(5,5))>40)->convolveND(ones(5,5)));
+	 print "$i ";
+     }
+     print "\n";
+
      if($opt->{'neg'} eq 'mask') {
 	 $out->{BKSUB_CUBE}->where($ims>10000) .= 10000;
      }
-     
+     print "returning from remove_f_corona...\n";     
      return $out;
 }

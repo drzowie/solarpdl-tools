@@ -9,6 +9,43 @@ sub motion_filter {
     $opt = {} unless defined($opt);
 
     $opt->{FILTER_SLOP}= 0.33 unless defined($opt->{FILTER_SLOP});
+    $opt->{FILTER_APOD_FRAMES} = 3 unless defined($opt->{FILTER_APOD_FRAMES});
+    $opt->{FILTER_APOD_MARGIN} = 10 unless defined($opt->{FILTER_APOD_MARGIN});
+
+    my $of = pdl( $opt->{FILTER_APOD_MARGIN}, 
+		   $opt->{FILTER_APOD_MARGIN}, 
+		   $opt->{FILTER_APOD_FRAMES} );
+
+    print "Apodizing...\n";
+    $hash->{CEL_CUBE}->where($hash->{CEL_CUBE}->isbad) .= 0;
+    for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
+	my $m = ($hash->{CEL_CUBE}->(:,:,($i)) > 1)->convolveND(rvals(31,31)<=15);
+	$hash->{CEL_CUBE}->(:,:,($i)) ->indexND( 0+whichND($m!=0)) .= 0;
+    }
+	
+
+    our $c3 = $hash->{CEL_CUBE}->range( -$of,
+				       2*$of + pdl( $hash->{CEL_CUBE}->dims ),
+				       'm'
+	)->sever;
+
+    ## Now apodize the edges with a smooth rolloff...
+    my $margin_rolloff = sin( 3.14159 / 2 / $opt->{FILTER_APOD_MARGIN} * xvals($opt->{FILTER_APOD_MARGIN}) );
+    $margin_rolloff *= $margin_rolloff;
+
+    $c3->(0:$opt->{FILTER_APOD_MARGIN}-1) *= $margin_rolloff;
+    $c3->(-1:-$opt->{FILTER_APOD_MARGIN}:-1) *= $margin_rolloff;
+    $c3->(:,0:$opt->{FILTER_APOD_MARGIN}-1)->mv(1,0) *= $margin_rolloff;
+    $c3->(:,-1:-$opt->{FILTER_APOD_MARGIN}:-1)->mv(1,0) *= $margin_rolloff;
+
+    my $frames_rolloff = sin( 3.14159 / 2 / $opt->{FILTER_APOD_FRAMES} * xvals($opt->{FILTER_APOD_FRAMES}) );
+    $frames_rolloff *= $frames_rolloff;
+    
+    $c3->(:,:,0:$opt->{FILTER_APOD_FRAMES}-1)->mv(2,0) *= $frames_rolloff;
+    $c3->(:,:,-1:-$opt->{FILTER_APOD_FRAMES}:-1)->mv(2,0) *= $frames_rolloff;
+
+    my $c3i = zeroes($c3);
+
 
     my $filtslop = $opt->{FILTER_SLOP};
     my $filtfunc = sub {
@@ -21,8 +58,6 @@ sub motion_filter {
     };
 
     print "FFT...";
-    my $c3 = $hash->{CEL_CUBE};
-    my $c3i = zeroes($c3);
     fftnd($c3, $c3i);
     
     print "filtering...";
@@ -48,10 +83,13 @@ sub motion_filter {
 
     print "inverse FFT...";
     ifftnd($c3, $c3i);
+
+    $hash->{CEL_CUBE} .= $c3->range( $of, pdl( $hash->{CEL_CUBE}->dims ) )->sever;
+
     
     print "Finding minima...";
-    $bk = $c3->convolveND(ones(25,25,5)/25/25/5)->mv(-1,0)->minimum;
-    $c3 -= $bk;
+    $bk = $hash->{CEL_CUBE}->convolveND(ones(25,25,5)/25/25/5)->mv(-1,0)->minimum;
+    $hash->{CEL_CUBE} -= $bk;
     
     return $hash;
 }

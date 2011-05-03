@@ -212,6 +212,8 @@ sub get_distortion_params {
 	printf("get_distortion_params - restoring parameter information from $opt->{'DIST_PARAM_FNAME'}\n");
 	
 	my $h = frestore($opt->{'DIST_PARAM_FNAME'});
+	my $hdr = $h->{D_PARAMS}->{tnl_params}->[0];
+	
 	$hash->{'D_PARAMS'} = $h;
     } else {
 	printf("get_distortion_params -- fitting correlation info...\n");
@@ -335,12 +337,16 @@ sub get_distortion_params {
 	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-7, 1e-9, 1e4);
 	    push(@nlx, $nlx);
 	}
-
+	
+	print "done!\n";
 
 	my ($delta1, $delta2, $deltamu, $roll_angle, $r2, $orbital_rotation, $q, $qq) = $nlx->list;
 	$deltamu /= 10;
 	$delta1 /= 100;
 	$delta2 /= 100;
+
+	print "saving params...\n";
+
 	$params = {
 	    tnl_params=> [$master_hdr, $deltamu, $roll_angle, $r2, $delta1, $delta2, $q, $qq],
 	    params => $nlx,

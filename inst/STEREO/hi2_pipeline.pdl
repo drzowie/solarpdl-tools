@@ -20,6 +20,7 @@ sub hi2_pipeline {
 
     our $hash = remove_f_corona($in_list, $opt);
     $hash = get_distortion_params($hash, $opt);
+    print "shift_to_celestial...\n";
     $hash = shift_to_celestial($hash, $opt);
     $hash = null_stars($hash, $opt);
     $hash = remove_polynomials($hash,$opt);

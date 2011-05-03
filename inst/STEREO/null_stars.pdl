@@ -16,22 +16,22 @@ sub null_stars {
 	my $im = $hash->{CEL_CUBE}->(:,:,($i));
     }
 
-    my $badpixels = $hash->{CEL_CUBE}->where($hash->{CEL_CUBE}>5000);
-    $badpixels .= 0;
+    $hash->{CEL_CUBE} = $hash->{CEL_CUBE}->setbadif($hash->{CEL_MASK}==0);
+##    $badpixels .= 0;
 
     print "null_stars: finding median....\n";
     {
         my $median_image = $hash->{CEL_CUBE}->mv(2,0)->medover;
 	$hash->{CEL_CUBE} -= $median_image;
     }
-    $badpixels .= 0;
+##    $badpixels .= 0;
     
     print "null_stars: median-smoothing...\n";
     for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
 	$hash->{CEL_CUBE}->(:,:,($i)) .= $hash->{CEL_CUBE}->(:,:,($i))->med2d(ones($opt->{NULL_SMOOTH_SIZE},$opt->{NULL_SMOOTH_SIZE}));
     }
 
-    $badpixels .= 0;
+##    $badpixels .= 0;
 
     print "null_stars: sorting smoothed images by value...\n";
     {
