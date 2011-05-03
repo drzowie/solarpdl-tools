@@ -70,7 +70,7 @@ sub hi2_metapipeline {
 	} else {
 	    #Daughter
 	    $opt->{OUTPUT_DIR}       =  sprintf("batch-%3.3d",$batchno);
-	    $opt->{DIST_CORR_FNAME}  =  sprintf("corr-batch%3.3d.pl",$batchno);
+	    $opt->{DIST_CORR_FNAME}  =  sprintf("correlation.pl",$batchno);
 	    $opt->{DIST_PARAM_FNAME} =  sprintf("param-batch%3.3d.pl",$batchno);
 
 	    eval {
