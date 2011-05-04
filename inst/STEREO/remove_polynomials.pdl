@@ -22,7 +22,7 @@ sub remove_polynomials {
     # accumulate minimum so as not to eat too much memory...
     print "accumulating minimum....";
     my $ones = ones($opt->{MIN_SMOOTH_SIZE}, $opt->{MIN_SMOOTH_SIZE});
-    $min = $hash->{CEL_CUBE}->(:,:,(0))->med2d( $ones )->(:,:,*2);
+    $min = $hash->{CEL_CUBE}->(:,:,(0))->med2d( $ones )->(:,:,*2)->copy;
     for $i(1..$hash->{CEL_CUBE}->dim(2)-1) {
 	print "$i...";
 	$min->(:,:,(1)) .= $hash->{CEL_CUBE}->(:,:,($i))->med2d( $ones );

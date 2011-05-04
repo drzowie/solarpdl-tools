@@ -69,7 +69,7 @@ sub hi1_metapipeline {
 	}
 
 	$opt->{OUTPUT_DIR}       =  sprintf("batch-%3.3d",$batchno);
-	$opt->{DIST_CORR_FNAME}  =  sprintf("correlation.pl",$batchno);
+	$opt->{DIST_CORR_FNAME}  =  sprintf("correlations.pl",$batchno);
 	$opt->{DIST_PARAM_FNAME} =  sprintf("param-batch%3.3d.pl",$batchno);
 
 	unless( -e "correlations.pl" ) {

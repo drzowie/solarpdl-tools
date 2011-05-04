@@ -32,6 +32,8 @@ sub  remove_f_corona {
      $opt->{'pct'}    = 5      unless( exists( $opt->{'pct'}  )  ); # percentile for background
      $opt->{'sm'}     = [7,30] unless( exists( $opt->{'sm'}   )  ); # smoothing of background
      $opt->{'bin'}    = 1      unless( exists( $opt->{'bin'}  )  ); # whether to deal with multiply binned full-frame images
+     $opt->{'MASK_THRESH'} = 40 unless( exists($opt->{'MASK_THRESH'}) );
+     $opt->{'MASK_RADIUS'} = 500 unless(exists($opt->{'MASK_RADIUS'}));
 
      print cards($opt);
      # Make sure we have a data cube in usable form
@@ -149,12 +151,20 @@ sub  remove_f_corona {
      $out->{BKSUB_CUBE} = $ims - $bk;
 
      print "Making badval masks...\n";
-     $out->{MASK_CUBE} = zeroes(byte, $out->{BKSUB_CUBE}->dims);
+     $out->{MASK_CUBE} = ones(byte, $out->{BKSUB_CUBE}->dims);
 
-     my $rvm = ( rvals($out->{BKSUB_CUBE}->(:,:,(0))) < 500 )->byte;
+     my $rvm = 1;
 
+     if($opt->{MASK_RADIUS}) {
+	 $rvm = ( rvals($out->{BKSUB_CUBE}->(:,:,(0))) < $opt->{MASK_RADIUS} )->byte;
+     }
+	 
      for $i(0..$out->{BKSUB_CUBE}->dim(2)-1) {
-	 $out->{MASK_CUBE}->(:,:,($i)) .= $rvm * (! ($out->{BKSUB_CUBE}->(:,:,($i))->med2d(ones(5,5))>40)->convolveND(ones(5,5)));
+	 my $m = 1;
+	 if($opt->{MASK_THRESH}) {
+	     $m = ($out->{BKSUB_CUBE}->(:,:,($i))->med2d(ones(5,5)) <= $opt->{MASK_THRESH})->convolveND(ones(5,5));
+	 }
+	 $out->{MASK_CUBE}->(:,:,($i)) .= $rvm * $m ;
 	 print "$i ";
      }
      print "\n";

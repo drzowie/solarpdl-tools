@@ -318,7 +318,7 @@ sub get_distortion_params {
 	$nlx = $nlx->append(pdl(0,0));
 
 	print "new loop...\n";
-	my $ii_targ = $ii+25;
+	my $ii_targ = $ii+10;
 	for(;$ii<$ii_targ;$ii++) {
 	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-7, 1e-9, 1e4);
 	    push(@nlx, $nlx);
@@ -330,7 +330,7 @@ sub get_distortion_params {
 	$ct1 = $ct1->(:,$dqs->(0:$dqs->dim(0)*0.8));
 	$ct2 = $ct2->(:,$dqs->(0:$dqs->dim(0)*0.8));
 
-	my $ii_targ = $ii+25;
+	my $ii_targ = $ii+10;
 	my $ii0 = $ii;
 	for(;$ii0<$ii_targ;$ii0++) {
 	    $ii = "loop $ii0 of reduced round\n";

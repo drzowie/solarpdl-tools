@@ -8,10 +8,10 @@ sub motion_filter {
 
     $opt = {} unless defined($opt);
 
-    $opt->{FILTER_SLOP}= 0.33 unless defined($opt->{FILTER_SLOP});
-    $opt->{FILTER_APOD_FRAMES} = 3 unless defined($opt->{FILTER_APOD_FRAMES});
-    $opt->{FILTER_APOD_MARGIN} = 10 unless defined($opt->{FILTER_APOD_MARGIN});
-    $opt->{FILTER_MASK_TRIGGER} = 0.667 unless defined($opt->{FILTER_MASK_TRIGGER});
+    $opt->{FILTER_SLOP}= 0.33           unless exists($opt->{FILTER_SLOP});
+    $opt->{FILTER_APOD_FRAMES} = 3      unless exists($opt->{FILTER_APOD_FRAMES});
+    $opt->{FILTER_APOD_MARGIN} = 10     unless exists($opt->{FILTER_APOD_MARGIN});
+    $opt->{FILTER_MASK_TRIGGER} = 0.667 unless exists($opt->{FILTER_MASK_TRIGGER});
 
     my $of = pdl( $opt->{FILTER_APOD_MARGIN}, 
 		   $opt->{FILTER_APOD_MARGIN}, 
@@ -20,12 +20,12 @@ sub motion_filter {
     print "Apodizing...\n";
     $hash->{CEL_CUBE}->where($hash->{CEL_CUBE}->isbad) .= 0;
     for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
-	my $m = ($hash->{CEL_CUBE}->(:,:,($i))->abs > $opt->{FILTER_MASK_TRIGGER_LEVEL})->convolveND(rvals(31,31)<=15);
+	my $m = ($hash->{CEL_CUBE}->(:,:,($i))->abs > $opt->{FILTER_MASK_TRIGGER})->convolveND(rvals(31,31)<=15);
 	$hash->{CEL_CUBE}->(:,:,($i)) ->indexND( 0+whichND($m!=0)) .= 0;
     }
 	
 
-    my $c3 = $hash->{CEL_CUBE}->range( -$of,
+    our $c3 = $hash->{CEL_CUBE}->range( -$of,
 				       2*$of + pdl( $hash->{CEL_CUBE}->dims ),
 				       'm'
 	)->sever;
@@ -45,7 +45,7 @@ sub motion_filter {
     $c3->(:,:,0:$opt->{FILTER_APOD_FRAMES}-1)->mv(2,0) *= $frames_rolloff;
     $c3->(:,:,-1:-$opt->{FILTER_APOD_FRAMES}:-1)->mv(2,0) *= $frames_rolloff;
 
-    my $c3i = zeroes($c3);
+    our $c3i = zeroes($c3);
 
 
     my $filtslop = $opt->{FILTER_SLOP};
