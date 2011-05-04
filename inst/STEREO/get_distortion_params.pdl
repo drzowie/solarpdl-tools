@@ -353,7 +353,7 @@ sub get_distortion_params {
 	    ospeed => $orbital_rotation * 2 / $hash->{'CORR'}->{'deltat'}, # degrees per day
 	    t0=> ($hash->{'UTIME'}->((-1)) + $hash->{'UTIME'}->((0)))/2,
 	    xr=>$xr,
-	    yr=>$opt->{YRANGE}
+	    yr=>$opt->{PIXEL_YRANGE}
 	};
 	
 	$hash->{'D_PARAMS'} = $params;

@@ -19,8 +19,8 @@ sub hi2_metapipeline {
 	DIST_CORR_NSAMP 	=> 100,
 	DIST_GUESS_DRIFTRATE	=> 72/5,
 	NULL_SMOOTH_SIZE	=> 5,
-	XRANGE			=> pdl(25,1000),
-	YRANGE			=> pdl(25,1000)
+	PIXEL_XRANGE			=> pdl(25,1000),
+	PIXEL_YRANGE			=> pdl(25,1000)
     };
 	
     for $k(keys %$defaults) {
