@@ -12,15 +12,15 @@ sub hi1_metapipeline {
     $opt = {} unless defined($opt);
 
     $defaults = {
-        BATCH_LENGTH		=> 6,
+        BATCH_LENGTH		=> 5,
 	BATCH_STEP      	=> 1,
 	PROCESSES		=> 4,
-	DIST_CORRTIME   	=> 5,
-	DIST_CORR_NSAMP 	=> 100,
+	DIST_CORRTIME   	=> 3,
+	DIST_CORR_NSAMP 	=> 75,
 	DIST_GUESS_DRIFTRATE	=> 260/5,
 	NULL_SMOOTH_SIZE	=> 5,
-	XRANGE			=> pdl(5,1020),
-	YRANGE			=> pdl(5,1020)
+	PIXEL_XRANGE			=> pdl(5,1020),
+	PIXEL_YRANGE			=> pdl(5,1020)
     };
 	
     for $k(keys %$defaults) {

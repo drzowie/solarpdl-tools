@@ -74,17 +74,7 @@ sub hi2_metapipeline {
 
 	unless( -e "correlations.pl" ) {
 	    print "correlations.pl doesn't exist -- running first batch single-threaded..\n";
-
-
-	    open FOO, STDOUT;
-	    open BAR, STDERR;
-	    open STDOUT,sprintf(">log-batch-%3.3d",$batchno);
-	    open STDERR,STDOUT;
 	    hi2_pipeline(\@batchfiles, $opt);
-	    open STDERR, BAR;
-	    open STDOUT, FOO;
-	    close BAR;
-	    close FOO;
 	}
 	
 	else {
