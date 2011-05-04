@@ -10,6 +10,8 @@ sub hi1_metapipeline {
     my $opt = shift;
 
     $opt = {} unless defined($opt);
+
+    $defaults = {
     
     $opt->{BATCH_LENGTH} = 4 unless defined($opt->{BATCH_LENGTH});        
     $opt->{BATCH_STEP} = 1 unless defined($opt->{BATCH_STEP});            # daily 
