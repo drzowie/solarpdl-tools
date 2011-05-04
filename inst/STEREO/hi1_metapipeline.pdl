@@ -12,12 +12,22 @@ sub hi1_metapipeline {
     $opt = {} unless defined($opt);
 
     $defaults = {
-    
-    $opt->{BATCH_LENGTH} = 4 unless defined($opt->{BATCH_LENGTH});        
-    $opt->{BATCH_STEP} = 1 unless defined($opt->{BATCH_STEP});            # daily 
-    $opt->{PROCESSES} = 4 unless defined($opt->{PROCESSES});              # Hog the CPU
+        BATCH_LENGTH		=> 6,
+	BATCH_STEP      	=> 1,
+	PROCESSES		=> 4,
+	DIST_CORRTIME   	=> 5,
+	DIST_CORR_NSAMP 	=> 100,
+	DIST_GUESS_DRIFTRATE	=> 260/5,
+	NULL_SMOOTH_SIZE	=> 5,
+	XRANGE			=> pdl(5,1020),
+	YRANGE			=> pdl(5,1020)
+    };
+	
+    for $k(keys %$defaults) {
+	$opt->{$k} = $defaults->{$k} unless exists($opt->{$k});
+    }
 
-    print "*********\nHI-1 metapipeline - found ".(0+@$files)." files to process.  Reading their headers...\n";
+    print "*********\nHI-2 metapipeline - found ".(0+@$files)." files to process.  Reading their headers...\n";
     my @headers = map { rfits($_,{data=>0}) } @$files;
 
     my @times = map { str2time($_->{"DATE-OBS"}) + $_->{"EXPTIME"}/2 } @headers;
@@ -57,31 +67,49 @@ sub hi1_metapipeline {
 		push(@batchfiles,$files->[$i]);
 	    }
 	}
-	
-	print "Batch $batchno - sending ".(0+@batchfiles)." files to subprocess: \n".(join(",\t",@batchfiles))."\n\n";
 
-	$pid = fork();
-	if($pid<0) {
-	    die "FORK FAILED!";
-	} 
-	if($pid) {
-	    # Parent
-	    $pids{$pid}=$batchno;
-	} else {
-	    #Daughter
-	    $opt->{OUTPUT_DIR}       =  sprintf("batch-%3.3d",$batchno);
-	    $opt->{DIST_CORR_FNAME}  =  sprintf("corr-batch%3.3d.pl",$batchno);
-	    $opt->{DIST_PARAM_FNAME} =  sprintf("param-batch%3.3d.pl",$batchno);
+	$opt->{OUTPUT_DIR}       =  sprintf("batch-%3.3d",$batchno);
+	$opt->{DIST_CORR_FNAME}  =  sprintf("correlation.pl",$batchno);
+	$opt->{DIST_PARAM_FNAME} =  sprintf("param-batch%3.3d.pl",$batchno);
 
-	    eval {
-		open STDOUT,sprintf(">log-batch-%3.3d",$batchno);
-		open STDERR,STDOUT;
-		hi1_pipeline(\@batchfiles,
-			$opt);
-	    };
-	    exit(0);
+	unless( -e "correlations.pl" ) {
+	    print "correlations.pl doesn't exist -- running first batch single-threaded..\n";
+
+
+	    open FOO, STDOUT;
+	    open BAR, STDERR;
+	    open STDOUT,sprintf(">log-batch-%3.3d",$batchno);
+	    open STDERR,STDOUT;
+	    hi2_pipeline(\@batchfiles, $opt);
+	    open STDERR, BAR;
+	    open STDOUT, FOO;
+	    close BAR;
+	    close FOO;
 	}
-    }	
+	
+	else {
+	
+	    print "Batch $batchno - sending ".(0+@batchfiles)." files to subprocess: \n".(join(",\t",@batchfiles))."\n\n";
+	    
+	    $pid = fork();
+	    if($pid<0) {
+		die "FORK FAILED!";
+	    } 
+	    if($pid) {
+		# Parent
+		$pids{$pid}=$batchno;
+	    } else {
+		#Daughter
+		eval {
+		    open STDOUT,sprintf(">log-batch-%3.3d",$batchno);
+		    open STDERR,STDOUT;
+		    hi2_pipeline(\@batchfiles,
+				 $opt);
+		};
+		exit(0);
+	    }
+	}
+    }
 
     # Clean up any leftover processes.
     while( (0 + keys(%pids)) > 0 ) {

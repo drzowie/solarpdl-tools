@@ -14,13 +14,13 @@ sub hi2_metapipeline {
     $defaults = {
         BATCH_LENGTH		=> 10,
 	BATCH_STEP      	=> 2,
-	PROCESSES		=> 4,
+	PROCESSES		=> 6,
 	DIST_CORRTIME   	=> 5,
 	DIST_CORR_NSAMP 	=> 100,
-	DIST_GUESS_DRIFTRATE	=> 260/5,
+	DIST_GUESS_DRIFTRATE	=> 72/5,
 	NULL_SMOOTH_SIZE	=> 5,
-	XRANGE			=> pdl(5,1020),
-	YRANGE			=> pdl(5,1020)
+	XRANGE			=> pdl(25,1000),
+	YRANGE			=> pdl(25,1000)
     };
 	
     for $k(keys %$defaults) {
