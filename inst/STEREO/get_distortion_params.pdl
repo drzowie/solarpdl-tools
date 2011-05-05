@@ -311,7 +311,7 @@ sub get_distortion_params {
 	
 	# Initial fit -- "basic six" parameters
 	for(;$ii<5;$ii++) {
-	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-7, 1e-9, 1e4);
+	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-6, 1e-9, 1e4);
 	    push(@nlx, $nlx);
 	}
 	print "fitted with the basic six -- refining....\n";
@@ -320,7 +320,7 @@ sub get_distortion_params {
 	print "new loop...\n";
 	my $ii_targ = $ii+10;
 	for(;$ii<$ii_targ;$ii++) {
-	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-7, 1e-9, 1e4);
+	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-6, 1e-9, 1e4);
 	    push(@nlx, $nlx);
 	}
 

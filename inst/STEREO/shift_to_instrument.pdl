@@ -26,8 +26,8 @@ sub shift_to_instrument {
     
     our $t_nl = t_nl(@{$hash->{'D_PARAMS'}->{'tnl_params'}});
 
-    for $i(0..$hash->{'BKSUB_CUBE'}->dim(2)-1) {
-	print "Resampling image $i of ".$hash->{'BKSUB_CUBE'}->dim(2)." back to observing coordinates...\n";
+    for $i(0..$hash->{'CEL_CUBE'}->dim(2)-1) {
+	print "Resampling image $i of ".$hash->{'CEL_CUBE'}->dim(2)." back to observing coordinates...\n";
 
 	my $delta_t =  ($t0 - $hash->{'UTIME'}->(($i)) ) / 3600 /24;
 	my $orbital_rotation = $hash->{'D_PARAMS'}->{'ospeed'} * $delta_t;
@@ -37,10 +37,11 @@ sub shift_to_instrument {
 
         my $t_crop = t_linear(pre=>[ - $xr->at(0) , -$yr->at(0) ]);
 
+	$hash->{'CLEAN_CUBE'}= zeroes(float, $hash->{RAW_HDRS}->[0]->{NAXIS1}, $hash->{RAW_HDRS}->[0]->{NAXIS2}, $hash->{CEL_CUBE}->dim(2));
 	$hash->{'CLEAN_CUBE'}->(:,:,($i)) .= 
 	    $hash->{'CEL_CUBE'}->(:,:,($i))->map(
 		!$t_nl x !$t_o x $t_nl x !$t_crop, 
-		[$hash->{BKSUB_CUBE}->dim(0),$hash->{BKSUB_CUBE}->dim(1)],
+		[$hash->{CLEAN_CUBE}->dim(0),$hash->{CLEAN_CUBE}->dim(1)],
 		{method=>'j', pix=>1}
 	    );
     }

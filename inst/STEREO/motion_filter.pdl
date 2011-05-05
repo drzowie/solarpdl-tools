@@ -25,10 +25,11 @@ sub motion_filter {
     }
 	
 
-    our $c3 = $hash->{CEL_CUBE}->range( -$of,
+    my $c3 = $hash->{CEL_CUBE}->range( -$of,
 				       2*$of + pdl( $hash->{CEL_CUBE}->dims ),
 				       'm'
 	)->sever;
+    my $c3i = zeroes($c3);
 
     ## Now apodize the edges with a smooth rolloff...
     my $margin_rolloff = sin( 3.14159 / 2 / $opt->{FILTER_APOD_MARGIN} * xvals($opt->{FILTER_APOD_MARGIN}) );
@@ -45,19 +46,17 @@ sub motion_filter {
     $c3->(:,:,0:$opt->{FILTER_APOD_FRAMES}-1)->mv(2,0) *= $frames_rolloff;
     $c3->(:,:,-1:-$opt->{FILTER_APOD_FRAMES}:-1)->mv(2,0) *= $frames_rolloff;
 
-    our $c3i = zeroes($c3);
-
-
     my $filtslop = $opt->{FILTER_SLOP};
     my $filtfunc = sub {
         my $a = shift;
 	my $b = shift;
-	$out = $a < $b * (1.0 - $filtslop);
-	$splice = ($a >= $b * (1.0 - $filtslop)) & ($a <= $b * (1.0 + $filtslop));
+	my $out = $a < $b * (1.0 - $filtslop);
+	my $splice = ($a >= $b * (1.0 - $filtslop)) & ($a <= $b * (1.0 + $filtslop));
 	my $hump = cos( (3.14159/2) * ($a - $b*(1.0-$filtslop))/(2*$b*$filtslop) );
 	return( float($out) + ($hump * $hump * $splice));
     };
 
+    
     print "FFT...";
     fftnd($c3, $c3i);
     
@@ -84,9 +83,18 @@ sub motion_filter {
 
     ##############################
     # Generate hypersmoothed data as a background...
-    print "Generating smoothed background...\n";
+    print "Copying...\n";
     my $c4 = $c3->copy;
     my $c4i = $c3i->copy;
+
+    
+    print "inverse FFT (data)...";
+    ifftnd($c3, $c3i);
+    undef $c3i;
+    $hash->{CEL_CUBE} .= $c3->range( $of, pdl( $hash->{CEL_CUBE}->dims ) )->sever;
+    undef $c3;
+
+    print "Filtering...\n";
 
     $rv2d = rvals($c4->dim(0),$c4->dim(1),{center=>[$c4->dim(0)/2,$c4->dim(1)/2]})->range([-$c4->dim(0)/2,-$c4->dim(1)/2],[$c4->dim(0),$c4->dim(1)],'p');
     $size = pdl($c4->dim(0)/50);
@@ -99,20 +107,16 @@ sub motion_filter {
 	my $scale =  $k2d * exp(-$wcoord->at($i)*$wcoord->at($i)/$size/$size);
 	$c4->(:,:,$i) *= $scale;
 	$c4i->(:,:,$i) *= $scale;
+	$c4->(:,:,-$i) *= $scale;
+	$c4i->(:,:,-$i) *= $scale;
     }
-
-    print "inverse FFT (data)...";
-    ifftnd($c3, $c3i);
 
     print "inverse FFT (smooth)...";
     ifftnd($c4,$c4i);
-
-    $hash->{CEL_CUBE} .= $c3->range( $of, pdl( $hash->{CEL_CUBE}->dims ) )->sever;
-
     
     print "Finding minima...";
-    $hash->{CEL_CUBE} -= $c4->range($of, pdl($hash->{CEL_CUBE}->dims))->sever->mv(2,0)->minimum;
-    
+    $hash->{CEL_CUBE} -= $c4->range($of, pdl($hash->{CEL_CUBE}->dims))->sever;
+    print "returning from motion_filter...\n";
     return $hash;
 }
     

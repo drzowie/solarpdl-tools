@@ -146,8 +146,8 @@ sub  remove_f_corona {
      }
 
      my $out = $in;
-     $out->{SORTED} = $sorted;
-     $out->{FBK} = $bk;
+#     $out->{SORTED} = $sorted;
+#     $out->{FBK} = $bk;
      $out->{BKSUB_CUBE} = $ims - $bk;
 
      print "Making badval masks...\n";

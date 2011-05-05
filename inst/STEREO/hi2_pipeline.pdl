@@ -22,6 +22,9 @@ sub hi2_pipeline {
     $hash = get_distortion_params($hash, $opt);
     print "shift_to_celestial...\n";
     $hash = shift_to_celestial($hash, $opt);
+    delete $hash->{RAW_CUBE};
+    delete $hash->{BKSUB_CUBE};
+    delete $hash->{MASK_CUBE};
     $hash = null_stars($hash, $opt);
     $hash = remove_polynomials($hash,$opt);
     $hash = motion_filter($hash,$opt);
