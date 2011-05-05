@@ -82,7 +82,7 @@ sub shift_to_celestial {
 	};
 	print "Finding nudge...";
 	my $nudge = amoeba($heur, pdl(0,0),0.1,1e-3,1e-5,1e3);
-	print "nudge is $nudge, corr is $corr.\n";
+	print "nudge is $nudge, corr is $corr.  ";
 
         my $t_crop = t_linear(pre=>[ - $xr->at(0) + $nudge->at(0), -$yr->at(0) + $nudge->at(1)]);
 
@@ -93,14 +93,16 @@ sub shift_to_celestial {
 		{method=>'j', pix=>1}
 	    );
 	$hash->{'CEL_MASK'}->(:,:,($i)) .= 
-	    (  $hash->{'MASK_CUBE'}->(:,:,($i))->convolveND(ones(3,3))->map(
+	    $hash->{'MASK_CUBE'}->(:,:,($i))->map(
 		$t_crop x !$t_nl x $t_o x $t_nl,
 		[$xr->at(1)-$xr->at(0),$yr->at(1)-$yr->at(0)],
 		{method=>'s',pix=>1}
-		   )
-	    ) == 9;
-	
-    }
+	    );
+	    
+	print " mask has ".($hash->{CEL_MASK}->(:,:,$i)->sum)." OK points\n";
 
+    }
+    
+    
     return $hash;
 }

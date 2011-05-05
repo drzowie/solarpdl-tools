@@ -11,11 +11,6 @@ sub null_stars {
     $opt->{NULL_SMOOTH_SIZE} = 9 unless(defined($opt->{NULL_SMOOTH_SIZE}));
     $opt->{NULL_MIN_PCT}     = 10 unless(defined($opt->{NULL_MIN_PCT}));
 
-    print "null_stars: nulling errors...\n";
-    for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
-	my $im = $hash->{CEL_CUBE}->(:,:,($i));
-    }
-
     $hash->{CEL_CUBE} = $hash->{CEL_CUBE}->setbadif($hash->{CEL_MASK}==0);
 ##    $badpixels .= 0;
 
