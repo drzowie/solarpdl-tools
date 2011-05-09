@@ -16,7 +16,7 @@ sub null_stars {
     # in all immges.  Helps control mask creep...
     my $maskval = ($hash->{CEL_MASK}>0)->mv(2,0)->sumover;
     my $maskratio = $maskval / $hash->{CEL_MASK}->dim(2);
-    $hash->{CEL_MASK} *= ($maskratio > 0.9);
+    $hash->{CEL_MASK} *= ($maskratio > 0.667);
 
     $hash->{CEL_CUBE} = $hash->{CEL_CUBE}->setbadif($hash->{CEL_MASK}==0);
 
@@ -26,7 +26,6 @@ sub null_stars {
     # cube BAD there, we just refuse to generate a median value, falling back to 0.
     {
         my $median_image = $hash->{CEL_CUBE}->mv(2,0)->medover;
-#	$median_image *= ($hash->{CEL_MASK}->mv(2,0)->sumover <= $hash->{CEL_MASK}->dim(2)/2);
 	$hash->{CEL_CUBE} -= $median_image;
     }
     
