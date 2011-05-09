@@ -8,25 +8,42 @@ sub null_stars {
 
     $opt = {} unless defined($opt);
 
-    $opt->{NULL_SMOOTH_SIZE} = 9 unless(defined($opt->{NULL_SMOOTH_SIZE}));
+    $opt->{NULL_SMOOTH_SIZE} = [5,9] unless(defined($opt->{NULL_SMOOTH_SIZE}));
     $opt->{NULL_MIN_PCT}     = 10 unless(defined($opt->{NULL_MIN_PCT}));
 
+    #
+    # if enough images have a particular place bad, then kill that place
+    # in all immges.  Helps control mask creep...
+    my $maskval = ($hash->{CEL_MASK}>0)->mv(2,0)->sumover;
+    my $maskratio = $maskval / $hash->{CEL_MASK}->dim(2);
+    $hash->{CEL_MASK} *= ($maskratio > 0.9);
+
     $hash->{CEL_CUBE} = $hash->{CEL_CUBE}->setbadif($hash->{CEL_MASK}==0);
-##    $badpixels .= 0;
 
     print "null_stars: finding median....\n";
+    # Throw away median-image points if more than half of the samples in that pixel are 
+    # bad.  Rather than setting the median image to BAD, which would mark the entire 
+    # cube BAD there, we just refuse to generate a median value, falling back to 0.
     {
         my $median_image = $hash->{CEL_CUBE}->mv(2,0)->medover;
+#	$median_image *= ($hash->{CEL_MASK}->mv(2,0)->sumover <= $hash->{CEL_MASK}->dim(2)/2);
 	$hash->{CEL_CUBE} -= $median_image;
     }
-##    $badpixels .= 0;
     
     print "null_stars: median-smoothing...\n";
+    my $smooth;
+    if( ref $opt->{NULL_SMOOTH_SIZE} ) {
+	$smooth = ones(pdl($opt->{NULL_SMOOTH_SIZE})->list);
+    } else {
+	$smooth = ones($opt->{NULL_SMOOTH_SIZE},$opt->{NULL_SMOOTH_SIZE});
+    }
+    print "smooth is ",join("x",$smooth->dims),"\n";    
     for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
-	$hash->{CEL_CUBE}->(:,:,($i)) .= $hash->{CEL_CUBE}->(:,:,($i))->med2d(ones($opt->{NULL_SMOOTH_SIZE},$opt->{NULL_SMOOTH_SIZE}));
+	$hash->{CEL_CUBE}->(:,:,($i)) .= $hash->{CEL_CUBE}->(:,:,($i))->med2d($smooth);
     }
 
-##    $badpixels .= 0;
+      print "null_stars: setting bad again...\n";
+    $hash->{CEL_CUBE} = $hash->{CEL_CUBE}->setbadif($hash->{CEL_MASK}==0);
 
     print "null_stars: sorting smoothed images by value...\n";
     {

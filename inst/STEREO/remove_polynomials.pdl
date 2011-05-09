@@ -9,7 +9,7 @@ sub remove_polynomials {
     my $opt = shift;
     $opt = {} unless defined($opt);
 
-    $opt->{MIN_SMOOTH_SIZE} = 4 unless(defined($opt->{MIN_SMOOTH_SIZE}));
+    $opt->{MIN_SMOOTH_SIZE} = 11 unless(defined($opt->{MIN_SMOOTH_SIZE}));
 
     $n = $hash->{CEL_CUBE}->dim(2);
     print "fitting polynomials...";

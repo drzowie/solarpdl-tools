@@ -17,23 +17,54 @@ sub hi2_pipeline {
 
     $opt->{OUTPUT_DIR} = "processed" unless(defined($opt->{OUTPUT_DIR}));
     $opt->{OUTPUT_FILES} = 1 unless(defined ($opt->{OUTPUT_FILES}));
-
+    $opt->{DEBUG_OUTPUT_PREFIX} = "" unless defined($opt->{DEBUG_OUTPUT_PREFIX});
+    $opt->{DEBUG_OUTPUT_PREFIX} .= "-" if($opt->{DEBUG_OUTPUT_PREFIX} && $opt->{DEBUG_OUTPUT_PREFIX} !~ m/[^\/\-]$/);
     our $hash = remove_f_corona($in_list, $opt);
+    if($opt->{DEBUG_PIPELINE}) {
+	print "Dumping raw cube to $opt->{DEBUG_OUTPUT_PREFIX}raw.fits\n";
+	wfits( $hash->{RAW_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."raw.fits" );
+	print "Dumping bksub cube to $opt->{DEBUG_OUTPUT_PREFIX}bksub.fits\n";
+	wfits( $hash->{BKSUB_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."bksub.fits");
+	print "Dumping mask cube to $opt->{DEBUG_OUTPUT_PREFIX}mask.fits\n";
+	wfits( $hash->{MASK_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."mask.fits");
+    }
+    print "distortion parameters...\n";
     $hash = get_distortion_params($hash, $opt);
     print "shift_to_celestial...\n";
-    $hash = shift_to_celestial($hash, $opt);
+    shift_to_celestial($hash, $opt);
     delete $hash->{RAW_CUBE};
     delete $hash->{BKSUB_CUBE};
     delete $hash->{MASK_CUBE};
-    $hash = null_stars($hash, $opt);
-    $hash = remove_polynomials($hash,$opt);
-    $hash = motion_filter($hash,$opt);
-    $hash = shift_to_instrument($hash,$opt);
+    if($opt->{DEBUG_PIPELINE}) {
+	print "Dumping celestial cube to $opt->{DEBUG_OUTPUT_PREFIX}cel.fits\n";
+	wfits( $hash->{CEL_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."cel.fits" );
+	print "Dumping cel mask to $opt->{DEBUG_OUTPUT_PREFIX}cmask.fits\n";
+	wfits( $hash->{CEL_MASK}, $opt->{DEBUG_OUTPUT_PREFIX}."cmask.fits" );
+    }
+    print "null_stars...\n";
+    null_stars($hash, $opt);
+    remove_polynomials($hash,$opt);
+
+    if($opt->{DEBUG_PIPELINE}) {
+	print "Dumping pre-FFT cube to $opt->{DEBUG_OUTPUT_PREFIX}cel2.fits\n";
+	wfits( $hash->{CEL_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."cel2.fits" );
+    }
+
+    print "\n\n****motion_filter****\n\n";
+    motion_filter($hash,$opt);
+    print "\n\n****shift_to_instrument****\n\n";
+
+    if($opt->{DEBUG_PIPELINE}) {
+	print "Dumping post-FFT cube to $opt->{DEBUG_OUTPUT_PREFIX}cel3.fits\n";
+	wfits( $hash->{CEL_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."cel3.fits" );
+    }
+
+    shift_to_instrument($hash,$opt);
 
     # Dump output to files...
     `mkdir $opt->{OUTPUT_DIR}`;
     if($opt->{OUTPUT_FILES}) {
-	for $i(0..$hash->{CLEAN_CUBE}->dim(2)-1) {
+	for $i(2..$hash->{CLEAN_CUBE}->dim(2)-3) {
 	    my $im = $hash->{CLEAN_CUBE}->(:,:,($i))->copy;
 	    $im->sethdr($hash->{RAW_HDRS}->[$i]);
 	    my $fname = sprintf ("%s/clean-%s--BATCH-%s.fits", $opt->{OUTPUT_DIR}, $im->hdr->{'DATE-OBS'}, $hash->{RAW_HDRS}->[0]->{'DATE-OBS'});

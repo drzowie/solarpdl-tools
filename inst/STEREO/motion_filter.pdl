@@ -59,8 +59,9 @@ sub motion_filter {
 
     
     print "FFT...";
-    fftnd($c3, $c3i);
-    
+    ($c3, $c3i) = spawn_fft($c3,$c3i);
+#    fftnd($c3,$c3i);
+
     print "filtering...";
 
     my $filt = ones(float,$c3->dims);
@@ -83,15 +84,13 @@ sub motion_filter {
     $c3i->(:,:,(0)) .= 0;
 
 
-    # Cut out the middle of the $c3 FFT cube to make a reduced-resolution smoothed
-    # cube (for smoothing)
-    print "Copying...\n";
-    $c4dims = pdl($c3->dims)/pdl(2,2,2);
-    my $c4 = $c3 ->range(-$c4dims/2,$c4dims,'p')->range($c4dims/2,$c4dims,'p')->sever;
-    my $c4i =$c3i->range(-$c4dims/2,$c4dims,'p')->range($c4dims/2,$c4dims,'p')->sever;
+
+    my $c4 = $c3 -> copy;
+    my $c4i=$c3i -> copy;
     
     print "inverse FFT (data)...";
-    ifftnd($c3, $c3i);
+    ($c3, $c3i) = spawn_fft($c3, $c3i, 1);
+#     ifftnd($c3,$c3i);
     undef $c3i;
     $hash->{CEL_CUBE} .= $c3->range( $of, pdl( $hash->{CEL_CUBE}->dims ) )->sever;
     undef $c3;
@@ -102,14 +101,13 @@ sub motion_filter {
     # Generate hypersmoothed data as a background.  
 
     print "Filtering...\n";
-
+    $c4dims = pdl($c4->dims);
     $rv2d = rvals($c4dims->(0:1)->list, {center=>[($c4dims->(0:1)/2)->list]})->range($c4dims->(0:1)/2,$c4dims->(0:1),'p')->sever;
 
-    $size = pdl($hash->{CEL_CUBE}->dim(0)/10);
+    $size = pdl($hash->{CEL_CUBE}->dim(0)/2/10);
     $k2d = exp(-$rv2d*$rv2d / $size / $size);
 
-    $size = $c4->dim(2)/10;
-
+    $size = $c4->dim(2)/5;
     $wcoord = xvals($c4->dim(2)) - $c4->dim(2) * (xvals($c4->dim(2))>$c4->dim(2)/2);
     for $i(1..$c4->dim(2)/2) {
 	my $scale =  $k2d * exp(-$wcoord->at($i)*$wcoord->at($i)/$size/$size);
@@ -120,12 +118,13 @@ sub motion_filter {
     }
 
     print "inverse FFT (smooth)...";
-    ifftnd($c4,$c4i);
+    ($c4, $c4i) = spawn_fft($c4, $c4i, 1);
+#     ifftnd($c4,$c4i);
 
     print "Finding minima...";
-    $c4min = $c4->mv(2,0)->minimum->match($hash->{CEL_CUBE}->(:,:,(0)),{m=>'j',phot=>1});
+    $c4min = $c4->range($of,pdl($hash->{CEL_CUBE}->dims))->mv(2,0)->minimum;
+    print "subtracting...\n";
     $hash->{CEL_CUBE} -= $c4min;
-    
     print "returning from motion_filter...\n";
     return $hash;
 }

@@ -86,12 +86,16 @@ sub shift_to_celestial {
 
         my $t_crop = t_linear(pre=>[ - $xr->at(0) + $nudge->at(0), -$yr->at(0) + $nudge->at(1)]);
 
+	print "data...";
+
 	$hash->{'CEL_CUBE'}->(:,:,($i)) .= 
 	    $hash->{'BKSUB_CUBE'}->(:,:,($i))->map(
 		$t_crop x !$t_nl x $t_o x $t_nl, 
 		[$xr->at(1)-$xr->at(0), $yr->at(1)-$yr->at(0)], 
 		{method=>'j', pix=>1}
 	    );
+	    
+	    print "mask...";
 	$hash->{'CEL_MASK'}->(:,:,($i)) .= 
 	    $hash->{'MASK_CUBE'}->(:,:,($i))->map(
 		$t_crop x !$t_nl x $t_o x $t_nl,
@@ -99,7 +103,7 @@ sub shift_to_celestial {
 		{method=>'s',pix=>1}
 	    );
 	    
-	print " mask has ".($hash->{CEL_MASK}->(:,:,$i)->sum)." OK points\n";
+	print ($hash->{CEL_MASK}->(:,:,$i)->sum)." OK points\n";
 
     }
     

@@ -12,11 +12,11 @@ sub hi2_metapipeline {
     $opt = {} unless defined($opt);
 
     $defaults = {
-	BATCH_LENGTH		=> 7,
+	BATCH_LENGTH		=> 9,
 	BATCH_STEP      	=> 2,
 	PROCESSES		=> 3,
 	DIST_CORRTIME   	=> 5,
-	DIST_CORR_NSAMP 	=> 100,
+	DIST_CORR_NSAMP 	=> 150,
 	DIST_GUESS_DRIFTRATE	=> 72/5,
 	NULL_SMOOTH_SIZE	=> 5,
 	PIXEL_XRANGE		=> pdl(0,1023),
@@ -51,6 +51,9 @@ sub hi2_metapipeline {
 	
 	while( (0 + keys(%pids)) >= $opt->{PROCESSES} ) {
 	    print "Waiting for a process to exit..."; 
+	    print "Current children are: \n";
+	    print map { "\t$_: batch $pids{$_}\n" } sort keys %pids;
+	    print "\n";
 	    $exitpid = wait();
 	    print "wait returned $exitpid\n\n";
 	    if($exitpid<0) {
@@ -69,19 +72,22 @@ sub hi2_metapipeline {
 	}
 
 	$opt->{OUTPUT_DIR}       =  sprintf("batch-%3.3d",$batchno);
+	$opt->{DEBUG_OUTPUT_PREFIX}  =  sprintf("tmp/o-%3.3d",$batchno);
 	$opt->{DIST_CORR_FNAME}  =  sprintf("correlations.pl",$batchno);
-	$opt->{DIST_PARAM_FNAME} =  sprintf("param-batch%3.3d.pl",$batchno);
+	$opt->{DIST_PARAM_FNAME} =  sprintf("dist-params.pl",$batchno);
 
-	unless( -e "correlations.pl" ) {
-	    print "correlations.pl doesn't exist -- running first batch single-threaded..\n";
+	unless( -e "correlations.pl" && -e "dist-params.pl" ) {
+	    print "correlations.pl or dist-params.pl doesn't exist -- running first batch single-threaded..\n";
 
 	    open SO_SAVE,">&STDOUT";
-	    optn SE_SAVE,">&STDERR";
+	    open SE_SAVE,">&STDERR";
 
 	    open STDOUT,sprintf(">log-batch-%3.3d",$batchno);
 	    open STDERR,">&STDOUT";
 
 	    hi2_pipeline(\@batchfiles, $opt);
+
+	    fdump($opt, "params-batch-%3.3d.pl",$batchno);
 
 	    open STDOUT,">&SO_SAVE";
 	    open STDERR,">&SE_SAVE";
@@ -92,7 +98,7 @@ sub hi2_metapipeline {
 	
 	else {
 	
-	    print "Batch $batchno - sending ".(0+@batchfiles)." files to subprocess: \n".(join(",\t",@batchfiles))."\n\n";
+	    print "Batch $batchno - sending ".(0+@batchfiles)." files to subprocess: (first is ".$batchfiles[0]."; last is ".$batchfiles[$#batchfiles].")\n";
 	    
 	    $pid = fork();
 	    if($pid<0) {
@@ -100,15 +106,28 @@ sub hi2_metapipeline {
 	    } 
 	    if($pid) {
 		# Parent
+
 		$pids{$pid}=$batchno;
+
+		print "Child has pid $pid; pids in progress are:\n";
+		print map { "\t$_: batch $pids{$_}\n" } sort keys %pids;
+		print "\n";
+		
 	    } else {
 		#Daughter
 		eval {
 		    open STDOUT,sprintf(">log-batch-%3.3d",$batchno);
 		    open STDERR,"&STDOUT";
-		    hi2_pipeline(\@batchfiles,
+		    $hash = hi2_pipeline(\@batchfiles,
 				 $opt);
+		    print "Finished!  Dumping final parameter hash...\n\n";
+		    print sdump($opt);
+		    fdump($opt, sprintf("params-batch-%3.3d.pl",$batchno));
 		};
+		if($@) {
+		    print "Child: pipeline eval says $@\n";
+		}
+		print "Child exiting...\n";
 		exit(0);
 	    }
 	}
