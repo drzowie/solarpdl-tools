@@ -14,6 +14,7 @@ sub hi2_metapipeline {
     $defaults = {
 	BATCH_LENGTH		=> 9,
 	BATCH_STEP      	=> 2,
+	BATCH_START             => 0,
 	PROCESSES		=> 3,
 	DIST_CORRTIME   	=> 5,
 	DIST_CORR_NSAMP 	=> 150,
@@ -45,7 +46,7 @@ sub hi2_metapipeline {
 
     my %pids = ();
 
-    for $batchno(0..$#start_times) {
+    for $batchno($opt->{BATCH_START}..$#start_times) {
 
 	# Reap as necessary before spawning a new process...
 	

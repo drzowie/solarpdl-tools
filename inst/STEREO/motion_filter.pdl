@@ -125,6 +125,7 @@ sub motion_filter {
     $c4min = $c4->range($of,pdl($hash->{CEL_CUBE}->dims))->mv(2,0)->minimum;
     print "subtracting...\n";
     $hash->{CEL_CUBE} -= $c4min;
+    $hash->{CEL_CUBE} = $hash->{CEL_CUBE}->setbadif($hash->{CEL_MASK}==0);
     print "returning from motion_filter...\n";
     return $hash;
 }
