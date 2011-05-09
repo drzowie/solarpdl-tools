@@ -1,0 +1,71 @@
+=head2 spawn_fft - run a large FFT in a separate process
+
+=for ref 
+
+It is hoped that this will prevent problems having to do with memory
+fragmentation in a single process's address space.
+
+Accepts the variables to FFT (real and imaginary), and a flag indicating whether it is inverse.
+Returns the transformed variables.  If their inplace flags are set, then they are changed in-place;
+otherwise not.
+
+=cut
+
+no PDL::NiceSlice;
+our $serialno = 1;
+
+sub spawn_fft {
+    my $rp = shift;
+    my $ip = shift;
+    my $invert = shift;
+
+    if($invert) {
+	print "INVERSE FFT: ";
+    } else {
+	print "FFT: ";
+    }
+
+    my $prefix = "/tmp/$$.$serialno";
+    $serialno++;
+    
+    $rpname = $prefix."-rp.fits";
+    $ipname = $prefix."-ip.fits";
+    
+    print "spawn_fft: writing $rpname and $ipname...";
+    wfits($rp, $rpname);
+    wfits($ip, $ipname);
+    
+    print "writing script...\n";
+    my $fftcmd = ($invert ? "ifftnd" : "fftnd");
+    
+    open FOO,">${prefix}-script.pl";
+    print FOO <<"EOF";
+use PDL;
+use PDL::FFT;
+use PDL::IO::FITS;
+
+\$rp = rfits("$rpname");
+\$ip = rfits("$ipname");
+   
+$fftcmd(\$rp, \$ip);
+    
+wfits(\$rp->copy, "$rpname");
+wfits(\$ip->copy, "$ipname");
+    
+exit(0);
+EOF
+	
+    close FOO;
+	
+    `perl ${prefix}-script.pl`;
+
+    $rp = rfits($rpname);
+    $ip = rfits($ipname);
+
+    unlink($rpname);
+    unlink($ipname);
+    unlink("${prefix}-script.pl");
+
+    return ($rp, $ip);
+}
+		

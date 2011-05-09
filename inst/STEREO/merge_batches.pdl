@@ -72,7 +72,7 @@ sub merge_batches {
 		    print "$f: ".(0+@{$filenames{$f}})." files...";
 		    @cube = mrfits(@{$filenames{$f}});
 		    $cube = pdl(@cube)->mv(-1,0)->sever;
-		    $badmask = ($cube == 0.0);
+		    $badmask = ($cube == 0.0) | ($cube < -1000);
 		    for $i(0..$badmask->dim(0)-1) {
 			print ",";
 			$badmask->(($i)) .= $badmask->(($i))->convolveND(ones(41,41),{method=>'direct'});
