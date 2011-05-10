@@ -16,7 +16,7 @@ sub null_stars {
     # in all imamges.  Helps control mask creep...
     my $maskval = ($hash->{CEL_MASK}>0)->mv(2,0)->sumover;
     my $maskratio = $maskval / $hash->{CEL_MASK}->dim(2);
-    $hash->{CEL_MASK} *= ($maskratio > 0.5);
+    $hash->{CEL_MASK} *= ($maskratio > 0.25);
 
     $hash->{CEL_CUBE} = $hash->{CEL_CUBE}->setbadif($hash->{CEL_MASK}==0);
 

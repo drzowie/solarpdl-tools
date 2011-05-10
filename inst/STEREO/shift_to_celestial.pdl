@@ -5,6 +5,7 @@ sub shift_to_celestial {
     $opt = {} unless(defined $opt);
     $opt->{'ALIGN_DEJITTER'} = 1    unless(defined $opt->{'ALIGN_DEJITTER'});
     $opt->{'ALIGN_PATCHSIZE'} = 50  unless(defined $opt->{'ALIGN_PATCHSIZE'});
+    $opt->{'INTERP_METHOD'} = 'j'   unless(defined $opt->{'INTERP_METHOD'}); # use default for science
     
 
     $xr = $hash->{'D_PARAMS'}->{'xr'};
@@ -47,7 +48,7 @@ sub shift_to_celestial {
     our $master_patch = ($hash->{'BKSUB_CUBE'}->(:,:,($dex0)) * $hash->{'MASK_CUBE'}->(:,:,($dex0))) -> map(
 	$t_patchcrop, # x !$t_nl x t_identity x $t_nl  [ trivial stuff commented out ]
 	[$opt->{'ALIGN_PATCHSIZE'},$opt->{'ALIGN_PATCHSIZE'}],
-	{method=>'j',pix=>1,blur=>1.5}
+	{method=>$opt->{'INTERP_METHOD'},pix=>1,blur=>1.5}
 	);
 
     
@@ -66,7 +67,7 @@ sub shift_to_celestial {
 	    our $newpatch = ($hash->{'BKSUB_CUBE'}->(:,:,($i)) * $hash->{'MASK_CUBE'}->(:,:,($i)))->map(
 		$t_patchcrop x $t_z x !$t_nl x $t_o x $t_nl,
 		[$opt->{'ALIGN_PATCHSIZE'},$opt->{'ALIGN_PATCHSIZE'}],
-		{method=>'j',pix=>1,blur=>1.5}
+		{method=>$opt->{'INTERP_METHOD'},pix=>1,blur=>1.5}
 		);
 	    my $p0 = $master_patch->clump(2);
 	    my $p1 = $newpatch->clump(2);
@@ -92,7 +93,7 @@ sub shift_to_celestial {
 	    $hash->{'BKSUB_CUBE'}->(:,:,($i))->map(
 		$t_crop x !$t_nl x $t_o x $t_nl, 
 		[$xr->at(1)-$xr->at(0), $yr->at(1)-$yr->at(0)], 
-		{method=>'j', pix=>1}
+		{method=>$opt->{'INTERP_METHOD'}, pix=>1}
 	    );
 	    
 	    print "mask...";
