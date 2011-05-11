@@ -8,7 +8,7 @@ sub null_stars {
 
     $opt = {} unless defined($opt);
 
-    $opt->{NULL_SMOOTH_SIZE} = [5,9] unless(defined($opt->{NULL_SMOOTH_SIZE}));
+    $opt->{NULL_SMOOTH_SIZE} = [11,5] unless(defined($opt->{NULL_SMOOTH_SIZE}));
     $opt->{NULL_MIN_PCT}     = 10 unless(defined($opt->{NULL_MIN_PCT}));
 
     #

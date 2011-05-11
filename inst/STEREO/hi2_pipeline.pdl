@@ -59,6 +59,7 @@ sub hi2_pipeline {
 	wfits( $hash->{CEL_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."cel3.fits" );
     }
 
+    final_zero($hash);
     shift_to_instrument($hash,$opt);
 
     # Dump output to files...
