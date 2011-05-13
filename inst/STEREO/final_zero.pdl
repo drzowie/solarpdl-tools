@@ -1,10 +1,13 @@
 sub final_zero {
     my $hash = shift;
     for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
-    my $z = $hash->{CEL_CUBE}->(:,:,($i));
-    my $zsort = $z->convolveND(ones(9,9)/25)->clump(2)->qsort;
-    my $zval = $zsort->(($zsort->dim(0)*0.03));
-    $z -= $zval;
-    print "$i: zero was $zval\n";
-}
+	my $z = $hash->{CEL_CUBE}->(:,:,($i))->copy;
+	$nf = whichND(!isfinite($z));
+	print "$i: ".$nf->nelem." infinite points... setting them to ten...";
+	$z->indexND($nf) .= 10;
+	my $zsort = $z->convolveND(ones(9,9)/25)->clump(2)->qsort;
+	my $zval = $zsort->(($zsort->dim(0)*0.03));
+	$z -= $zval;
+	print "$i: zero was $zval\n";
+    }
 }
