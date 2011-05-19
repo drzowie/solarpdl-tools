@@ -41,10 +41,15 @@ sub merge_batches {
     `mkdir $opt->{MERGED_DIR}`;
 
     # Now the filenames have been sorted.  Begin accumulating.
-    my $k = 1 + cos(rvals(41,41)*3.14159/20);
+    my $k = 1 + cos(rvals(81,81)*3.14159/40);
     $k /= $k->sum;
 
     my %pids = ();
+
+    if($opt->{RENDER}) {
+	$w=pgwin(dev=>"5/xs",size=>[4,4]);
+	$w->close;
+    }
 
     for $f(sort keys %filenames) {
 
@@ -55,6 +60,16 @@ sub merge_batches {
 	  if($pid<0) {
 	      %pids = ();
 	  }
+	  if($opt->{RENDER}){
+	      eval {$a=rfits($pids{$pid});};
+	      if(defined($a)) {
+		  $w=pgwin(dev=>"5/xs");
+		  $w->imag($a,0,0.05);
+		  $w->hold;
+		  $w->text($a->hdr->{'DATE-AVG'},100,100);
+		  $w->close;
+	      }
+	  }
 	  delete $pids{$pid};
 	}
 
@@ -63,9 +78,11 @@ sub merge_batches {
 	    if($pid<0) {
 		die "fork failed\n";
 	    } 
+	    $mfname = sprintf("%s/merged-%s.fits",($opt->{MERGED_DIR} || "."),$f) ;
 	    if($pid) {
 		# parent
-		$pids{$pid}=1;
+		$pids{$pid}=$mfname;
+		print "Spawned task for $mfname\n";
 	    } else {
 		# daughter
 		eval {
@@ -85,9 +102,8 @@ sub merge_batches {
 		    
 		    $avg = ($cube*$mask)->sumover / $mask->sumover;
 		    $avg->sethdr($cube[0]->gethdr);
-		    $fname = sprintf("%s/merged-%s.fits",($opt->{MERGED_DIR} || "."),$f) ;
 		    print "writing $fname\n";
-		    wfits( $avg, $fname);
+		    wfits( $avg, $mfname);
 		};
 		exit 0;
 	    }

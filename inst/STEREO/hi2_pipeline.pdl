@@ -43,6 +43,12 @@ sub hi2_pipeline {
     }
     print "null_stars...\n";
     null_stars($hash, $opt);
+    
+    if($opt->{DEBUG_PIPELINE}) {
+        print "Dumping nulled cube to $opt->{DEBUG_OUTPUT_PREFIX}cel1.fits\n";
+        wfits($hash->{CEL_CUBE},$opt->{DEBUG_OUTPUT_PREFIX}."cel1.fits");
+    }
+	
     remove_polynomials($hash,$opt);
 
     if($opt->{DEBUG_PIPELINE}) {
@@ -59,7 +65,7 @@ sub hi2_pipeline {
 	wfits( $hash->{CEL_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."cel3.fits" );
     }
 
-    final_zero($hash);
+#    final_zero($hash);
     shift_to_instrument($hash,$opt);
 
     # Dump output to files...

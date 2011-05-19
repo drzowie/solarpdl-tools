@@ -5,13 +5,14 @@
 sub motion_filter {
     my $hash = shift;
     my $opt = shift;
-
+    
     $opt = {} unless defined($opt);
 
     $opt->{FILTER_SLOP}= 0.33           unless exists($opt->{FILTER_SLOP});
     $opt->{FILTER_APOD_FRAMES} = 3      unless exists($opt->{FILTER_APOD_FRAMES});
     $opt->{FILTER_APOD_MARGIN} = 10     unless exists($opt->{FILTER_APOD_MARGIN});
     $opt->{FILTER_MASK_TRIGGER} = 0.667 unless exists($opt->{FILTER_MASK_TRIGGER});
+    $opt->{FILTER_CUTOFF_PPF} = 1       unless exists($opt->{FILTER_CUTOFF_PPF});
 
     my $of = pdl( $opt->{FILTER_APOD_MARGIN}, 
 		   $opt->{FILTER_APOD_MARGIN}, 
@@ -19,18 +20,24 @@ sub motion_filter {
 
     print "Apodizing...\n";
     $hash->{CEL_CUBE}->where($hash->{CEL_CUBE}->isbad) .= 0;
+    $hash->{CEL_CUBE_UNFILTERED} = $hash->{CEL_CUBE}->copy;
+
+    print "Masking out points (mask trigger=$opt->{FILTER_MASK_TRIGGER})...";
 
     for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
-	my $m = ($hash->{CEL_CUBE}->(:,:,($i))->abs > $opt->{FILTER_MASK_TRIGGER})->convolveND(rvals(31,31)<=15);
+    	print "$i";
+	my $m = ($hash->{CEL_CUBE}->(:,:,($i))->abs > $opt->{FILTER_MASK_TRIGGER})->convolveND(rvals(11,11)<=5);
+	my $wnd = whichND($m);
+	print "(".$wnd->dim(1).") ";
 	$hash->{CEL_CUBE}->(:,:,($i)) ->indexND( 0+whichND($m!=0)) .= 0;
     }
 	
-
     my $c3 = $hash->{CEL_CUBE}->range( -$of,
 				       2*$of + pdl( $hash->{CEL_CUBE}->dims ),
 				       'm'
 	)->sever;
     my $c3i = zeroes($c3);
+    print "On initial range: c3 minmax is ".(join(",",$c3->minmax))."\n";
 
     ## Now apodize the edges with a smooth rolloff...
     my $margin_rolloff = sin( 3.14159 / 2 / $opt->{FILTER_APOD_MARGIN} * xvals($opt->{FILTER_APOD_MARGIN}) );
@@ -57,23 +64,26 @@ sub motion_filter {
 	return( float($out) + ($hump * $hump * $splice));
     };
 
-    
+        print "After apodization: c3 minmax is ".(join(",",$c3->minmax))."\n";
     print "FFT...";
     ($c3, $c3i) = spawn_fft($c3,$c3i);
 #    fftnd($c3,$c3i);
 
     print "filtering...";
 
-    my $filt = ones(float,$c3->dims);
-    my $cutoff = 1;
+    my $cutoff = $opt->{FILTER_CUTOFF_PPF};
     my $nd = ndcoords($c3->(:,:,(0)));
     my $dims = pdl($c3->dim(0),$c3->dim(1));
     $nd -= pdl($dims) * ($nd > $dims/2);
     $nd /= ($dims/2);
     my $rv = ($nd*$nd)->sumover->sqrt;
-    
+
+#    my $ww = pgwin(dev=>"/xs",size=>[6,6]);    
     for $i(1..$c3->dim(2)/2) {
-	$filtplane = &$filtfunc($rv, $i * $cutoff / $c3->dim(2)/2);
+    	print "i=$i ";
+	$filtplane = &$filtfunc($rv, $i * $cutoff / ($c3->dim(2)));
+#	$ww->imag($filtplane,0,1);
+#	$ww->hold;
 	$c3->(:,:,($i)) *= $filtplane;
 	$c3i->(:,:,($i)) *= $filtplane;
 	$c3->(:,:,(-$i)) *= $filtplane;
@@ -82,8 +92,6 @@ sub motion_filter {
 
     $c3->(:,:,(0)) .= 0;
     $c3i->(:,:,(0)) .= 0;
-
-
 
     my $c4 = $c3 -> copy;
     my $c4i=$c3i -> copy;
