@@ -17,6 +17,7 @@ sub merge_batches {
     $opt = {} unless defined($opt);
     $opt->{MERGED_DIR} = "merged" unless(defined $opt->{MERGED_DIR});
     $opt->{PROCESSES} = 6 unless(defined $opt->{PROCESSES});
+    $opt->{MARGIN} = 20 unless(defined $opt->{MARGIN});    
     
     my %filenames = ();
     
@@ -41,7 +42,8 @@ sub merge_batches {
     `mkdir $opt->{MERGED_DIR}`;
 
     # Now the filenames have been sorted.  Begin accumulating.
-    my $k = 1 + cos(rvals(81,81)*3.14159/40);
+    $ksiz = $opt->{MARGIN}*2 + 1;
+    my $k = 1 + cos(rvals($ksiz,$ksiz)*3.14159/40);
     $k /= $k->sum;
 
     my %pids = ();
@@ -92,7 +94,7 @@ sub merge_batches {
 		    $badmask = ($cube == 0.0) | ($cube < -1000);
 		    for $i(0..$badmask->dim(0)-1) {
 			print ",";
-			$badmask->(($i)) .= $badmask->(($i))->convolveND(ones(41,41),{method=>'direct'});
+			$badmask->(($i)) .= $badmask->(($i))->convolveND(ones($ksiz,$ksiz),{method=>'direct'});
 		    }
 		    $mask= ($badmask==0)->float;
 		    for $i(0..$mask->dim(0)-1) {
