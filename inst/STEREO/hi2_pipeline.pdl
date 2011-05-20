@@ -15,10 +15,13 @@ sub hi2_pipeline {
     my $in_list = shift;
     my $opt = shift;
 
-    $opt->{OUTPUT_DIR} = "processed" unless(defined($opt->{OUTPUT_DIR}));
-    $opt->{OUTPUT_FILES} = 1 unless(defined ($opt->{OUTPUT_FILES}));
-    $opt->{DEBUG_OUTPUT_PREFIX} = "" unless defined($opt->{DEBUG_OUTPUT_PREFIX});
+    $opt->{OUTPUT_DIR} = "processed" unless exists($opt->{OUTPUT_DIR});
+    $opt->{OUTPUT_FILES} = 1 unless exists ($opt->{OUTPUT_FILES});
+    $opt->{DEBUG_OUTPUT_PREFIX} = "" unless exists($opt->{DEBUG_OUTPUT_PREFIX});
     $opt->{DEBUG_OUTPUT_PREFIX} .= "-" if($opt->{DEBUG_OUTPUT_PREFIX} && $opt->{DEBUG_OUTPUT_PREFIX} !~ m/[^\/\-]$/);
+    $opt->{FINAL_POLY_STEP} = 0 unless exists($opt->{FINAL_POLY_STEP});
+    $opt->{FINAL_ZERO_STEP} = 0 unless exists($opt->{FINAL_ZERO_STEP});
+
     our $hash = remove_f_corona($in_list, $opt);
     if($opt->{DEBUG_PIPELINE}) {
 	print "Dumping raw cube to $opt->{DEBUG_OUTPUT_PREFIX}raw.fits\n";
@@ -64,9 +67,17 @@ sub hi2_pipeline {
 	print "Dumping post-FFT cube to $opt->{DEBUG_OUTPUT_PREFIX}cel3.fits\n";
 	wfits( $hash->{CEL_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."cel3.fits" );
     }
+    
 
-#    final_zero($hash);
     shift_to_instrument($hash,$opt);
+
+    if($opt->{FINAL_POLY_STEP}) {
+        remove_polynomials($hash,$opt);
+    }
+
+    if($opt->{FINAL_ZERO_STEP}) {
+	final_zero($hash);
+    }
 
     # Dump output to files...
     `mkdir $opt->{OUTPUT_DIR}`;
