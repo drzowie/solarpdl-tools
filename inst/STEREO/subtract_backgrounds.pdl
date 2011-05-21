@@ -1,0 +1,72 @@
+=head2 subtract_backgrounds - remove f coronas found by make_backgrounds
+
+=for usage
+
+subtract_backgrounds(\@files, \@backgrounds, $opt);
+
+=for ref
+
+Unlike the hi2 pipeline stuff, subtract_backgrounds works as a
+single-image pipeline.  Images are read in from the file list in
+\@files and background-subtracted individually.  The backgrounds are
+time-dependent and created by make_backgrounds(); the background
+from each image is interpolated from the backgrounds.
+
+$files and $backgrounds are both list refs containing file names.
+
+Options are:
+
+=over 3
+
+=item OUTDIR
+
+(default "L2") the directory where files should be put.  Output files
+have the same name as input files but are dumped in this directory.
+
+=back 
+
+=cut
+
+use Date::Parse;
+use Date::Format;
+
+
+sub subtract_backgrounds {
+    my $files = shift;
+    my $backgrounds = shift;
+    
+    my $opt = shift || {};
+
+    my $defaults = {
+	OUTDIR => "L2"
+    };
+
+    for(keys %$defaults) {
+	$opt->{$_} = $defaults->{$_} unless exists($opt->{$_});
+    }
+
+    `mkdir $opt->{OUTDIR}`;
+
+    print "Loading ".(0+@$backgrounds)." background images...\n";
+    my @bkg = mrfits(@$backgrounds);
+    
+    $btimes = pdl( map { str2time($_->hdr->{'DATE-AVG'}) } @bkg );
+    print "center times are $btimes...\n";
+    
+    print "Processing ".(0+@$f)." files...\n";
+
+    for $i(0..@$files) {
+	print "$i of $#$files: reading...";
+	my $a=rfits($files->[$i]);
+	my $t = str2time($a->hdr->{'DATE-AVG'} || $a->hdr->{'DATE-OBS'});
+	print "t=$t...";
+	
+	$t0dex = which( $t <= $btimes )->max;
+	$t1dex = which( $t >= $btimes )->min;
+
+	print "dexes are $t0dex,$t1dex...";
+
+	print "\n";
+    }
+	
+}

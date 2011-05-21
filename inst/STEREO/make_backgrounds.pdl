@@ -162,8 +162,10 @@ sub make_backgrounds {
 	    }
 	}
 	$fname = sprintf("%s/BKG-%s.fits",$opt->{OUTDIR},time2str("%Y-%m-%dT%T",$centers->at($i)));
-	$out->hdr->{'DATE-AVG'} = time2str("%Y-%m-%dT%T",$centers->at($i));
-	$out->hdr->{'COMMENT'} = "$opt->{PERCENTILE} percentils image from $opt->{RUNLENGTH} days";
+
+	$out->fhdr->{'DATE-AVG'} = time2str("%Y-%m-%dT%T",$centers->at($i));
+	$out->fhdr->{'COMMENT'} = "$opt->{PERCENTILE} percentile image from $opt->{RUNLENGTH} days";
+
 	print "Writing $fname...\n";
 	wfits( $out, 
 	       $fname
