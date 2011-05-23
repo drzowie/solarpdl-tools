@@ -22,6 +22,12 @@ sub hi2_pipeline {
     $opt->{FINAL_POLY_STEP} = 0 unless exists($opt->{FINAL_POLY_STEP});
     $opt->{FINAL_ZERO_STEP} = 0 unless exists($opt->{FINAL_ZERO_STEP});
 
+    print "hi2_pipeline: opt is:\n";
+    for(sort keys %$opt) {
+	print "$_\t$opt->{$_}\n";
+    }
+    print "\n\n";
+
     our $hash = remove_f_corona($in_list, $opt);
     if($opt->{DEBUG_PIPELINE}) {
 	print "Dumping raw cube to $opt->{DEBUG_OUTPUT_PREFIX}raw.fits\n";
@@ -69,11 +75,12 @@ sub hi2_pipeline {
     }
     
 
-    shift_to_instrument($hash,$opt);
 
     if($opt->{FINAL_POLY_STEP}) {
         remove_polynomials($hash,$opt);
     }
+
+    shift_to_instrument($hash,$opt);
 
     if($opt->{FINAL_ZERO_STEP}) {
 	final_zero($hash);
