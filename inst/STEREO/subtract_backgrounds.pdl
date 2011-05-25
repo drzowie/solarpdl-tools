@@ -59,13 +59,31 @@ sub subtract_backgrounds {
 	print "$i of $#$files: reading...";
 	my $a=rfits($files->[$i]);
 	my $t = str2time($a->hdr->{'DATE-AVG'} || $a->hdr->{'DATE-OBS'});
-	print "t=$t...";
 	
-	$t0dex = which( $t <= $btimes )->max;
-	$t1dex = which( $t >= $btimes )->min;
+	$t0dex = which( $t >= $btimes )->max;
+	$t1dex = which( $t <= $btimes )->min;
+
 
 	print "dexes are $t0dex,$t1dex...";
 
+	if($t0dex==$t1dex) {
+	    $a -= $bkg[$t0dex];
+	} else {
+	    my $dt = $btimes->($t1dex) - $btimes->($t0dex);
+	    my $dt0 = $t-$btimes->($t0dex);
+	    my $alpha = $dt0 / $dt;
+
+	    print "alpha=$alpha...";
+	    
+	    $a -= ( (1-$alpha)*$bkg[$t0dex] + $alpha * $bkg[$t1dex] );
+	}
+	
+	$ofile = $files->[$i];
+	$ofile =~ s:^.*/::;
+	$ofile = $opt->{OUTDIR}."/".$ofile;
+	print "writing $ofile...";
+	
+	wfits($a,$ofile);
 	print "\n";
     }
 	
