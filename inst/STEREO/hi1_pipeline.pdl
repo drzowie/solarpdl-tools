@@ -10,6 +10,7 @@
      directory.
 
 =cut
+$PDL::BIGPDL = 1;
 
 sub hi1_pipeline {
     my $in_list = shift;
@@ -17,19 +18,26 @@ sub hi1_pipeline {
 
     my $opt_defaults = 
     {
-	OUTPUT_DIR		=> 'processed',  # where to put output files
-	OUTPUT_FILES            => 1,            # whether to put output files
-	DIST_GUESS_DRIFTRATE	=> 260/5,	 # observed stellar drift in pixels per day
-	DIST_CORRTIME        	=> 2,            # 2 days for correlations due to faster apparent drift
-	DIST_CORR_NSAMP      	=> 25,           # 25x25 works OK
-	NULL_SMOOTH_SIZE     	=> 3,            
-	HORIZ_XMIN           	=> 50,
-	HORIZ_XMAX           	=> 975,
-	YRANGE               	=> pdl(24,1000),
+	OUTPUT_DIR		=> 'processed', # where to put output files
+	OUTPUT_FILES		=> 1,           # Whether to generate output
+	DIST_GUESS_DRIFTRATE	=> 260/5,
+	DIST_CORRTIME	        => 2,
+	DIST_CORR_NSAMP	        => 25,
+	NULL_SMOOTH_SIZE        => 3,
+	PIXEL_XRANGE            => pdl(2,1022),
+	PIXEL_YRANGE            => pdl(2,1022),
 	MASK_RADIUS             => 0,
-	MIN_SMOOTH_SIZE		=> 7,
-	FILTER_MASK_TRIGGER	=> 10
+	DEBUG_PIPELINE          => 1,
+	DEBUG_OUTPUT_PREFIX     => "tmp/",
+	MIN_SMOOTH_SIZE         => 3,
+	MARK_BAD                => 0,         # Mark bad values in remove_f_corona?
+	sm                      => 0,            # dont smooth the F corona calculation
+	FILTER_APOD_MARGIN      => 40,
+	FILTER_MASK_TRIGGER     => 3,
+	FILTER_CUTOFF_PPF       => 0.5,
+	CLEAN_MARGIN_FRAMES     => 2
     };
+
 
     my $k;
     for $k(keys %$opt_defaults) {
@@ -37,19 +45,46 @@ sub hi1_pipeline {
     }
 
     our $hash;
+	
     $hash = remove_f_corona($in_list, $opt);      # initial f coronal background sub
-    $hash = get_distortion_params($hash, $opt);   # measure stellar drift
-    $hash = shift_to_celestial($hash, $opt);      # nullify stellar drift
-    $hash = null_stars($hash, $opt);              # try to cancel out the starfield
-    $hash = remove_polynomials($hash,$opt);       # remove slow background drift
-    $hash = motion_filter($hash,$opt);            # FFT for moving stuff
-    $hash = final_zero($hash);                    # take out HI1 brain damaged exposure variation
-    $hash = shift_to_instrument($hash,$opt);      # put back in instrument coordinates
+    if($opt->{DEBUG_PIPELINE}) {
+	print "Dumping raw cube to $opt->{DEBUG_OUTPUT_PREFIX}raw.fits\n";
+	wfits( $hash->{RAW_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."raw.fits" );
+	print "Dumping bksub cube to $opt->{DEBUG_OUTPUT_PREFIX}bksub.fits\n";
+	wfits( $hash->{BKSUB_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."bksub.fits");
+	print "Dumping mask cube to $opt->{DEBUG_OUTPUT_PREFIX}mask.fits\n";
+	wfits( $hash->{MASK_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."mask.fits");
+    }
+    print "distortion parameters...\n";
+    get_distortion_params($hash, $opt);   # measure stellar drift
+
+    print "shift_to_celestial...\n";
+    shift_to_celestial($hash, $opt);      # nullify stellar drift
+
+    delete $hash->{RAW_CUBE};
+    delete $hash->{BKSUB_CUBE};
+    delete $hash->{MASK_CUBE};
+    if($opt->{DEBUG_PIPELINE}) {
+	print "Dumping celestial cube to $opt->{DEBUG_OUTPUT_PREFIX}cel.fits\n";
+	wfits( $hash->{CEL_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."cel.fits" );
+	print "Dumping cel mask to $opt->{DEBUG_OUTPUT_PREFIX}cmask.fits\n";
+	wfits( $hash->{CEL_MASK}, $opt->{DEBUG_OUTPUT_PREFIX}."cmask.fits" );
+    }
+
+    print "null_stars...\n";
+    null_stars($hash, $opt);              # try to cancel out the starfield
+
+    print "remove_polynomials...\n";
+
+    remove_polynomials($hash,$opt);       # remove slow background drift
+    motion_filter($hash,$opt);            # FFT for moving stuff
+    final_zero($hash);                    # take out HI1 brain damaged exposure variation
+    shift_to_instrument($hash,$opt);      # put back in instrument coordinates
 
     # Dump output to files...
     `mkdir $opt->{OUTPUT_DIR}`;
     if($opt->{OUTPUT_FILES}) {
-	for $i(0..$hash->{CLEAN_CUBE}->dim(2)-1) {
+	for $i($opt->{CLEAN_MARGIN_FRAMES}..$hash->{CLEAN_CUBE}->dim(2)-1-$opt->{CLEAN_MARGIN_FRAMES}) {
 	    my $im = $hash->{CLEAN_CUBE}->(:,:,($i))->copy;
 	    $im->sethdr($hash->{RAW_HDRS}->[$i]);
 	    my $fname = sprintf ("%s/clean-%s--BATCH-%s.fits", $opt->{OUTPUT_DIR}, $im->hdr->{'DATE-OBS'}, $hash->{RAW_HDRS}->[0]->{'DATE-OBS'});

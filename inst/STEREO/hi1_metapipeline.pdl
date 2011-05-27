@@ -12,15 +12,13 @@ sub hi1_metapipeline {
     $opt = {} unless defined($opt);
 
     $defaults = {
-        BATCH_LENGTH		=> 5,
-	BATCH_STEP      	=> 1,
-	PROCESSES		=> 4,
+        BATCH_LENGTH		=> 7,
+	BATCH_STEP      	=> 0.5,
+	PROCESSES		=> 2,
 	DIST_CORRTIME   	=> 3,
 	DIST_CORR_NSAMP 	=> 75,
 	DIST_GUESS_DRIFTRATE	=> 260/5,
-	NULL_SMOOTH_SIZE	=> 5,
-	PIXEL_XRANGE			=> pdl(5,1020),
-	PIXEL_YRANGE			=> pdl(5,1020)
+	NULL_SMOOTH_SIZE	=> 5
     };
 	
     for $k(keys %$defaults) {
@@ -101,9 +99,14 @@ sub hi1_metapipeline {
 	    } else {
 		#Daughter
 		eval {
+		    $opt->{OUTPUT_DIR}       =  sprintf("batch-%3.3d",$batchno);
+		    $opt->{DEBUG_OUTPUT_PREFIX}  =  sprintf("tmp/o-%3.3d",$batchno);
+		    $opt->{DIST_CORR_FNAME}  =  sprintf("correlations.pl",$batchno);
+		    $opt->{DIST_PARAM_FNAME} =  sprintf("dist-params.pl",$batchno);
+
 		    open STDOUT,sprintf(">log-batch-%3.3d",$batchno);
 		    open STDERR,STDOUT;
-		    hi2_pipeline(\@batchfiles,
+		    hi1_pipeline(\@batchfiles,
 				 $opt);
 		};
 		exit(0);

@@ -10,7 +10,7 @@ sub motion_filter {
 
     $opt->{FILTER_SLOP}= 0.33           unless exists($opt->{FILTER_SLOP});
     $opt->{FILTER_APOD_FRAMES} = 3      unless exists($opt->{FILTER_APOD_FRAMES});
-    $opt->{FILTER_APOD_MARGIN} = 10     unless exists($opt->{FILTER_APOD_MARGIN});
+    $opt->{FILTER_APOD_MARGIN} = 20     unless exists($opt->{FILTER_APOD_MARGIN});
     $opt->{FILTER_MASK_TRIGGER} = 0.667 unless exists($opt->{FILTER_MASK_TRIGGER});
     $opt->{FILTER_CUTOFF_PPF} = 1       unless exists($opt->{FILTER_CUTOFF_PPF});
 
@@ -67,7 +67,7 @@ sub motion_filter {
         print "After apodization: c3 minmax is ".(join(",",$c3->minmax))."\n";
     print "FFT...";
     ($c3, $c3i) = spawn_fft($c3,$c3i);
-#    fftnd($c3,$c3i);
+
 
     print "filtering...";
 
@@ -78,12 +78,10 @@ sub motion_filter {
     $nd /= ($dims/2);
     my $rv = ($nd*$nd)->sumover->sqrt;
 
-#    my $ww = pgwin(dev=>"/xs",size=>[6,6]);    
+
     for $i(1..$c3->dim(2)/2) {
     	print "i=$i ";
 	$filtplane = &$filtfunc($rv, $i * $cutoff / ($c3->dim(2)));
-#	$ww->imag($filtplane,0,1);
-#	$ww->hold;
 	$c3->(:,:,($i)) *= $filtplane;
 	$c3i->(:,:,($i)) *= $filtplane;
 	$c3->(:,:,(-$i)) *= $filtplane;
@@ -98,7 +96,7 @@ sub motion_filter {
     
     print "inverse FFT (data)...";
     ($c3, $c3i) = spawn_fft($c3, $c3i, 1);
-#     ifftnd($c3,$c3i);
+
     undef $c3i;
     $hash->{CEL_CUBE} .= $c3->range( $of, pdl( $hash->{CEL_CUBE}->dims ) )->sever;
     undef $c3;
@@ -127,7 +125,6 @@ sub motion_filter {
 
     print "inverse FFT (smooth)...";
     ($c4, $c4i) = spawn_fft($c4, $c4i, 1);
-#     ifftnd($c4,$c4i);
 
     print "Finding minima...";
     $c4min = $c4->range($of,pdl($hash->{CEL_CUBE}->dims))->mv(2,0)->minimum;

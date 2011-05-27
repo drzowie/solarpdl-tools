@@ -1,12 +1,17 @@
 sub final_zero {
     my $hash = shift;
+    my $opt = shift;
+
+    $opt->{FZ_PERCENTILE} = 10 unless(exists($opt->{FZ_PERCENTILE}));
+    $opt->{FZ_SMOOTH} = 9 unless(exists($opt->{FZ_SMOOTH}));
+
     for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
 	my $z = $hash->{CEL_CUBE}->(:,:,($i))->copy;
 	$nf = whichND(!isfinite($z));
 	print "$i: ".$nf->nelem." infinite points... setting them to ten...";
 	$z->indexND($nf) .= 10;
-	my $zsort = $z->convolveND(ones(9,9)/25)->clump(2)->qsort;
-	my $zval = $zsort->(($zsort->dim(0)*0.03));
+	my $zsort = $z->med2d(ones($opt->{FZ_SMOOTH},$opt->{FZ_SMOOTH}))->clump(2)->qsort;
+	my $zval = $zsort->(int(0.5 + ($zsort->dim(0)*$opt->{FZ_PERCENTILE}/100)));
 	$z -= $zval;
 	print "$i: zero was $zval\n";
     }

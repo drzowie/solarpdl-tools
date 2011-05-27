@@ -14,7 +14,7 @@ sub remove_polynomials {
     $n = $hash->{CEL_CUBE}->dim(2);
     print "fitting polynomials...";
 
-    my($ndeg, $r, $ierr, $a) = polyfit( xvals($n), $hash->{CEL_CUBE}->mv(2,0), ones($n), 3, $eps );
+    my($ndeg, $r, $ierr, $a) = polyfit( xvals($n), $hash->{CEL_CUBE}->mv(2,0), ones($n), 4, $eps );
 
     print "removing polynomials...";
     $hash->{CEL_CUBE}->mv(2,0) -= $r;

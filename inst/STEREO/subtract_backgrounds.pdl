@@ -58,7 +58,7 @@ sub subtract_backgrounds {
     for $i(0..@$files) {
 	print "$i of $#$files: reading...";
 	my $a=rfits($files->[$i]);
-	my $t = str2time($a->hdr->{'DATE-AVG'} || $a->hdr->{'DATE-OBS'});
+	our $t = str2time($a->hdr->{'DATE-AVG'} || $a->hdr->{'DATE-OBS'});
 	
 	$t0dex = which( $t >= $btimes )->max;
 	$t1dex = which( $t <= $btimes )->min;
