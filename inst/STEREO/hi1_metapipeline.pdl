@@ -12,6 +12,7 @@ sub hi1_metapipeline {
     $opt = {} unless defined($opt);
 
     $defaults = {
+	BATCH_START             => 0,
         BATCH_LENGTH		=> 7,
 	BATCH_STEP      	=> 0.5,
 	PROCESSES		=> 2,
@@ -25,7 +26,7 @@ sub hi1_metapipeline {
 	$opt->{$k} = $defaults->{$k} unless exists($opt->{$k});
     }
 
-    print "*********\nHI-2 metapipeline - found ".(0+@$files)." files to process.  Reading their headers...\n";
+    print "*********\nHI-1 metapipeline - found ".(0+@$files)." files to process.  Reading their headers...\n";
     my @headers = map { rfits($_,{data=>0}) } @$files;
 
     my @times = map { str2time($_->{"DATE-OBS"}) + $_->{"EXPTIME"}/2 } @headers;
@@ -43,7 +44,7 @@ sub hi1_metapipeline {
 
     my %pids = ();
 
-    for $batchno(0..$#start_times) {
+    for $batchno($opt->{BATCH_START}..$#start_times) {
 
 	# Reap as necessary before spawning a new process...
 	
