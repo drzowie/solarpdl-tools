@@ -78,7 +78,7 @@ sub hi1_metapipeline {
 	    open BAR, STDERR;
 	    open STDOUT,sprintf(">log-batch-%3.3d",$batchno);
 	    open STDERR,STDOUT;
-	    hi2_pipeline(\@batchfiles, $opt);
+	    hi1_pipeline(\@batchfiles, $opt);
 	    open STDERR, BAR;
 	    open STDOUT, FOO;
 	    close BAR;
