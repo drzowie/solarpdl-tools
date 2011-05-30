@@ -42,7 +42,7 @@ sub get_distortion_params {
     $opt->{'DIST_CORRTIME'}    = 10                      unless(exists($opt->{'DIST_CORRTIME'}));
     $opt->{'DIST_GUESS_DRIFTRATE'} = 72/5                unless(exists($opt->{'DIST_GUESS_DRIFTRATE'}));
     $opt->{'NPROC'} = 8                                  unless(exists($opt->{'NPROC'}));
-    $opt->{'PIXEL_YRANGE'} = pdl(75,950) unless(exists($opt->{'PIXEL_YRANGE'}));
+    $opt->{'PIXEL_YRANGE'} = pdl(75,950)  unless(exists($opt->{'PIXEL_YRANGE'}));
     $opt->{'PIXEL_XRANGE'} = undef        unless(exists($opt->{'PIXEL_XRANGE'}));
 
     ##############################

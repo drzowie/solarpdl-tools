@@ -108,7 +108,7 @@ sub  remove_f_corona {
      } else {
 	 die "remove_f_corona: need a hash ref or an array ref as first argument\n";
      }
-     
+
 
      ##############################
      # Handle negative values - BAD or maxval
@@ -124,6 +124,10 @@ sub  remove_f_corona {
 	 die("remove_f_corona: neg option must be 'bad' or 'max'\n");
      }
 
+     if($opt->{'REMOVE_FLUCTUATIONS'}) {
+	 remove_fluctuations($ims,$opt);
+     }
+     
      ##############################
      # Sort the cube by value to find a percentile image
      my $sorted = $ims->mv(-1,0)->qsort->sever;
