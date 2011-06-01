@@ -32,7 +32,7 @@ sub  remove_f_corona {
      $opt->{'neg'}    = "mask"  unless( exists( $opt->{'neg'}  )  ); # how to handle negative values
      $opt->{'pct'}    = 5      unless( exists( $opt->{'pct'}  )  ); # percentile for background
      $opt->{'sm'}     = [7,30] unless( exists( $opt->{'sm'}   )  ); # smoothing of background
-     $opt->{'bin'}    = 1      unless( exists( $opt->{'bin'}  )  ); # whether to deal with multiply binned full-frame images
+     $opt->{'bin'}    = 0      unless( exists( $opt->{'bin'}  )  ); # whether to deal with multiply binned full-frame images
      $opt->{'MASK_THRESH'} = 500 unless( exists($opt->{'MASK_THRESH'}) );
      $opt->{'MASK_RADIUS'} = 500 unless(exists($opt->{'MASK_RADIUS'}));
      $opt->{'MARK_BAD'} = 1 unless(exists($opt->{'MARK_BAD'}));
@@ -169,7 +169,7 @@ sub  remove_f_corona {
 	 for $i(0..$out->{BKSUB_CUBE}->dim(2)-1) {
 	     my $m = 1;
 	     if($opt->{MASK_THRESH}) {
-		 $m = ($out->{BKSUB_CUBE}->(:,:,($i))->med2d(ones(5,5)) <= $opt->{MASK_THRESH})->convolveND(ones(9,9)/81);
+		 $m = ($out->{BKSUB_CUBE}->(:,:,($i))->med2d(ones(3,3)) <= $opt->{MASK_THRESH})->convolveND(ones(3,3)/9);
 	     }
 	     $out->{MASK_CUBE}->(:,:,($i)) .= ($rvm * $m) > 0.999 ;
 	     print "$i ";

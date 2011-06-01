@@ -10,7 +10,6 @@ sub null_stars {
 
     $opt->{NULL_SMOOTH_SIZE} = [11,5] unless(defined($opt->{NULL_SMOOTH_SIZE}));
     $opt->{NULL_MIN_PCT}     = 10 unless(defined($opt->{NULL_MIN_PCT}));
-
     #
     # if enough images have a particular place bad, then kill that place
     # in all imamges.  Helps control mask creep...
@@ -21,9 +20,6 @@ sub null_stars {
     $hash->{CEL_CUBE} = $hash->{CEL_CUBE}->setbadif($hash->{CEL_MASK}==0);
 
     print "null_stars: finding median....\n";
-    # Throw away median-image points if more than half of the samples in that pixel are 
-    # bad.  Rather than setting the median image to BAD, which would mark the entire 
-    # cube BAD there, we just refuse to generate a median value, falling back to 0.
     {
         my $median_image = $hash->{CEL_CUBE}->mv(2,0)->medover;
 	$hash->{CEL_CUBE} -= $median_image;

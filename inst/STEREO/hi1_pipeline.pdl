@@ -20,23 +20,35 @@ sub hi1_pipeline {
 
 	OUTPUT_DIR		=> 'processed', # where to put output files
 	OUTPUT_FILES		=> 1,           # Whether to generate output
-	DIST_GUESS_DRIFTRATE	=> 260/5,
-	DIST_CORRTIME	        => 2,
-	DIST_CORR_NSAMP	        => 25,
-	NULL_SMOOTH_SIZE        => 3,
-	PIXEL_XRANGE            => pdl(2,1022),
-	PIXEL_YRANGE            => pdl(2,1022),
+
+	pct			=> 2,     # 2% for F corona
+	sm                      => [5,5],            
+	bin			=> 0,
+	REMOVE_FLUCTUATIONS	=> 1,
 	MASK_RADIUS             => 0,
-	DEBUG_PIPELINE          => 1,
-	DEBUG_OUTPUT_PREFIX     => "tmp/",
-	MIN_SMOOTH_SIZE         => 3,
-	MARK_BAD                => 0,         # Mark bad values in remove_f_corona?
-	sm                      => 0,            # dont smooth the F corona calculation
+	MARK_BAD                => 0,
+
+	ALIGN_PATCHSIZE		=> 30,
+
+	NULL_MIN_PCT		=> 5,
+	NULL_SMOOTH_SIZE	=> [7,5],
+
+	MIN_SMOOTH_SIZE		=> 5,
+	POLY_ORDER              => 6,
+
 	FILTER_APOD_MARGIN      => 80,
 	FILTER_MASK_TRIGGER     => 3,
 	FILTER_CUTOFF_PPF       => 0.5,
+
+	DIST_GUESS_DRIFTRATE	=> 260/5,
+	DIST_CORRTIME	        => 2,
+	DIST_CORR_NSAMP	        => 25,
+	PIXEL_XRANGE            => pdl(2,1022),
+	PIXEL_YRANGE            => pdl(2,1022),
+	DEBUG_PIPELINE          => 1,
+	DEBUG_OUTPUT_PREFIX     => "tmp/",
 	CLEAN_MARGIN_FRAMES     => 2,
-	REMOVE_FLUCTUATIONS     => 1
+
     };
 
 
@@ -60,9 +72,6 @@ sub hi1_pipeline {
     print "distortion parameters...\n";
     get_distortion_params($hash, $opt);   # measure stellar drift
     
-    print "remove polynomial brightness variation in observing coords"
-    remove_polynomials($hash,$opt);       # remove slow background drift
-
     print "shift_to_celestial...\n";
     shift_to_celestial($hash, $opt);      # nullify stellar drift
 
@@ -79,15 +88,15 @@ sub hi1_pipeline {
     print "null_stars...\n";
     null_stars($hash, $opt);              # try to cancel out the starfield
 
-#    print "remove_polynomials...\n";
-#    remove_polynomials($hash,$opt);       # remove slow background drift
+    print "remove_polynomials...\n";
+    remove_polynomials($hash,$opt);       # remove slow background drift
     motion_filter($hash,$opt);            # FFT for moving stuff
 
-    print "post-motion-filter: remove zero point...\n";    
+#    print "post-motion-filter: remove zero point...\n";    
 #    $c2min = $hash->{CEL_CUBE}->mv(2,0)->qsort->((0.03 * $hash->{CEL_CUBE}->dim(2)));
 #    $hash->{CEL_CUBE} -= $c2min;
+#   final_zero($hash);                    # take out HI1 brain damaged exposure variation
 
- #   final_zero($hash);                    # take out HI1 brain damaged exposure variation
     shift_to_instrument($hash,$opt);      # put back in instrument coordinates
 
     # Dump output to files...

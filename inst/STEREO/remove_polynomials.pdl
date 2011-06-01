@@ -7,30 +7,34 @@ use PDL::NiceSlice;
 sub remove_polynomials {
     my $hash = shift;
     my $opt = shift;
+    my $inst_cube = shift || 0;
+
     $opt = {} unless defined($opt);
 
     $opt->{MIN_SMOOTH_SIZE} = 11 unless(defined($opt->{MIN_SMOOTH_SIZE}));
+    $opt->{POLY_ORDER} = 3 unless(exists($opt->{POLY_ORDER}));
+    
+    my $cube = ($inst_cube ? $hash->{BKSUB_CUBE} : $hash->{CEL_CUBE});
+    $n = $cube->dim(2);
+    print "fitting polynomials (order=$opt->{POLY_ORDER})...";
 
-    $n = $hash->{CEL_CUBE}->dim(2);
-    print "fitting polynomials...";
-
-    my($ndeg, $r, $ierr, $a) = polyfit( xvals($n), $hash->{CEL_CUBE}->mv(2,0), ones($n), 4, $eps );
+    my($ndeg, $r, $ierr, $a) = polyfit( xvals($n), $cube->mv(2,0), ones($n), $opt->{POLY_ORDER}, $eps );
 
     print "removing polynomials...";
-    $hash->{CEL_CUBE}->mv(2,0) -= $r;
+    $cube->mv(2,0) -= $r;
 
     # accumulate minimum so as not to eat too much memory...
     print "accumulating minimum....";
     my $ones = ones($opt->{MIN_SMOOTH_SIZE}, $opt->{MIN_SMOOTH_SIZE});
-    $min = $hash->{CEL_CUBE}->(:,:,(0))->med2d( $ones )->(:,:,*2)->copy;
-    for $i(1..$hash->{CEL_CUBE}->dim(2)-1) {
+    $min = $cube->(:,:,(0))->med2d( $ones )->(:,:,*2)->copy;
+    for $i(1..$cube->dim(2)-1) {
 	print "$i...";
-	$min->(:,:,(1)) .= $hash->{CEL_CUBE}->(:,:,($i))->med2d( $ones );
+	$min->(:,:,(1)) .= $cube->(:,:,($i))->med2d( $ones );
 	$min->(:,:,(0)) .= $min->mv(2,0)->minimum;
     }
 
     print "subtracting minimum smoothed value...\n";
-    $hash->{CEL_CUBE} -= $min->(:,:,(0));
+    $cube -= $min->(:,:,(0));
  
     return $hash;
 }
