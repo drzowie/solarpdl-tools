@@ -1,0 +1,27 @@
+=head2 remove_fluctuations -- remove brightness variation from rapid exposure shifts...
+
+=cut
+
+sub remove_fluctuations {
+    my $ims = shift;
+    my $opt = shift;
+
+    $opt->{'FLUCT_SM_HW'} = 5 unless(exists($opt->{FLUCT_SM_HW}));
+
+    print "Removing exposure fluctuations...\n";
+
+    my $rv= rvals($opt->{'FLUCT_SM_HW'}*5);
+    my $k = exp(-$rv*$rv/$opt->{'FLUCT_SM_HW'}/$opt->{'FLUCT_SM_HW'});
+    $k /= $k->sum;
+    
+    my $av = $ims->average->average;
+    $avsm = $av->convolveND($k,{bound=>'e'});
+    
+    for $i(0..$av->dim(0)-1) {
+	$ims->(:,:,($i)) *= ($avsm->(($i))/$avsm->(($i)));
+	print "$i ";
+    }
+    print "\n";
+    return $ims;
+}
+    

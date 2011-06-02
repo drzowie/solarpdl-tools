@@ -1,0 +1,54 @@
+=head2 clean_bad - try to clean up a collection of images 
+
+=for ref
+
+Finds bad spots in the images and replaces them with nearest values
+from time and/or space.
+
+=cut
+
+sub clean_bad {
+    my $infiles = shift;
+    my $outdir = shift || "clean";
+
+    @if = ();
+    for $i(0..$#$infiles) {
+	$h = rfits($infiles->[$i],{data=>0});
+	if($h->{NAXIS1} == $h->{NAXIS2} and $h->{NAXIS2}==1024) {
+	    print "$infiles->[$i] OK\n";
+	    push(@if,$infiles->[$i]);
+	} else {
+	    print "infiles->[$i] is ",$h->{NAXIS1}."x".$h->{NAXIS2}."; rejecting\n";
+	}
+    }
+
+    `mkdir $outdir`;
+    @of = @if;
+    map { s:.*\/:$outdir\/: } @of;
+    print "Processing $#if files...\n";
+    $in = diskcache(\@if,{ro=>1});
+
+    for $i(2..$#if-3){
+	$badloc = whichND( $in->[$i]->isbad );
+	if($badloc->nelem) {
+	    $badloc = $badloc->glue(0,zeroes(1,$badloc->dim(1)));
+	    $nearcube = pdl( map { $in->[$_] } ($i-2..$i+2));
+	    $chunks = $nearcube->range( $badloc - 2, [5,5,5] ,'e' );
+	    $repl = $chunks->clump(1,2,3)->mv(1,0)->average;
+	    $out = $in->[$i]->copy;
+	    $out->indexND($badloc) .= $repl;
+	    $out->sethdr($in->[$i]->hdr_copy);
+	    $newbadloc = whichND($out->isbad);
+	    $out->hdr->{HISTORY} .= "Removed ".$badloc->dim(1)." BAD points; ".($newbadloc->nelem/2)." remain.\n";
+	    wfits($out,$of[$i]);
+	    print "$f[$i] -> $of[$i] ($i of $#$infiles). ".
+		$badloc->dim(1)." BAD points found; output has ".
+		($newbadloc->nelem / 2)."\n";
+	} else {
+	    wfits($in->[$i], $of[$i]);
+	    print "$f[$i] -> $of[$i] ($i of $#$infiles). ".
+		"no BAD points.\n";
+	}
+    }
+}
+    
