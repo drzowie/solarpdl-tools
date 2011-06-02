@@ -11,6 +11,8 @@ sub clean_bad {
     my $infiles = shift;
     my $outdir = shift || "clean";
 
+    print "clean_bad -- cleaning ".$#$infiles." files...\n";
+
     @if = ();
     for $i(0..$#$infiles) {
 	$h = rfits($infiles->[$i],{data=>0});
@@ -29,13 +31,16 @@ sub clean_bad {
     $in = diskcache(\@if,{ro=>1});
 
     for $i(2..$#if-3){
-	$badloc = whichND( $in->[$i]->isbad );
+	$inframe = $in->[$i];
+	$badloc = whichND( $inframe->isbad );
 	if($badloc->nelem) {
 	    $badloc = $badloc->glue(0,zeroes(1,$badloc->dim(1)));
 	    $nearcube = pdl( map { $in->[$_] } ($i-2..$i+2));
+	    $nearcube = $nearcube->setbadif($nearcube < -100);
 	    $chunks = $nearcube->range( $badloc - 2, [5,5,5] ,'e' );
-	    $repl = $chunks->clump(1,2,3)->mv(1,0)->average;
-	    $out = $in->[$i]->copy;
+ 	    $repl = $chunks->clump(1,2,3)->mv(1,0)->average;
+	    print "repl has ".($repl->isbad->sum)." bad elements ";
+	    $out = $inframe->copy;
 	    $out->indexND($badloc) .= $repl;
 	    $out->sethdr($in->[$i]->hdr_copy);
 	    $newbadloc = whichND($out->isbad);
@@ -45,9 +50,14 @@ sub clean_bad {
 		$badloc->dim(1)." BAD points found; output has ".
 		($newbadloc->nelem / 2)."\n";
 	} else {
-	    wfits($in->[$i], $of[$i]);
-	    print "$f[$i] -> $of[$i] ($i of $#$infiles). ".
+	    $out = $inframe;
+	    wfits($out, $of[$i]);
+	    print "$if[$i] -> $of[$i] ($i of $#$infiles). ".
 		"no BAD points.\n";
+	}
+	if(defined($w)&& ($badloc->nelem || ($i%10==0))) {
+	    $w->imag($out,0,30); $w->hold;
+	    $w->text("$i of $#if - $if[$i]",100,100);
 	}
     }
 }

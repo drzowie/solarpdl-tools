@@ -47,9 +47,10 @@ sub hi1_metapipeline {
     for $batchno($opt->{BATCH_START}..$#start_times) {
 
 	# Reap as necessary before spawning a new process...
-	
+	$waited = 0;	
 	while( (0 + keys(%pids)) >= $opt->{PROCESSES} ) {
 	    print "Waiting for a process to exit..."; 
+	    $waited = 1;
 	    $exitpid = wait();
 	    print "wait returned $exitpid\n\n";
 	    if($exitpid<0) {
@@ -58,6 +59,13 @@ sub hi1_metapipeline {
 		delete $pids{$exitpid};
 	    }
 	}
+
+	unless($waited) {
+	    print "Sleeping 180 seconds to stagger the processing...\n";
+	    sleep 180;
+	    print "Woke up!\n";
+	}
+
 	# stoopid but effective - generate a list of files in the given time range
 	my @batchfiles = ();
 	for $i(0..$#times){
