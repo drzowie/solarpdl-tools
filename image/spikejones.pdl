@@ -44,6 +44,10 @@ unsharp-masked pixel, by default, must be above the smsiz x smsiz
 pixel average brigtness in the neighborhood, to be considered a spike.
 Lower values are more sensitive, higher values are more tolerant.
 
+=item dilation (default 0)
+
+Number of pixels by which to dilate the spike mask in all directions
+
 =back
 
 
@@ -76,6 +80,9 @@ sub spikejones {
     
     my $thresh = ($opt->{alpha} || 1);
     my $am = ($az->convolveND($k) > $thresh);
+    if($opt->{dilation}) {
+	$am .= ($am->convolveND(ones(2*$opt->{dilation}+1,2*$opt->{dilation}+1)) != 0);
+    }
     my $spikes = whichND($am);
 
     my $ar = $a->range($spikes-($siz-1)/2,$siz,'e');
@@ -83,6 +90,16 @@ sub spikejones {
     my $ac = $a->indexND($spikes);
 
     $ac .= ($ar * $amr)->mv(0,2)->sumover->sumover / $amr->mv(0,2)->sumover->sumover;
+
+    # Try to fill in non-finite values( generally clumped stuff )
+    $a = $a->setbadif(!isfinite($a));
+
+    for $i(1..10){
+	my $dex = whichND($a->isbad);
+	last if($dex->nelem==0);
+	$a2 = $a->range(ndcoords(5,5)-2,[$a->dim(0),$a->dim(1)],'e')->clump(2)->average;
+	$a->indexND($dex) .= $a2->indexND($dex);
+    }
 
     return $a;
 }
