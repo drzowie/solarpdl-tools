@@ -60,12 +60,6 @@ sub hi1_metapipeline {
 	    }
 	}
 
-	unless($waited) {
-	    print "Sleeping 180 seconds to stagger the processing...\n";
-	    sleep 180;
-	    print "Woke up!\n";
-	}
-
 	# stoopid but effective - generate a list of files in the given time range
 	my @batchfiles = ();
 	for $i(0..$#times){
@@ -105,6 +99,7 @@ sub hi1_metapipeline {
 	    if($pid) {
 		# Parent
 		$pids{$pid}=$batchno;
+
 	    } else {
 		#Daughter
 		eval {
