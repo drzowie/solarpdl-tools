@@ -13,8 +13,10 @@ sub remove_polynomials {
 
     $opt->{MIN_SMOOTH_SIZE} = 11 unless(defined($opt->{MIN_SMOOTH_SIZE}));
     $opt->{POLY_ORDER} = 3 unless(exists($opt->{POLY_ORDER}));
-    
-    my $cube = ($inst_cube ? $hash->{BKSUB_CUBE} : $hash->{CEL_CUBE});
+    $opt->{POLY_CUBE} = "CEL" unless(exists($opt->{POLY_CUBE}));
+
+    my $pc = $opt->{POLY_CUBE}."_CUBE";
+    my $cube = $hash->{$pc};
     $n = $cube->dim(2);
     print "fitting polynomials (order=$opt->{POLY_ORDER})...";
 

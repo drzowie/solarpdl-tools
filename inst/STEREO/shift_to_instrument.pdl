@@ -37,14 +37,15 @@ sub shift_to_instrument {
 	
         my $t_crop = t_linear(pre=>[ - $xr->at(0) , -$yr->at(0) ]);
 	
-	
 	$hash->{'CLEAN_CUBE'}->(:,:,($i)) .= 
-	    $hash->{'CEL_CUBE'}->(:,:,($i))->map(
+	    (1001 + $hash->{'CEL_CUBE'}->(:,:,($i)))->map(
 		!$t_nl x !$t_o x $t_nl x !$t_crop, 
 		[$hash->{CLEAN_CUBE}->dim(0),$hash->{CLEAN_CUBE}->dim(1)],
 		{method=>'j', pix=>1}
-	    );
+	    ) - 1001;
     }
+
+    $hash->{'CLEAN_CUBE'} = $hash->{'CLEAN_CUBE'}->setbadif($hash->{'CLEAN_CUBE'}<=-1000);
     
     return $hash;
 }

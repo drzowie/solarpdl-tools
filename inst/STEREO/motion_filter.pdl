@@ -13,27 +13,31 @@ sub motion_filter {
     $opt->{FILTER_APOD_MARGIN} = 20     unless exists($opt->{FILTER_APOD_MARGIN});
     $opt->{FILTER_MASK_TRIGGER} = 0.667 unless exists($opt->{FILTER_MASK_TRIGGER});
     $opt->{FILTER_CUTOFF_PPF} = 1       unless exists($opt->{FILTER_CUTOFF_PPF});
+    $opt->{FILTER_CUBE} = "CEL"         unless exists($opt->{FILTER_CUBE});
 
     my $of = pdl( $opt->{FILTER_APOD_MARGIN}, 
 		   $opt->{FILTER_APOD_MARGIN}, 
 		   $opt->{FILTER_APOD_FRAMES} );
 
+    my $fc = $opt->{FILTER_CUBE}."_CUBE";
+    my $fm = $opt->{FILTER_CUBE}."_MASK";
+
     print "Apodizing...\n";
-    $hash->{CEL_CUBE}->where($hash->{CEL_CUBE}->isbad) .= 0;
-    $hash->{CEL_CUBE_UNFILTERED} = $hash->{CEL_CUBE}->copy;
+    $hash->{$fc}->where($hash->{$fc}->isbad) .= 0;
+    $hash->{$fc_UNFILTERED} = $hash->{$fc}->copy;
 
     print "Masking out points (mask trigger=$opt->{FILTER_MASK_TRIGGER})...";
 
-    for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
+    for $i(0..$hash->{$fc}->dim(2)-1) {
     	print "$i";
-	my $m = ($hash->{CEL_CUBE}->(:,:,($i))->abs > $opt->{FILTER_MASK_TRIGGER})->convolveND(rvals(11,11)<=5);
+	my $m = ($hash->{$fc}->(:,:,($i))->abs > $opt->{FILTER_MASK_TRIGGER})->convolveND(rvals(11,11)<=5);
 	my $wnd = whichND($m);
 	print "(".$wnd->dim(1).") ";
-	$hash->{CEL_CUBE}->(:,:,($i)) ->indexND( 0+whichND($m!=0)) .= 0;
+	$hash->{$fc}->(:,:,($i)) ->indexND( 0+whichND($m!=0)) .= 0;
     }
 	
-    my $c3 = $hash->{CEL_CUBE}->range( -$of,
-				       2*$of + pdl( $hash->{CEL_CUBE}->dims ),
+    my $c3 = $hash->{$fc}->range( -$of,
+				       2*$of + pdl( $hash->{$fc}->dims ),
 				       'm'
 	)->sever;
     my $c3i = zeroes($c3);
@@ -98,7 +102,7 @@ sub motion_filter {
     ($c3, $c3i) = spawn_fft($c3, $c3i, 1);
 
     undef $c3i;
-    $hash->{CEL_CUBE} .= $c3->range( $of, pdl( $hash->{CEL_CUBE}->dims ) )->sever;
+    $hash->{$fc} .= $c3->range( $of, pdl( $hash->{$fc}->dims ) )->sever;
     undef $c3;
 
 
@@ -110,7 +114,7 @@ sub motion_filter {
     $c4dims = pdl($c4->dims);
     $rv2d = rvals($c4dims->(0:1)->list, {center=>[($c4dims->(0:1)/2)->list]})->range($c4dims->(0:1)/2,$c4dims->(0:1),'p')->sever;
 
-    $size = pdl($hash->{CEL_CUBE}->dim(0)/2/10);
+    $size = pdl($hash->{$fc}->dim(0)/2/10);
     $k2d = exp(-$rv2d*$rv2d / $size / $size);
 
     $size = $c4->dim(2)/5;
@@ -127,10 +131,10 @@ sub motion_filter {
     ($c4, $c4i) = spawn_fft($c4, $c4i, 1);
 
     print "Finding minima...";
-    $c4min = $c4->range($of,pdl($hash->{CEL_CUBE}->dims))->mv(2,0)->minimum;
+    $c4min = $c4->range($of,pdl($hash->{$fc}->dims))->mv(2,0)->minimum;
     print "subtracting...\n";
-    $hash->{CEL_CUBE} -= $c4min;
-    $hash->{CEL_CUBE} = $hash->{CEL_CUBE}->setbadif($hash->{CEL_MASK}==0);
+    $hash->{$fc} -= $c4min;
+    $hash->{$fc} = $hash->{$fc}->setbadif($hash->{$fm}==0);
     print "returning from motion_filter...\n";
     return $hash;
 }

@@ -49,6 +49,8 @@ sub hi1_pipeline {
 	DEBUG_OUTPUT_PREFIX     => "tmp/",
 	CLEAN_MARGIN_FRAMES     => 2,
 
+	POLY_CUBE               => "CLEAN"
+
     };
 
 
@@ -61,41 +63,30 @@ sub hi1_pipeline {
 	
     $hash = remove_f_corona($in_list, $opt);      # initial f coronal background sub
 
-    if($opt->{DEBUG_PIPELINE}) {
-	print "Dumping raw cube to $opt->{DEBUG_OUTPUT_PREFIX}raw.fits\n";
-	wfits( $hash->{RAW_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."raw.fits" );
-	print "Dumping bksub cube to $opt->{DEBUG_OUTPUT_PREFIX}bksub.fits\n";
-	wfits( $hash->{BKSUB_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."bksub.fits");
-	print "Dumping mask cube to $opt->{DEBUG_OUTPUT_PREFIX}mask.fits\n";
-	wfits( $hash->{MASK_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."mask.fits");
+    print "Despiking...\n";
+    
+    for $i(0..$opt->{BKSUB_CUBE}->dim(2)-1){
+	my $im = spikejones($opt->{BKSUB_CUBE}->(:,:,($i)),{dilation=>1});
+	$im = spikejones($im,{dilation=>2});
+	$opt->{BKSUB_CUBE}->(:,:,($i)) .= $im;
+	print "$i...";
     }
+    print "\n";
+
+    print "Removing polynomials...\n";
+    $opt->{POLY_CUBE} = "BKSUB";
+    remove_polynomials($hash,$opt);       # remove slow background drift
+
     print "distortion parameters...\n";
     get_distortion_params($hash, $opt);   # measure stellar drift
     
     print "shift_to_celestial...\n";
     shift_to_celestial($hash, $opt);      # nullify stellar drift
 
-    delete $hash->{RAW_CUBE};
-    delete $hash->{BKSUB_CUBE};
-    delete $hash->{MASK_CUBE};
-    if($opt->{DEBUG_PIPELINE}) {
-	print "Dumping celestial cube to $opt->{DEBUG_OUTPUT_PREFIX}cel.fits\n";
-	wfits( $hash->{CEL_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."cel.fits" );
-	print "Dumping cel mask to $opt->{DEBUG_OUTPUT_PREFIX}cmask.fits\n";
-	wfits( $hash->{CEL_MASK}, $opt->{DEBUG_OUTPUT_PREFIX}."cmask.fits" );
-    }
-
     print "null_stars...\n";
     null_stars($hash, $opt);              # try to cancel out the starfield
 
-    print "remove_polynomials...\n";
-    remove_polynomials($hash,$opt);       # remove slow background drift
-    motion_filter($hash,$opt);            # FFT for moving stuff
-
-#    print "post-motion-filter: remove zero point...\n";    
-#    $c2min = $hash->{CEL_CUBE}->mv(2,0)->qsort->((0.03 * $hash->{CEL_CUBE}->dim(2)));
-#    $hash->{CEL_CUBE} -= $c2min;
-#   final_zero($hash);                    # take out HI1 brain damaged exposure variation
+    final_zero($hash);                    # last-ditch attempt...
 
     shift_to_instrument($hash,$opt);      # put back in instrument coordinates
 
