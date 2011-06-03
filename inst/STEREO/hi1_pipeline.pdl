@@ -49,8 +49,6 @@ sub hi1_pipeline {
 	DEBUG_OUTPUT_PREFIX     => "tmp/",
 	CLEAN_MARGIN_FRAMES     => 2,
 
-	POLY_CUBE               => "CLEAN"
-
     };
 
 
@@ -65,10 +63,10 @@ sub hi1_pipeline {
 
     print "Despiking...\n";
     
-    for $i(0..$opt->{BKSUB_CUBE}->dim(2)-1){
-	my $im = spikejones($opt->{BKSUB_CUBE}->(:,:,($i)),{dilation=>1});
+    for $i(0..$hash->{BKSUB_CUBE}->dim(2)-1){
+	my $im = spikejones($hash->{BKSUB_CUBE}->(:,:,($i)),{dilation=>1});
 	$im = spikejones($im,{dilation=>2});
-	$opt->{BKSUB_CUBE}->(:,:,($i)) .= $im;
+	$hash->{BKSUB_CUBE}->(:,:,($i)) .= $im;
 	print "$i...";
     }
     print "\n";
