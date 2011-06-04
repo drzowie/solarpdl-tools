@@ -84,7 +84,9 @@ sub hi1_pipeline {
     print "null_stars...\n";
     null_stars($hash, $opt);              # try to cancel out the starfield
 
-    final_zero($hash);                    # last-ditch attempt...
+    motion_filter($hash,$opt);  # final clean... I hope.
+
+#    final_zero($hash);                    # last-ditch attempt...
 
     shift_to_instrument($hash,$opt);      # put back in instrument coordinates
 

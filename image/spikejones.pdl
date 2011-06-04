@@ -97,8 +97,8 @@ sub spikejones {
     for $i(1..10){
 	my $dex = whichND($a->isbad);
 	last if($dex->nelem==0);
-	$a2 = $a->range(ndcoords(5,5)-2,[$a->dim(0),$a->dim(1)],'e')->clump(2)->average;
-	$a->indexND($dex) .= $a2->indexND($dex);
+	$av = $a->range($dex-2,[5,5],'e');
+	$a->indexND($dex) .= $av->clump(1,2)->mv(1,0)->average;
     }
 
     return $a;
