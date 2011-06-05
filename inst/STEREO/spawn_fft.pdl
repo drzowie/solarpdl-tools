@@ -9,6 +9,10 @@ Accepts the variables to FFT (real and imaginary), and a flag indicating whether
 Returns the transformed variables.  If their inplace flags are set, then they are changed in-place;
 otherwise not.
 
+spawn_fft uses a lockfile ("/tmp/spawn_fft.pid") to run only one FFT at a time
+globally.  If you weren't worried about memory usage, you wouldn't be running
+spawn_fft.
+
 =cut
 
 no PDL::NiceSlice;
@@ -19,13 +23,41 @@ sub spawn_fft {
     my $ip = shift;
     my $invert = shift;
 
+    my $tmpdir = "/tmp/fft_tmp";
+    unless(-e $tmpdir) {
+	`mkdir $tmpdir`;
+    }    
+    my $lf = "$tmpdir/spawn_fft.pid";
+
     if($invert) {
 	print "INVERSE FFT: ";
     } else {
 	print "FFT: ";
     }
 
-    my $prefix = "/tmp/$$.$serialno";
+    if( -e $lf ) {
+	print "found $lf... waiting.";
+	
+	do {
+	    open FOO,"<$lf" || last;
+	    $pid = <FOO>;
+	    close FOO;
+	    
+	    last unless($pid);
+	    @lines = map { chomp $_; $_;} `ps $pid`;
+	    
+	    last if($#lines == 0);
+
+	    sleep 15;
+	    print ".";
+	} while(-e $lf);
+    }
+
+    open FOO,">$lf";
+    print FOO "$$\n";
+    close FOO;
+
+    my $prefix = "$tmpdir/$$.$serialno";
     $serialno++;
     
     $rpname = $prefix."-rp.fits";
@@ -71,7 +103,7 @@ EOF
     if($mm[0]==0 && $mm[1]==0) {
 	die "FFT failed!\n";
     }
-
+    unlink($lf);
     unlink($rpname);
     unlink($ipname);
     unlink("${rpname}-out");
