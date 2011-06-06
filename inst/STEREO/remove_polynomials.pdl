@@ -30,8 +30,12 @@ sub remove_polynomials {
     undef $a;
     undef $ndeg;
 
-    print "Subtracting...";
-    $c2 -= $r;
+    print "Subtracting";
+    for $i(0..$c2->dim(0)-1) {
+	print ".";
+    	$c2->($i) .= $r->($i);
+    }
+    undef $r;
 
     # accumulate minimum so as not to eat too much memory...
     print "Accumulating minimum....";

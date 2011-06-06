@@ -90,7 +90,7 @@ sub hi1_metapipeline {
 	
 	else {
 	
-	    print "Batch $batchno - sending ".(0+@batchfiles)." files to subprocess: \n".(join(",\t",@batchfiles))."\n\n";
+	    print "Batch $batchno - sending ".(0+@batchfiles)." files to subprocess: \n".(join("--",@batchfiles[0,$#batchfiles]))."\n\n";
 	    
 	    $pid = fork();
 	    if($pid<0) {
