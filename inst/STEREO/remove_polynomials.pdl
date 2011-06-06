@@ -9,6 +9,8 @@ sub remove_polynomials {
     my $opt = shift;
     my $inst_cube = shift || 0;
 
+    print "into remove_polynomials...\n";
+
     $opt = {} unless defined($opt);
 
     $opt->{MIN_SMOOTH_SIZE} = 11 unless(defined($opt->{MIN_SMOOTH_SIZE}));
@@ -18,16 +20,22 @@ sub remove_polynomials {
     my $pc = $opt->{POLY_CUBE}."_CUBE";
     my $cube = $hash->{$pc};
     $n = $cube->dim(2);
-    print "fitting polynomials (order=$opt->{POLY_ORDER})...";
 
-    my($ndeg, $r, $ierr, $a) = polyfit( xvals($n), $cube->mv(2,0), ones($n), $opt->{POLY_ORDER}, $eps );
+    print "fitting polynomials (order=$opt->{POLY_ORDER})...\n";
+    
+    my $c2 = $cube->mv(2,0);
 
-    print "removing polynomials...";
-    $cube->mv(2,0) -= $r;
+    my($ndeg, $r, $ierr, $a) = polyfit( xvals($n), $c2, ones(float,$n), $opt->{POLY_ORDER}, $eps );
+    undef $ierr;
+    undef $a;
+    undef $ndeg;
+
+    print "Subtracting...";
+    $c2 -= $r;
 
     # accumulate minimum so as not to eat too much memory...
-    print "accumulating minimum....";
-    my $ones = ones($opt->{MIN_SMOOTH_SIZE}, $opt->{MIN_SMOOTH_SIZE});
+    print "Accumulating minimum....";
+    my $ones = ones(float, $opt->{MIN_SMOOTH_SIZE}, $opt->{MIN_SMOOTH_SIZE});
     $min = $cube->(:,:,(0))->med2d( $ones )->(:,:,*2)->copy;
     for $i(1..$cube->dim(2)-1) {
 	print "$i...";
