@@ -100,6 +100,11 @@ sub hi1_metapipeline {
 		# Parent
 		$pids{$pid}=$batchno;
 
+		print "pids is now:\n";
+		for $k(sort keys %pids) {
+		    print "\t$k - batch $pids{$k}\n";
+		}
+		print "\n";
 	    } else {
 		#Daughter
 		eval {
