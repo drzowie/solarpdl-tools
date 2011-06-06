@@ -25,17 +25,25 @@ sub remove_polynomials {
     
     my $c2 = $cube->mv(2,0);
 
-    my($ndeg, $r, $ierr, $a) = polyfit( xvals($n), $c2, ones(float,$n), $opt->{POLY_ORDER}, $eps );
-    undef $ierr;
-    undef $a;
-    undef $ndeg;
+    # Break the polyfit up into pieces to avoid hogging too much temp memory at once
+    $pieces = 10;
+    print "10 easy pieces...\n";
+    for $ii(0..9){
+	print "$ii...";
+	$min = int($ii * $c2->dim(2)/10);
+	$max = int(($ii+1) * $c2->dim(2)/10)-1;
+	if($max >= $c2->dim(2)-1) {
+	    $max = $c2->dim(2)-1;
+	}
+	my $c3 = $c2->(:,:,$min:$max);
 
-    print "Subtracting";
-    for $i(0..$c2->dim(0)-1) {
-	print ".";
-    	$c2->($i) .= $r->($i);
+	my($ndeg, $r, $ierr, $a) = polyfit( xvals($n), $c3, ones(float,$n), $opt->{POLY_ORDER}, $eps );
+	undef $ierr;
+	undef $a;
+	undef $ndeg;
+	$c3 -= $r;
     }
-    undef $r;
+    print "\n";
 
     # accumulate minimum so as not to eat too much memory...
     print "Accumulating minimum....";

@@ -60,6 +60,7 @@ sub hi1_pipeline {
     our $hash;
 	
     $hash = remove_f_corona($in_list, $opt);      # initial f coronal background sub
+    delete $opt->{RAW_CUBE};
 
     print "Despiking...\n";
     
@@ -80,6 +81,8 @@ sub hi1_pipeline {
     
     print "shift_to_celestial...\n";
     shift_to_celestial($hash, $opt);      # nullify stellar drift
+
+    delete $opt->{BKSUB_CUBE};
 
     print "null_stars...\n";
     null_stars($hash, $opt);              # try to cancel out the starfield
