@@ -16,7 +16,7 @@ sub merge_batches {
     
     $opt = {} unless defined($opt);
     $opt->{MERGED_DIR} = "merged" unless(defined $opt->{MERGED_DIR});
-    $opt->{PROCESSES} = 6 unless(defined $opt->{PROCESSES});
+    $opt->{PROCESSES} = 8 unless(defined $opt->{PROCESSES});
     $opt->{MARGIN} = 20 unless(defined $opt->{MARGIN});    
     
     my %filenames = ();
@@ -42,9 +42,6 @@ sub merge_batches {
     `mkdir $opt->{MERGED_DIR}`;
 
     # Now the filenames have been sorted.  Begin accumulating.
-    $ksiz = $opt->{MARGIN}*2 + 1;
-    my $k = 1 + cos(rvals($ksiz,$ksiz)*3.14159/40);
-    $k /= $k->sum;
 
     my %pids = ();
 
@@ -88,15 +85,25 @@ sub merge_batches {
 	    } else {
 		# daughter
 		eval {
+		    $ksiz = $opt->{MARGIN}*2 + 1;
+		    my $k = (1 + cos(rvals($ksiz,$ksiz)*3.14159/$opt->{MARGIN})) 
+			* (rvals($ksiz,$ksiz)<$opt->{MARGIN});
+		    $k /= $k->sum;
+		    
 		    print "$f: ".(0+@{$filenames{$f}})." files...";
 		    @cube = mrfits(@{$filenames{$f}});
 		    $cube = pdl(@cube)->mv(-1,0)->sever;
-		    $badmask = ($cube == 0.0) | ($cube < -1000);
+		    
+		    $cube->where($cube->isbad) .= -100;
+		    $badmask = (($cube <-1) | (!($cube->isfinite)))->short;
+
+		    # Expand the badmask so we can feather it later
 		    for $i(0..$badmask->dim(0)-1) {
 			print ",";
-			$badmask->(($i)) .= $badmask->(($i))->convolveND(ones($ksiz,$ksiz),{method=>'direct'});
+			$badmask->(($i)) .= $badmask->(($i))->convolveND(ones($ksiz*1.1,$ksiz*1.1),{method=>'direct'});
 		    }
 		    $mask= ($badmask==0)->float;
+
 		    for $i(0..$mask->dim(0)-1) {
 			print ".";
 			$mask->(($i)) .= $mask->(($i))->convolveND($k);

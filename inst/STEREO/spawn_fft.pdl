@@ -90,27 +90,40 @@ EOF
 	
     close FOO;
 	
-    print "Running script...\n";
 
-    print `perl ${prefix}-script.pl`;
-
-    print "Reading transformed files";
-    for $i(0..$rp->dim(2)-1) {
+  try: for $j(1..5){
+      print "Running script...\n";
+      print `perl ${prefix}-script.pl`;
+      
+      print "Reading transformed files";
+    files: for $i(0..$rp->dim(2)-1) {
 	my $rpn = sprintf("$rpname",$i);
 	my $ipn = sprintf("$ipname",$i);
+	if(!-e $rpn || !-e $ipn) {
+	    print "Hey!  $rpn or $ipn doesn't exist!\n";
+	    print "Script must have crashed...\n";
+	    print "Trying it again ($j)...\n";
+	    next try;
+	}
 	$rp->slice(":,:,($i)") .= rfits($rpn);
 	$ip->slice(":,:,($i)") .= rfits($ipn);
 	unlink($rpn);
 	unlink($ipn);
-	print ".";
     }
-    print "\n";
+      print "\n";
+      
+      unlink($lf);
+      unlink($rpname);
+      unlink($ipname);
+      unlink("${prefix}-script.pl");
+      
+      return ($rp, $ip);
+  
+  }
 
-    unlink($lf);
-    unlink($rpname);
-    unlink($ipname);
-    unlink("${prefix}-script.pl");
-
-    return ($rp, $ip);
+    # Can't get here normally
+    print "Tries exhausted.  Damn.\n";
+    return;
 }
+
 		
