@@ -46,29 +46,34 @@ sub boundary {
     my $color = $opt->{color} || ($fragid%12 +2);
     
 #grab the lowest and highest x and y to get $subim
-    my ($lx,$ly,$hx,$hy,$allx,$ally);
-    ($allx,$ally) = whichND($id==$fragid);
-    ($lx,$hx) = $allx->minmax;
-    ($ly,$hy) = $ally->minmax;
-    my $subim_size = pdl($hx-$lx+3,$hy-$ly+3);
+    my ($lx,$ly,$hx,$hy,$allxy);
+    $allxy = whichND($id==$fragid);
+    my ($low,$hi)=$allxy->transpose->minmaximum;
+    ($lx,$ly) = $low->list;
+    ($hx,$hy) = $hi->list;
+    my $subim_size = $hi-$low+3;
+#    my $subim_size = pdl($hx-$lx+3,$hy-$ly+3);
     
-#get $subim and the shifted subims
-    my $subim = $id->range([$lx-1,$ly-1],$subim_size,'t')->sever->abs == abs($fragid);
-    my $s1 = $id->range([$lx,$ly-1],     $subim_size,'t')->sever->abs == abs($fragid);
-    my $s2 = $id->range([$lx-2,$ly-1],   $subim_size,'t')->sever->abs == abs($fragid);
-    my $s3 = $id->range([$lx-1,$ly],     $subim_size,'t')->sever->abs == abs($fragid);
-    my $s4 = $id->range([$lx-1,$ly-2],   $subim_size,'t')->sever->abs == abs($fragid);
+#get $subim and the shifted subims. This is the same thing as below:
+#$subs((0)) is $subim, $subs((1)) is $s1, etc.
+    my $offsets = pdl([1,1],[0,1],[2,1],[1,0],[1,2]);
+    my $subs = $id->range($low-$offsets,$subim_size,'t')->sever->abs == abs($fragid);
+#    my $subim = $id->range([$lx-1,$ly-1],$subim_size,'t')->sever->abs == abs($fragid);
+#    my $s1 = $id->range([$lx,$ly-1],     $subim_size,'t')->sever->abs == abs($fragid);
+#    my $s2 = $id->range([$lx-2,$ly-1],   $subim_size,'t')->sever->abs == abs($fragid);
+#    my $s3 = $id->range([$lx-1,$ly],     $subim_size,'t')->sever->abs == abs($fragid);
+#    my $s4 = $id->range([$lx-1,$ly-2],   $subim_size,'t')->sever->abs == abs($fragid);
     
-    my $xvals = xvals($s1);
-    my $yvals = yvals($s1);
+    my $xvals = xvals($subs((1)));
+    my $yvals = yvals($subs((1)));
 #these pixels need a line on their right side
-    my ($rightx,$righty) = where($xvals,$yvals,$subim-$s1<0);
+    my ($rightx,$righty) = where($xvals,$yvals,$subs((1))-$subs((0))>0);
 #these pixels need a line on their left side
-    my ($leftx,$lefty) = where($xvals,$yvals,$s2-$subim>0);
+    my ($leftx,$lefty) = where($xvals,$yvals,$subs((2))-$subs((0))>0);
 #these pixels need a line on their top side
-    my ($topx,$topy) = where($xvals,$yvals,$subim-$s3>0);
+    my ($topx,$topy) = where($xvals,$yvals,$subs((0))-$subs((3))>0);
 #these pixels need a line on their bottom side
-    my ($botx,$boty) = where($xvals,$yvals,$subim-$s4>0);
+    my ($botx,$boty) = where($xvals,$yvals,$subs((0))-$subs((4))>0);
 
     my @out;
     for my $rindex(0..$rightx->nelem-1){
