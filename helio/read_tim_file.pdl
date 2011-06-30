@@ -1,0 +1,44 @@
+=head2 read_tim_file - try to read one of Tim Howard's location files (TH or triangulation format)
+
+=for ref
+
+You throw in a bunch of filenames, you get back out a hash containing associated glyph objects keyed by event name.
+
+=cut
+
+sub read_tim_file {
+    my @files = @_;
+    my $rt = "read_tim_file";
+
+    print "$rt: Got a list of ".(0+@files)." files...\n";
+
+    my @objects = ();
+
+    for $f(@files) {
+	open FOO,"<$f" || die "$rt: couldn't open '$f'\n";
+	my $s;
+	$s = <FOO>; # label
+	$s = <FOO>; # blank line
+	$s = <FOO>;
+	$s=~s/\s*//;
+
+	my @s = split m/\s+/, $s;
+	if(@s==4) {
+	    push(@objects, read_triangulation($f));
+	} elsif(@s==6) {
+	    push(@objects, read_th($f));
+	} else {
+	    print "\n$rt: couldn't identify file time of '$f' -- skipping\n";
+	}
+	print ".";
+    }
+
+    my $out = {};
+    for $o(@objects) {
+	if( exists($out->{$o->{event}}) ) {
+	    die "$rt: duplicate object '$objects->{event}' detected\n";
+	}
+	$out->{$o->{event}} = $o;
+    }
+    return $out;
+}

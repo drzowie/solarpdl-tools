@@ -1,0 +1,207 @@
+=head2 make_tim_movie - generate a glyph movie from a bunch of tim objects
+
+=for usage
+
+ $z = read_tim_files(<*.txt>);
+ make_tim_movie($z, $opt);
+
+
+=for ref
+
+You feed in a bunch of tim objects from read_tim_file, and make_tim_movie frobnicates them and 
+generates a glyph movie file.  You can feed in some options:
+
+=over 3
+
+=item cadence (days; default is 0.01042, or 15 minutes)
+
+Cadence of the output frames
+
+=item out_template (string)
+
+sprintf-style template for the output frames.  One %d specifier is needed, for the frame number.
+
+
+=back
+
+=cut
+
+use Date::Parse;
+use Date::Format;
+use Time::JulianDay;
+use PDL::Transform;
+
+sub make_tim_movie {
+    my $obj = shift;
+    my $opt = shift || {};
+
+    $opt->{cadence} = 15/60/24 		   unless( exists($opt->{cadence}) );
+    $opt->{out_template} = "glyphs-%4.4d"  unless( exists($opt->{out_template}) );
+
+    my $range = frobnicate_tim_times($z);
+    my ($start, $end) = $range->list;
+    print "opt->{cadence} is $opt->{cadence}\n";
+    my $fcount = int(($end - $start) / $opt->{cadence}) + 1;
+    printf "Making %d frames over a %.2f-day interval with template '%s'...\n", $fcount, ($end-$start), $opt->{out_template};
+    
+    my $jday;
+
+    my $t = !t_radial() x t_linear(scale=>[-3.14159/180,1],post=>[3.14159/2,0]);;
+
+    my $sutime = jd_secondsgm(int($start),int( $start * 24 )%24, int($start * 24 * 60) % 60, int($start * 24 * 3600) % 60);
+    my $eutime = jd_secondsgm(int($end),  int( $end * 24) % 24,  int($end * 24 * 60) % 60, int($end * 24 * 3600) % 60);
+
+    my $setup_window = sub {
+	my $w = shift;
+	my $options = shift;
+	my $date = shift;
+	my $cart_range = shift;
+
+
+	$rs = 0.0046491; # solar radius in A.U.
+	$cart_range = [-0.9,0.9,-1.1,$rs] unless defined($cart_range);
+	my %opt;
+	
+	$opt{AXIS} = "BC";
+	$opt{JUSTIFY} = 1;
+	
+	for $k(keys %$options) {
+	    $opt{$k} = $options->{$k};
+	}
+	
+	$w->env(@$cart_range,\%opt);
+	
+	my $ang = xvals(5 * 360 + 1) / 5 / 360 * 3.1415926 * 2;
+	my $x = cos($ang);
+	my $y = sin($ang);
+	
+	$w->hold;
+	my $r;
+	for($r=0.2;$r<=1.2;$r+=0.2) {
+	    $w->line($r * $x, $r * $y, {linestyle=>2,color=>3});
+	    if($r<1.1){$w->text(sprintf("%.1f A.U.",$r), -0.25*$r, -$r*0.95,{color=>3,charsize=>0.75});}
+	}
+	$w->circle( 0, 0, $rs, {color=>7});
+	$w->text("Sun",0,-0.04,{justification=>0.5,color=>7});
+	$w->circle( 0, -1, $rs, {color=>5});
+	$w->text("Earth",0,-0.99,{justification=>0.5,color=>5});
+	
+
+	my $alpha = ($date-$sutime) / ($eutime - $sutime);
+	
+	my $a = pdl(1-$alpha,$alpha);
+
+	# FIXME Hard-wired STEREO location for Dec 2008 events - this needs fixing!
+	# Stereo-B lon = -44.06, 1.04 A.U. at 8-Dec start; = -46.67, 1.02 at 15-Jan-2009
+	# Stereo-A lon = +42.22, 0.97 A.U. at 8-Dec start; =  42.80, 0.97 at 15-Jan-2009
+	my $blocs = pdl([-44.06,1.04],[-46.67,1.02]);
+	my $alocs = pdl([ 42.22,0.97],[ 42.80,0.97]);
+	
+	my $aloc = ($alocs->mv(1,0) * $a)->sumover;
+	my $bloc = ($blocs->mv(1,0) * $a)->sumover;
+	
+	my $ap = $aloc->apply($t);
+	my $bp = $bloc->apply($t);
+	
+	$w->circle($ap->((0)),$ap->((1)),$rs,{color=>6});
+	$w->text("A",$ap->((0))+$rs,$ap->((1))+$rs,{color=>6});
+	$w->circle($bp->((0)),$bp->((1)),$rs,{color=>6});
+	$w->text("B",$bp->((0))+$rs,$bp->((1))+$rs,{color=>6});
+	
+	# FOV...
+	# cor-1: 0.64 deg -> 1.3 deg
+	# cor-2: 0.8 deg -> 4.0 deg
+	
+	# Draw FOVs
+	my $asub = sub {
+	    my $angle = shift;
+	    my $origin = shift;
+	    my $color = shift;
+	    
+	    my $sun_ang = atan2($origin->((1)),$origin->((0)));
+	    
+	    $p = $origin + (  pdl([$angle,0],[$angle,1])->apply(!t_radial() x t_linear(post=>[3.14159 - $sun_ang,0],scale=>[3.14159/180,2])) );
+	    $w->line($p->((0)),$p->((1)),{linestyle=>3,color=>$color});
+	};
+	
+	&$asub( 4.0,$ap,4);
+	&$asub(-4.0,$ap,4);
+	
+	&$asub(-4.0,$bp,4);
+	&$asub(4.0,$bp,4);
+	
+	&$asub(-18,$ap,2);
+	&$asub(-90,$ap,2);
+    }; 
+
+
+    my $frame = 0;
+    
+    my $date_epoch = str2time('2008-12-01T00:00:01.00');
+    my $jday_epoch = 2454801.5;
+
+    for($jday= $start; $jday <= $end; $jday += $opt->{cadence}) {
+	printf "frame %d of %d (%.1f%% finished)\n",$frame,$fcount,($frame/$fcount)*100;
+	my $wname = sprintf($opt->{out_template}.".ppm/ppm",$frame++);
+
+	my $w=pgwin(dev=>$wname,size=>[9,6]);
+	
+	my $utime = $date_epoch + (24*3600)*($jday - $jday_epoch);
+	my $datestr = time2str("%Y %h %d %H:%M",$utime);
+
+	&$setup_window($w, {title=>"Overhead feature map: $datestr"}, $utime);
+	$w->hold;
+	
+	key: for $k(keys %$obj) {
+	    next key if($obj->{$k}->{range}->((0)) > $jday || $obj->{$k}->{range}->((1)) < $jday);
+	    
+	    if($obj->{$k}->{type} eq 'Triangulation') {
+		
+		# Triangulation data -- plot points.
+		my($r,$err) = interpolate($jday, $obj->{$k}->{jday}, $obj->{$k}->{point_p_dist});
+		$pp = $obj->{$k}->{lonlat_hee}->((0))->qsort->(*2)->copy;
+		$pp->((1)) .= $r;
+
+		$p = $pp->apply($t);
+		$w->points($p->((0)), $p->((1)), {symbol=>3});
+		$w->line($p->((0)), $p->((1)));
+		print ".";
+	    } elsif($obj->{$k}->{type} eq 'TH') {
+		
+		# TH data - render the curved edge.
+		my($r,$err) = interpolate($jday, $obj->{$k}->{jday}, $obj->{$k}->{point_p_dist});
+		my $Dlon = $obj->{$k}->{lonlat_delta}->((0));
+		my $theta = (xvals(201)-100)/100 * $Dlon;
+
+		# {alpha} is the distortion parameter
+		# 0 - circle
+		# -1 -- perfectly straight
+		# <-1 -- concave out
+		# 1 - rounder
+		# equation: r = rcent * (1 - \rho (1/cos(psi) - 1))
+		my $rp = 1 - ($obj->{$k}->{alpha} * (1/cos($theta*3.14159/180) - 1));
+		$rp *= $r;
+		$theta += $obj->{$k}->{lonlat_hee}->((0));
+		$pp = pdl($theta,$rp)->mv(-1,0);
+		$p = $pp->apply($t);
+		
+		$w->line($p->((0)),$p->((1)),{color=>7});
+		
+
+		print "|";
+	    } else {
+		die "Unknown object type '$obj->{$k}->{type}'\n";
+	    }
+	}
+
+	
+	$w->close;
+	$pngname = $wname;
+	$pngname =~ s/ppm\/ppm$/png/;
+	$wname =~ s:\/ppm$::;
+	my $im = rim($wname);
+	wim($im,$pngname);
+	unlink $wname;
+    }
+
+}

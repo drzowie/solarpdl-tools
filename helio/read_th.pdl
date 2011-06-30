@@ -1,0 +1,148 @@
+=head2 read_th - read in a TH front file prepared by Howard
+
+=for ref
+
+Read in a file from Howard & Tappin's TH model efforts, to 
+describe a moving heliospheric front.
+
+You get back a hash containing:
+
+=over 3
+
+=label event 
+
+An event label (an IDL-style identifier string)
+
+=label lonlat_hee 
+
+A 2x<n> PDL containing samples of longitude and latitude in
+heliocentric earth ecliptic coordinates ("lon" is like RA but in
+degrees, "lat" is declination, origin is at Sun center) at the start 
+of the observation.
+
+=label lonlat_delta
+
+a 2x<n> PDL containing the half-width of the front in longitude and in 
+latitude
+
+=label alpha
+
+An <n>-PDL containing the distortion parameter for the front(s)
+
+=label speed
+
+An <n>-PDL containing the speed in km/sec
+
+=label jday
+
+an <N>-PDL containing the julian date number for each moment in which
+the fronts were observed
+
+=label elongation
+
+an <N>-PDL containing the elongation (from the POV of STEREO-A) of the event
+
+=label point_p_dist
+
+an <N>-PDL containing the Point P distance from Sun Center, in A.U.
+
+=back
+
+The file format is as described in notes from Tim Howard.  The first
+line of the file contains the label.  Then a blank line is expected
+and then one or more lines with four whitespace-delimited numbers
+containing the lat/lon coordinates, then another blank line followed
+by three columns containing JDAY, elongation, and Point P distance.
+
+ KEY FOR THE TH MODEL
+ ====================
+ Event Label
+ -Period-
+ Helicentric Earth Ecliptic Latitude (degrees, + = north)
+ Latitude Width (degrees)
+ Helicentric Earth Ecliptic Longitude (degrees, + = east (left))
+ Longitude Width (degrees)
+ Distortion
+ Speed (km/s)
+ -Period-
+ Julian Day Number
+ Elongation (degrees)
+ Point P Distance (AU)
+
+On error, an exception is thrown with the error message.
+
+=cut
+
+sub read_th {
+    my $filename = shift;
+    local($_);
+    my $rt = "read_th";
+
+    my $out = {};
+    
+    open FOO,"<$filename" || die "$rt: couldn't open $filename for reading\n";
+    my @lines = map { s/\s*$//; $_ } <FOO>;
+    close FOO;
+
+    ## Read label line
+    $_ = shift @lines;
+    m/^[a-z]\w+$/i || die "$rt: First line of $filename doesn't seem to contain an identifier ('$_')\n";
+    $out->{event} = $_;
+    
+    ## Read blank line
+    $_ = shift @lines;
+    die "Second line of $filename isn't blank ('$_') in $rt\n" if(m/\w/);
+    
+    ## Read lon/lats
+    my @row;
+    my @lonlats = ();
+    while( (@row = split /\s+/, $lines[0]) == 6 ){
+	shift @lines;
+	push(@lonlats,[@row]);
+    }
+    unless(@lonlats) {
+	die "$rt: No lon/lat rows detected in '$filename'\n";
+    }
+    my $p = pdl(@lonlats);
+    $out->{lonlat_hee}   = $p->(2:0:-2)->copy;
+    $out->{lonlat_delta} = $p->(3:1:-2)->copy;
+    $out->{alpha} = $p->((4));
+    $out->{speed} = $p->((5));
+    
+    ## Read blank line
+    $_ = shift @lines;
+    die "$rt: Missing blank line in '$filename'\n" if(m/\w/);
+    
+    ## Read radial information
+    my @radii = ();
+    while( (@row = split /\s+/, $lines[0]) == 2) {
+	shift @lines;
+	push(@radii, [@row]);
+    }
+    unless(@radii) {
+	die "$rt: No radii found in '$filename'\n";
+    }
+    $radii = pdl(@radii);
+    ($out->{jday}, $out->{point_p_dist}) = map { $_->sever } $radii->mv(0,-1)->dog;
+
+
+    $out->{type} = "TH";
+
+    return $out;
+}
+    
+    
+
+    
+    
+    
+   
+	
+
+	
+	
+
+    
+
+
+

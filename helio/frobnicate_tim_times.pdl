@@ -1,0 +1,23 @@
+=head2 frobnicate_tim_times - find time range contained in a collection of Tim's tracking objects
+
+=for usage
+
+Accepts a hash ref containing the events by name, and inserts a "range" field in each one.  Also returns
+the overall jday range as (min,max) for the whole set.
+
+=cut
+
+
+sub frobnicate_tim_times {
+    my $collection = shift;
+    my @starts, @ends;
+
+    for $k(keys %$collection) {
+	my ($min,$max) = $collection->{$k}->{jday}->minmax;
+	push(@starts, $min);
+	push(@ends, $max);
+	$collection->{$k}->{range} = pdl($min,$max);
+    }
+
+    return pdl(  pdl(@starts)->min, pdl(@ends)->max   );
+}
