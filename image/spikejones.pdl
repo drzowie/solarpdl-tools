@@ -75,8 +75,8 @@ sub spikejones {
 
 
     my $k = -ones($siz,$siz)/$siz/$siz;
-    $k->(3,3) += 0.75;
-    $k->(2:4,2:4) += 0.25/9;
+    $k->($siz/2,$siz/2) += 0.75;
+    $k->($siz/2-1:$siz/2+1,$siz/2-1:$siz/2+1) += 0.25/9;
     
     my $thresh = ($opt->{alpha} || 1);
     my $am = ($az->convolveND($k) > $thresh);
