@@ -18,6 +18,7 @@ sub merge_batches {
     $opt->{MERGED_DIR} = "merged" unless(defined $opt->{MERGED_DIR});
     $opt->{PROCESSES} = 8 unless(defined $opt->{PROCESSES});
     $opt->{MARGIN} = 20 unless(defined $opt->{MARGIN});    
+    $opt->{START} = 20 unless(defined $opt->{START});
     
     my %filenames = ();
     
@@ -50,7 +51,9 @@ sub merge_batches {
 	$w->close;
     }
 
-    for $f(sort keys %filenames) {
+    @k = sort keys %filenames;
+    for $ii($opt->{START}..$#k) {
+	$f = $k[$ii];
 
 	next unless(@{$filenames{$f}} > 1);
 

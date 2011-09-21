@@ -1,6 +1,7 @@
 =head2 motion_filter - hi2 pipeline component
 
 =cut
+use PDL::NiceSlice;
 
 sub motion_filter {
     my $hash = shift;
@@ -14,10 +15,14 @@ sub motion_filter {
     $opt->{FILTER_MASK_TRIGGER} = 0.667 unless exists($opt->{FILTER_MASK_TRIGGER});
     $opt->{FILTER_CUTOFF_PPF} = 1       unless exists($opt->{FILTER_CUTOFF_PPF});
     $opt->{FILTER_CUBE} = "CEL"         unless exists($opt->{FILTER_CUBE});
+    $opt->{FILTER_REMOVE_FIXED} = 0     unless exists($opt->{FILTER_REMOVE_FIXED});
+    $opt->{FILTER_HYPERSMOOTHING} = 10  unless exists($opt->{FILTER_HYPERSMOOTHING});
 
     my $of = pdl( $opt->{FILTER_APOD_MARGIN}, 
 		   $opt->{FILTER_APOD_MARGIN}, 
 		   $opt->{FILTER_APOD_FRAMES} );
+
+    print "motion_filter: of=$of\n";
 
     my $fc = $opt->{FILTER_CUBE}."_CUBE";
     my $fm = $opt->{FILTER_CUBE}."_MASK";
@@ -83,6 +88,14 @@ sub motion_filter {
     my $rv = ($nd*$nd)->sumover->sqrt;
 
 
+    if($opt->{FILTER_REMOVE_FIXED}) {
+      print "CLOBBERING FIXED COMPONENT\n";
+#      $keep = $c3->((0),(0),(0));
+      $c3->(:,:,(0)) .= 0;
+#      $c3->((0),(0),(0)) .= $keep;
+      $c3i->(:,:,(0)) .= 0;
+    }
+
     for $i(1..$c3->dim(2)/2) {
     	print "i=$i ";
 	$filtplane = &$filtfunc($rv, $i * $cutoff / ($c3->dim(2)));
@@ -114,7 +127,7 @@ sub motion_filter {
     $c4dims = pdl($c4->dims);
     $rv2d = rvals($c4dims->(0:1)->list, {center=>[($c4dims->(0:1)/2)->list]})->range($c4dims->(0:1)/2,$c4dims->(0:1),'p')->sever;
 
-    $size = pdl($hash->{$fc}->dim(0)/2/10);
+    $size = pdl($hash->{$fc}->dim(0)/2/$opt->{FILTER_HYPERSMOOTHING});
     $k2d = exp(-$rv2d*$rv2d / $size / $size);
 
     $size = $c4->dim(2)/5;
