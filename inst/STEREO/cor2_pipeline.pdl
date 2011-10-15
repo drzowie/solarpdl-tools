@@ -1,0 +1,68 @@
+use Date::Parse;
+
+=head2 cor2_pipeline - do background subtraction and despiking on a batch of cor2 data.
+
+=for usage
+
+     $out = cor2_pipeline( $in_list, $opt );
+
+=for ref
+
+     Accepts a list of FITS files, generates a collection of FITS files in a specified output directory.
+
+=cut
+
+sub cor2_pipeline {
+    my $in_list = shift;
+    my $opt = shift;
+
+    print "cor2_pipeline...\n";
+
+    my $defaults = {
+	OUTPUT_DIR   => "processed",
+	OUTPUT_FILES => 1,
+	MOTION_FILTER => 1,
+	MAKE_BACKGROUNDS => 0,  
+	BKG_DIR => "bkgnd"
+    };
+
+    for $k(keys %$defaults) {
+	$opt->{$k} = $defaults->{$k} unless(exists $opt->{$k});
+    }
+
+    my $bkdir = $opt->{BKG_DIR};
+
+    if($opt->{MAKE_BACKGROUNDS}) {
+	print "--- Making background images ---\n";
+	`mkdir $opt->{OUTPUT_DIR}`;
+	local($opt->{OUTDIR}) = $bkdir;
+	make_backgrounds($in_list, $opt);
+    }
+
+    ##############################
+    # remove_f_corona is a bad idea here because the data volume is too high -- so we have to use the
+    # existing backgrounds (above) and subtract.    
+    @bkfiles = <$bkdir/*>;
+    if(@bkfiles < 1) {
+	die "Must have at least one background file in $bkdir!";
+    }
+
+    local($opt->{WRITE_FILES}) = 0;
+    $bks_cube = subtract_backgrounds($in_list,\@bkfiles,$opt);
+
+    print "despiking ".($bks_cube->dim(2))." images";
+    for $i(0..$bks_cube->dim(2)-1) {
+	print ".";
+	my $layer = $bks_cube->(:,:,($i));
+	$layer .= spikejones($layer, {siz=>5});
+    }
+    print "\n";
+    
+    $hash = {CEL_CUBE => $bks_cube,
+	     CEL_MASK => 1
+    };
+    motion_filter($hash,$opt);
+    
+    # write to individual files here
+}
+	     
