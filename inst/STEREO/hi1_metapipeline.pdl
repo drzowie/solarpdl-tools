@@ -15,6 +15,7 @@ sub hi1_metapipeline {
 	BATCH_START             => 0,
         BATCH_LENGTH		=> 7,
 	BATCH_STEP      	=> 0.5,
+	BATCH_MIN_FRAC          => 0.75,
 	PROCESSES		=> 2,
 	DIST_CORRTIME   	=> 3,
 	DIST_CORR_NSAMP 	=> 75,
@@ -32,7 +33,7 @@ sub hi1_metapipeline {
     my @times = map { str2time($_->{"DATE-OBS"}) + $_->{"EXPTIME"}/2 } @headers;
     my $times = pdl(@times);
 
-    my $last_start = $times[$#times] - $opt->{BATCH_LENGTH}*0.75 * 3600 * 24;
+    my $last_start = $times[$#times] - $opt->{BATCH_LENGTH}* $opt->{'BATCH_MIN_FRAC'} * 3600 * 24;
     my $t;
 
     my @start_times = ();

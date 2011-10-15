@@ -23,6 +23,11 @@ Options are:
 (default "L2") the directory where files should be put.  Output files
 have the same name as input files but are dumped in this directory.
 
+=item WRITE_FILES
+
+(default 1) flag indicating whether to output FITS files.  If it is zero, the results
+are NOT written to disk but are instead returned as a data cube.
+
 =back 
 
 =cut
@@ -38,16 +43,20 @@ sub subtract_backgrounds {
     my $opt = shift || {};
 
     my $defaults = {
-	OUTDIR => "L2"
+	OUTDIR => "L2",
+	WRITE_FILES=>1
     };
 
     for(keys %$defaults) {
 	$opt->{$_} = $defaults->{$_} unless exists($opt->{$_});
     }
 
-    `mkdir $opt->{OUTDIR}`;
+    if($opt->{WRITE_FILES}) {
+	`mkdir $opt->{OUTDIR}`;
+    }
 
     print "Loading ".(0+@$backgrounds)." background images...\n";
+    print "they are: \n\t",join("\n\t",map { "'$_'"} @$backgrounds),"\n\n";
     my @bkg = mrfits(@$backgrounds);
     
     $btimes = pdl( map { str2time($_->hdr->{'DATE-AVG'}) } @bkg );
@@ -55,7 +64,7 @@ sub subtract_backgrounds {
     
     print "Processing ".(0+@$f)." files...\n";
 
-    for $i(0..@$files) {
+    for $i(0..$#$files) {
 	print "$i of $#$files: reading...";
 	my $a=rfits($files->[$i]);
 
@@ -82,13 +91,21 @@ sub subtract_backgrounds {
 	    $a -= ( (1-$alpha)*$bkg[$t0dex] + $alpha * $bkg[$t1dex] );
 	}
 	
-	$ofile = $files->[$i];
-	$ofile =~ s:^.*/::;
-	$ofile = $opt->{OUTDIR}."/".$ofile;
-	print "writing $ofile...";
-	
-	wfits($a,$ofile);
-	print "\n";
+	if($opt->{WRITE_FILES}) {
+	    $ofile = $files->[$i];
+	    $ofile =~ s:^.*/::;
+	    $ofile = $opt->{OUTDIR}."/".$ofile;
+	    print "writing $ofile...";
+	    
+	    wfits($a,$ofile);
+	    print "\n";
+	} else {
+	    push(@out,float $a);
+	}
     }
-	
+    if($opt->{WRITE_FILES}==0) {
+        $PDL::BIGPDL = 1;
+	print "allocating a ".(4*(0+@out)*$out[0]->nelem)." (".join("x",($out[0]->dims,0+@out))." floats)\n";
+	return pdl(float,@out);
+    }
 }
