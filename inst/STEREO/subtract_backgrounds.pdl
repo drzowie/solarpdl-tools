@@ -44,7 +44,8 @@ sub subtract_backgrounds {
 
     my $defaults = {
 	OUTDIR => "L2",
-	WRITE_FILES=>1
+	WRITE_FILES=>1,
+	OUTPUT_SIZE=>undef
     };
 
     for(keys %$defaults) {
@@ -90,6 +91,16 @@ sub subtract_backgrounds {
 	    
 	    $a -= ( (1-$alpha)*$bkg[$t0dex] + $alpha * $bkg[$t1dex] );
 	}
+
+	if($opt->{OUTPUT_SIZE}) {
+	    my $msiz = $opt->{OUTPUT_SIZE};
+
+	    unless( ref $msiz ) {
+		$msiz = [$msiz, $msiz];
+	    }
+	    $a = $a->match($msiz,{method=>'j'});
+	}
+
 	
 	if($opt->{WRITE_FILES}) {
 	    $ofile = $files->[$i];

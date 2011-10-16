@@ -23,7 +23,8 @@ sub cor2_pipeline {
 	OUTPUT_FILES => 1,
 	MOTION_FILTER => 1,
 	MAKE_BACKGROUNDS => 0,  
-	BKG_DIR => "bkgnd"
+	BKG_DIR => "bkgnd",
+	OUTPUT_SIZE => undef
     };
 
     for $k(keys %$defaults) {

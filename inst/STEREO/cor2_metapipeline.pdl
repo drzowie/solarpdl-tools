@@ -1,5 +1,7 @@
 =head2 cor2_metapipeline - process a bunch of cor2 L1 files in batches
 
+Process cor2 L1 files by background subtraction, scaling, and motion filtration.
+
 =cut
 
 use Date::Parse;
@@ -19,6 +21,7 @@ sub cor2_metapipeline {
 	PROCESSES    => 3,
 	MOTION_FILTER=> 1,
 	MAKE_BACKGROUNDS => 1,
+	OUTPUT_SIZE => 1400,
 	BKG_DIR => "bkgnd"              # background directory for make_backgrounds.
     };
     
@@ -37,7 +40,7 @@ sub cor2_metapipeline {
     }     
 
     print "*********\nCOR-2 metapipeline - found ".(0+@$files)." files to process.  Reading their headers...\n";
-    my @headers = map { print "."; rfits($_,{data=>0}) } @$files;
+    my @headers = map { print "."; scalar(rfits($_,{data=>0})) } @$files;
     my @times = map { str2time($_->{"DATE-OBS"}) + $_->{"EXPTIME"}/2 } @headers;
     my $times = pdl(@times);
 
