@@ -1,3 +1,5 @@
+use PDL::Transform;
+
 =head2 subtract_backgrounds - remove f coronas found by make_backgrounds
 
 =for usage
@@ -78,7 +80,7 @@ sub subtract_backgrounds {
 	$t0dex = $t1dex if($t0dex==32767);
 	$t1dex = $t0dex if($t1dex==32767);
 
-	print "dexes are $t0dex,$t1dex...";
+	print "dexes are $t0dex,$t1dex (out of ".$btimes->nelem."...";
 
 	if($t0dex==$t1dex) {
 	    $a -= $bkg[$t0dex];
@@ -116,7 +118,7 @@ sub subtract_backgrounds {
     }
     if($opt->{WRITE_FILES}==0) {
         $PDL::BIGPDL = 1;
-	print "allocating a ".(4*(0+@out)*$out[0]->nelem)." (".join("x",($out[0]->dims,0+@out))." floats)\n";
+	print "allocating a ".(4*(0+@out)*$out[0]->nelem)/1024/1024." MiB PDL (".join("x",($out[0]->dims,0+@out))." floats)\n";
 	return pdl(float,@out);
     }
 }
