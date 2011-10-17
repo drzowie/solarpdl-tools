@@ -47,7 +47,8 @@ sub subtract_backgrounds {
     my $defaults = {
 	OUTDIR => "L2",
 	WRITE_FILES=>1,
-	OUTPUT_SIZE=>undef
+	OUTPUT_SIZE=>undef,
+	CUT_RANGE=>undef
     };
 
     for(keys %$defaults) {
@@ -74,13 +75,16 @@ sub subtract_backgrounds {
 	our $t = str2time($a->hdr->{'DATE-AVG'} || $a->hdr->{'DATE-OBS'});
 	print "t=$t  ";	
 
-	$t0dex = which( $t >= $btimes )->max;
-	$t1dex = which( $t <= $btimes )->min;
+	if(all($t>=$btimes)) {
+	    $t0dex = $t1dex = $btimes->nelem - 1;
+	} elsif(all($t<$btimes)) {
+	    $t0dex = $t1dex = 0;
+	} else {
+	    $t0dex = which( $t >= $btimes )->max;
+	    $t1dex = which( $t <= $btimes )->min;
+	}
 
-	$t0dex = $t1dex if($t0dex==32767);
-	$t1dex = $t0dex if($t1dex==32767);
-
-	print "dexes are $t0dex,$t1dex (out of ".$btimes->nelem."...";
+	print "dexes are $t0dex,$t1dex "."(out of ".($btimes->nelem).")...";
 
 	if($t0dex==$t1dex) {
 	    $a -= $bkg[$t0dex];
@@ -92,6 +96,22 @@ sub subtract_backgrounds {
 	    print "alpha=$alpha...";
 	    
 	    $a -= ( (1-$alpha)*$bkg[$t0dex] + $alpha * $bkg[$t1dex] );
+	}
+
+	if($opt->{CUT_RANGE}) {
+	    unless( ((ref $opt->{CUT_RANGE}) eq 'ARRAY') && 
+		    @{$opt->{CUT_RANGE}}==4 
+		) {
+		die "Option CUT_RANGE exists but isn't an array ref with 4 elements!";
+	    }
+	    $hdr = $a->hdr_copy;
+	    $a = $a->($opt->{CUT_RANGE}->[0]:$opt->{CUT_RANGE}->[1],
+		      $opt->{CUT_RANGE}->[2]:$opt->{CUT_RANGE}->[3])->sever;
+	    $a->sethdr($hdr);
+	    $a->hdr->{CRPIX1} -= $opt->{CUT_RANGE}->[0];
+	    $a->hdr->{CRPIX2} -= $opt->{CUT_RANGE}->[2];
+	    $a->hdr->{NAXIS1} = $opt->{CUT_RANGE}->[1] - $opt->{CUT_RANGE}->[0] + 1;
+	    $a->hdr->{NAXIS2} = $opt->{CUT_RANGE}->[3] - $opt->{CUT_RANGE}->[2] + 1;
 	}
 
 	if($opt->{OUTPUT_SIZE}) {
@@ -118,7 +138,7 @@ sub subtract_backgrounds {
     }
     if($opt->{WRITE_FILES}==0) {
         $PDL::BIGPDL = 1;
-	print "allocating a ".(4*(0+@out)*$out[0]->nelem)/1024/1024." MiB PDL (".join("x",($out[0]->dims,0+@out))." floats)\n";
+	print "allocating a ".((4*(0+@out)*$out[0]->nelem)/1024/1024)." MiB PDL (".join("x",($out[0]->dims,0+@out))." floats)\n";
 	return pdl(float,@out);
     }
 }

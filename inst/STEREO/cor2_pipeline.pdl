@@ -24,7 +24,8 @@ sub cor2_pipeline {
 	MOTION_FILTER => 1,
 	MAKE_BACKGROUNDS => 0,  
 	BKG_DIR => "bkgnd",
-	OUTPUT_SIZE => undef
+	OUTPUT_SIZE => undef,
+	CUT_RANGE => [0,1023,0,2047]
     };
 
     for $k(keys %$defaults) {

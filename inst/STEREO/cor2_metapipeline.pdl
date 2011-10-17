@@ -15,13 +15,14 @@ sub cor2_metapipeline {
     
     $defaults = {
 	BATCH_START  => 0,
-	BATCH_LENGTH => 3,
+	BATCH_LENGTH => 2.5,
 	BATCH_STEP   => 0.5,
 	BATCH_MIN_FRAC => 0.75,
 	PROCESSES    => 3,
 	MOTION_FILTER=> 1,
 	MAKE_BACKGROUNDS => 1,
-	OUTPUT_SIZE => 1400,
+	OUTPUT_SIZE => undef,
+	CUT_RANGE=>undef,
 	BKG_DIR => "bkgnd"              # background directory for make_backgrounds.
     };
     
