@@ -41,7 +41,7 @@ sub motion_filter {
 	$hash->{$fc}->(:,:,($i)) ->indexND( 0+whichND($m!=0)) .= 0;
     }
 	
-    my $c3 = $hash->{$fc}->range( -$of,
+    my $c3 = ($hash->{$fm} * $hash->{$fc})->range( -$of,
 				       2*$of + pdl( $hash->{$fc}->dims ),
 				       'm'
 	)->sever;
@@ -73,7 +73,8 @@ sub motion_filter {
 	return( float($out) + ($hump * $hump * $splice));
     };
 
-        print "After apodization: c3 minmax is ".(join(",",$c3->minmax))."\n";
+    print "After apodization: c3 minmax is ".(join(",",$c3->minmax))."\n";
+
     print "FFT...";
     ($c3, $c3i) = spawn_fft($c3,$c3i);
 
@@ -108,7 +109,7 @@ sub motion_filter {
     $c3->(:,:,(0)) .= 0;
     $c3i->(:,:,(0)) .= 0;
 
-    my $c4 = $c3 -> copy;
+    my $c4 =$c3 -> copy;
     my $c4i=$c3i -> copy;
     
     print "inverse FFT (data)...";
@@ -147,7 +148,9 @@ sub motion_filter {
     $c4min = $c4->range($of,pdl($hash->{$fc}->dims))->mv(2,0)->minimum;
     print "subtracting...\n";
     $hash->{$fc} -= $c4min;
+
     $hash->{$fc} = $hash->{$fc}->setbadif($hash->{$fm}==0);
+
     print "returning from motion_filter...\n";
     return $hash;
 }

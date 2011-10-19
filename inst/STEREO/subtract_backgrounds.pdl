@@ -139,6 +139,6 @@ sub subtract_backgrounds {
     if($opt->{WRITE_FILES}==0) {
         $PDL::BIGPDL = 1;
 	print "allocating a ".((4*(0+@out)*$out[0]->nelem)/1024/1024)." MiB PDL (".join("x",($out[0]->dims,0+@out))." floats)\n";
-	return pdl(float,@out);
+	return (pdl(float,@out), [map { $_->hdr_copy } @out]);
     }
 }

@@ -50,7 +50,7 @@ sub cor2_pipeline {
     }
 
     local($opt->{WRITE_FILES}) = 0;
-    $bks_cube = subtract_backgrounds($in_list,\@bkfiles,$opt);
+    ($bks_cube,$hdrs) = subtract_backgrounds($in_list,\@bkfiles,$opt);
 
     print "despiking ".($bks_cube->dim(2))." images";
     for $i(0..$bks_cube->dim(2)-1) {
@@ -59,12 +59,51 @@ sub cor2_pipeline {
 	$layer .= spikejones($layer, {siz=>5});
     }
     print "\n";
+
+    ##############################
+    # Mask out the stuff outside the original FOV
+    use PDL::Transform;
+    my $coords = ndcoords($bks_cube->dim(0),$bks_cube->dim(1)) -> 
+	apply(t_fits($hdrs->[0]));
+    my $r2 = ($coords*$coords)->sumover;
+    $mask = ($r2 <= (4.125*4.125*3600*3600)) & ($r2 >= 3000*3000);
     
     $hash = {CEL_CUBE => $bks_cube,
-	     CEL_MASK => 1
+	     CEL_MASK => $mask
     };
+
+    if(0) {
+        print "Writing tmp files to $opt->{OUTPUT_DIR}-tmp...\n";
+	`mkdir $opt->{OUTPUT_DIR}-tmp`;
+	for $i(0..$#$in_list){
+	    $a = $hash->{CEL_CUBE}->(:,:,($i))->copy;
+	    $a->sethdr($hdrs->[$i]);
+	    $a *= $mask;
+	    $file = $in_list->[$i];
+	    $file =~ s:.*\/::;
+	    $file = $opt->{OUTPUT_DIR}."-tmp/".$file;
+	    wfits($a,$file);
+	    print "$file...";
+	}
+	print "\n";
+    }
+
     motion_filter($hash,$opt);
     
     # write to individual files here
+    `mkdir $opt->{OUTPUT_DIR}`;
+
+    print "Writing files to $opt->{OUTPUT_DIR}...\n";
+    for $i(0..$#$in_list) {
+	$a = $hash->{CEL_CUBE}->(:,:,($i))->copy;
+	$a->sethdr($hdrs->[$i]);
+	$file = $in_list->[$i];
+	$file =~ s:.*\/::;
+	$file = $opt->{OUTPUT_DIR}."/".$file;
+	wfits($a, $file);
+	print "$file...";
+    }
+    print "\n";
+    return $hash;
 }
 	     

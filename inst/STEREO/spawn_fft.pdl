@@ -26,7 +26,8 @@ sub spawn_fft {
     my $tmpdir = "/tmp/fft_tmp";
     unless(-e $tmpdir) {
 	`mkdir $tmpdir`;
-    }    
+    }
+
     my $lf = "$tmpdir/spawn_fft.pid";
 
     if($invert) {
@@ -51,6 +52,8 @@ sub spawn_fft {
 	print ".";
     }
 
+    `rm -fr $tmpdir/*`;
+
     open FOO,">$lf";
     print FOO "$$\n";
     close FOO;
@@ -58,8 +61,8 @@ sub spawn_fft {
     my $prefix = "$tmpdir/$$.$serialno";
     $serialno++;
     
-    $rpname = $prefix."-rp-%d.fits";
-    $ipname = $prefix."-ip-%d.fits";
+    $rpname = $prefix."-rp.fits";
+    $ipname = $prefix."-ip.fits";
     
     print "spawn_fft: writing $rpname and $ipname...";
     wfits($rp, $rpname);
@@ -79,11 +82,11 @@ use PDL::IO::FITS;
 \$ip = rfits("$ipname");
    
 $fftcmd(\$rp, \$ip);
-    
-    for \$i(0..\$rp->dim(2)-1) {
-	wfits(\$rp->slice(":,:,(\$i)")->copy, sprintf("$rpname",\$i));
-	wfits(\$ip->slice(":,:,(\$i)")->copy, sprintf("$ipname",\$i));
-    }
+
+      for \$i(0..\$rp->dim(2)-1)    {
+	wfits(\$rp->slice(":,:,(\$i)")->copy, sprintf("$rpname-%d",\$i));
+	wfits(\$ip->slice(":,:,(\$i)")->copy, sprintf("$ipname-%d",\$i));
+      }
     
 exit(0);
 EOF
@@ -97,8 +100,8 @@ EOF
       
       print "Reading transformed files";
     files: for $i(0..$rp->dim(2)-1) {
-	my $rpn = sprintf("$rpname",$i);
-	my $ipn = sprintf("$ipname",$i);
+	my $rpn = sprintf("$rpname-%d",$i);
+	my $ipn = sprintf("$ipname-%d",$i);
 	if(!-e $rpn || !-e $ipn) {
 	    print "Hey!  $rpn or $ipn doesn't exist!\n";
 	    print "Script must have crashed...\n";
