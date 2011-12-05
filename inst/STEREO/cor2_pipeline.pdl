@@ -25,7 +25,8 @@ sub cor2_pipeline {
 	MAKE_BACKGROUNDS => 0,  
 	BKG_DIR => "bkgnd",
 	OUTPUT_SIZE => undef,
-	CUT_RANGE => [0,1023,0,2047]
+	CUT_RANGE => [0,1023,0,2047],
+	R_RANGE => [0.83,4.125]
     };
 
     for $k(keys %$defaults) {
@@ -66,7 +67,7 @@ sub cor2_pipeline {
     my $coords = ndcoords($bks_cube->dim(0),$bks_cube->dim(1)) -> 
 	apply(t_fits($hdrs->[0]));
     my $r2 = ($coords*$coords)->sumover;
-    $mask = ($r2 <= (4.125*4.125*3600*3600)) & ($r2 >= 3000*3000);
+    $mask = ($r2 <= ($opt->{R_RANGE}->[1] * 3600)**2) & ($r2 >= ($opt->{R_RANGE}->[0] * 3600)**2);
     
     $hash = {CEL_CUBE => $bks_cube,
 	     CEL_MASK => $mask

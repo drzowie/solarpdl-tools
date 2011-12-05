@@ -19,7 +19,8 @@ sub merge_batches {
     $opt->{PROCESSES} = 8 unless(defined $opt->{PROCESSES});
     $opt->{MARGIN} = 20 unless(defined $opt->{MARGIN});    
     $opt->{START} = 20 unless(defined $opt->{START});
-    
+    $opt->{REGEXP} = 'clean\-(.*)\-\-BATCH.*' unless(defined $opt->{REGEXP});
+
     my %filenames = ();
     
     print "Sorting ".(0+@$files)." files based on name...\n";
@@ -27,7 +28,7 @@ sub merge_batches {
     for $file(@$files) {
 	$f2 = $file;
 	$f2 =~ s:.*/::;
-	unless($f2 =~ m/clean\-(.*)\-\-BATCH.*/) {
+	unless($f2 =~ m/$opt->{REGEXP}/) {
 	    print "File $f2 doesn't match -- skipping\n";
 	    next;
 	} 
