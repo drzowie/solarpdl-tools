@@ -26,7 +26,12 @@ sub cor2_pipeline {
 	BKG_DIR => "bkgnd",
 	OUTPUT_SIZE => undef,
 	CUT_RANGE => [0,1023,0,2047],
-	R_RANGE => [0.83,4.125]
+	R_RANGE => [0.83,4.125],
+	FILTER_MASK_TRIGGER=>1e-9,
+	FILTER_APOD_MARGIN=>30,
+	FILTER_REMOVE_FIXED=>0,
+	FILTER_SLOP=>0.33,
+	FILTER_HYPERSMOOTHING=>20
     };
 
     for $k(keys %$defaults) {
@@ -73,20 +78,10 @@ sub cor2_pipeline {
 	     CEL_MASK => $mask
     };
 
-    if(0) {
-        print "Writing tmp files to $opt->{OUTPUT_DIR}-tmp...\n";
-	`mkdir $opt->{OUTPUT_DIR}-tmp`;
-	for $i(0..$#$in_list){
-	    $a = $hash->{CEL_CUBE}->(:,:,($i))->copy;
-	    $a->sethdr($hdrs->[$i]);
-	    $a *= $mask;
-	    $file = $in_list->[$i];
-	    $file =~ s:.*\/::;
-	    $file = $opt->{OUTPUT_DIR}."-tmp/".$file;
-	    wfits($a,$file);
-	    print "$file...";
-	}
-	print "\n";
+    ##############################
+    # Remove remaining stars
+    for $i(0..$bks_cube->dim(2)-1) {
+	$bks_cube->(:,:,($i)) .= spikejones($bks_cube->(:,:,($i)),{siz=>5});
     }
 
     motion_filter($hash,$opt);

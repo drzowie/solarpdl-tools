@@ -77,6 +77,7 @@ sub motion_filter {
 
     print "FFT...";
     ($c3, $c3i) = spawn_fft($c3,$c3i);
+    fftnd($c3,$c3i); #
 
 
     print "filtering...";
@@ -113,7 +114,8 @@ sub motion_filter {
     my $c4i=$c3i -> copy;
     
     print "inverse FFT (data)...";
-    ($c3, $c3i) = spawn_fft($c3, $c3i, 1);
+    # ($c3, $c3i) = spawn_fft($c3,$c3i,1);
+    ifftnd($c3,$c3i);
 
     undef $c3i;
     $hash->{$fc} .= $c3->range( $of, pdl( $hash->{$fc}->dims ) )->sever;
@@ -142,7 +144,8 @@ sub motion_filter {
     }
 
     print "inverse FFT (smooth)...";
-    ($c4, $c4i) = spawn_fft($c4, $c4i, 1);
+    #($c4, $c4i) = 
+ifftnd($c4,$c4i); 
 
     print "Finding minima...";
     $c4min = $c4->range($of,pdl($hash->{$fc}->dims))->mv(2,0)->minimum;
