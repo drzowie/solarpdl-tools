@@ -30,7 +30,10 @@ sub clean_bad {
     print "Processing $#if files...\n";
     $in = diskcache(\@if,{ro=>1});
 
-    for $i(2..$#if-3){
+    $sub = sub {
+        $i = shift;
+	$inframe = $in->[$i];
+
 	$inframe = $in->[$i];
 	$badloc = whichND( $inframe->isbad );
 	if($badloc->nelem) {
@@ -59,6 +62,9 @@ sub clean_bad {
 	    $w->imag($out,0,30); $w->hold;
 	    $w->text("$i of $#if - $if[$i]",100,100);
 	}
-    }
+    };
+
+    multicore([2..$#if-3],$sub,4);
+
 }
     
