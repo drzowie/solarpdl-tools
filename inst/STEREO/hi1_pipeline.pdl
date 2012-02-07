@@ -62,6 +62,10 @@ sub hi1_pipeline {
     $hash = remove_f_corona($in_list, $opt);      # initial f coronal background sub
     delete $opt->{RAW_CUBE};
 
+    print "distortion parameters...\n";
+    get_distortion_params($hash, $opt);   # measure stellar drift
+
+
     print "Despiking...\n";
     
     for $i(0..$hash->{BKSUB_CUBE}->dim(2)-1){
@@ -76,8 +80,6 @@ sub hi1_pipeline {
     $opt->{POLY_CUBE} = "BKSUB";
     remove_polynomials($hash,$opt);       # remove slow background drift
 
-    print "distortion parameters...\n";
-    get_distortion_params($hash, $opt);   # measure stellar drift
     
     print "shift_to_celestial...\n";
     shift_to_celestial($hash, $opt);      # nullify stellar drift
