@@ -225,6 +225,7 @@ sub get_distortion_params {
 	my $ct1 = $hash->{'CORR'}->{loc};
 	my $ct2 = $hash->{'CORR'}->{of} + $ct1;
 	my $ii=0;
+print "convenience variables ok\n";
 
 	# Identify maximum horizontal range...
 	
@@ -235,7 +236,7 @@ sub get_distortion_params {
 	}
 
 	my $yr = pdl($opt->{PIXEL_YRANGE});
-
+print "trimming fit points - xr is $xr\n";
 	# Trim fit points to the region of interest.
 	$ctwhich = which($ct1->((0)) >= $xr->((0)) &	
 			 $ct1->((0)) <= $xr->((1)) &
