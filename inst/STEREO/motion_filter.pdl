@@ -76,9 +76,9 @@ sub motion_filter {
     print "After apodization: c3 minmax is ".(join(",",$c3->minmax))."\n";
 
     print "FFT...";
-    ($c3, $c3i) = spawn_fft($c3,$c3i);
-#    fftnd($c3,$c3i); 
 
+    # ($c3, $c3i) = spawn_fft($c3,$c3i);
+    fftnd($c3,$c3i);
 
     print "filtering...";
 

@@ -89,6 +89,20 @@ sub hi1_pipeline {
     print "null_stars...\n";
     null_stars($hash, $opt);              # try to cancel out the starfield
 
+    print "Write nulled stuff...\n";
+    $a = $opt->{OUTPUT_DIR}."-nofft";
+    `mkdir $a`;
+    print "i: ".$opt->{CLEAN_MARGIN_FRAMES}."..".$hash->{CEL_CUBE}->dim(2)-1-$opt->{CLEAN_MARGIN_FRAMES}."\n";
+    for $i($opt->{CLEAN_MARGIN_FRAMES}..$hash->{CEL_CUBE}->dim(2)-1-$opt->{CLEAN_MARGIN_FRAMES}) {
+        print "$i\n";
+	my $im = $hash->{CEL_CUBE}->(:,:,($i))->copy;
+	$im->sethdr($hash->{RAW_HDRS}->[$i]);
+	my $fname = sprintf("%s/frame-%4.4d.fits",$a,$i);
+	printf("Writing test file %d of %d\n",$i,$hash->{CEL_CUBE}->dim(2)-1);
+	wfits($im,$fname);
+    }
+    print "Done writing nulled stuff...\n";
+
     motion_filter($hash,$opt);  # final clean... I hope.
 
 #    final_zero($hash);                    # last-ditch attempt...

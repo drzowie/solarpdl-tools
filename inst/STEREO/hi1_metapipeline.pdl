@@ -13,7 +13,7 @@ sub hi1_metapipeline {
 
     $defaults = {
 	BATCH_START             => 0,
-        BATCH_LENGTH		=> 7,
+        BATCH_LENGTH		=> 5,
 	BATCH_STEP      	=> 0.5,
 	BATCH_MIN_FRAC          => 0.75,
 	PROCESSES		=> 2,

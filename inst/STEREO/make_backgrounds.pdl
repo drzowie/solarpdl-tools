@@ -157,7 +157,8 @@ sub make_backgrounds {
 
 		for $j(0..$#sampfiles) {
 		    print ".";
-		    $cube->(:,:,($j)) .= rfits($sampfiles[$j])
+		    my $file =  rfits($sampfiles[$j]);
+		    $cube->(:,:,($j)) .= $file
 			->(
 			   $x * $pass_w : $x * $pass_w + $cdims[0]-1,
 			   $y * $pass_h : $y * $pass_h + $cdims[1]-1
@@ -171,9 +172,17 @@ sub make_backgrounds {
 
 		print "Finding $opt->{PERCENTILE} percentile...\n";
 		$dex = int(0.5 + ($cs->dim(0) * $opt->{PERCENTILE}/100));
+		print "\$out->"."( ".($x * $pass_w)." : ".($x * $pass_w + $cdims[0]-1).", ".
+			($y * $pass_h)." : ".($y * $pass_h + $cdims[1]-1)." )".
+			" .= \$cs->"."(($dex))";
+
+		print "(\$out is [",join("x",$out->dims),"]; \$cs is [",join("x",$cs->dims),"])\n";
+
 		$out->( $x * $pass_w : $x * $pass_w + $cdims[0]-1,
 			$y * $pass_h : $y * $pass_h + $cdims[1]-1
 			) .=$cs->(($dex));
+
+			print "\n\nOK\n\n";
 	    }
 	}
 	$fname = sprintf("%s/BKG-%s.fits",$opt->{OUTDIR},time2str("%Y-%m-%dT%T",$centers->at($i)));
