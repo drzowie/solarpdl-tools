@@ -1,0 +1,10 @@
+##############################
+# hi2_metabatch - process one time interval of hi2 data, which can
+# be handled using a single collection of correlations and dist-params files
+# made from the center of the time interval.
+#
+# You feed in a collection of hi2 L0 data, and it gets processed using the
+# IDL L1 processing tool, then cleaned using clean_bad, and finally fed to the 
+# hi2_metapipeline.
+
+sub hi2_metabatch(
