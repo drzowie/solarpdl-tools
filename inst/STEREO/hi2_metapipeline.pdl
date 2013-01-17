@@ -16,7 +16,8 @@ sub hi2_metapipeline {
 	BATCH_STEP      	=> 2,
 	BATCH_START             => 0,
 	BATCH_STOP              => 0,
-	PROCESSES		=> 3,
+	BATCH_PREFIX            => "",
+	PROCESSES		=> 5,
 	DIST_CORRTIME   	=> 5,
 	DIST_CORR_NSAMP 	=> 150,
 	DIST_GUESS_DRIFTRATE	=> 72/5,
@@ -74,12 +75,12 @@ sub hi2_metapipeline {
 	    }
 	}
 
-	$opt->{OUTPUT_DIR}       =  sprintf("batch-%3.3d",$batchno);
+	$opt->{OUTPUT_DIR}       =  sprintf("%sbatch-%3.3d",$opt->{BATCH_PREFIX},$batchno);
 	$opt->{DEBUG_OUTPUT_PREFIX}  =  sprintf("tmp/o-%3.3d",$batchno);
-	$opt->{DIST_CORR_FNAME}  =  sprintf("correlations.pl",$batchno);
-	$opt->{DIST_PARAM_FNAME} =  sprintf("dist-params.pl",$batchno);
+	$opt->{DIST_CORR_FNAME}  =  sprintf("%scorrelations.pl",$opt->{BATCH_PREFIX},$batchno);
+	$opt->{DIST_PARAM_FNAME} =  sprintf("%sdist-params.pl",$opt->{BATCH_PREFIX},$batchno);
 
-	unless( -e "correlations.pl" && -e "dist-params.pl" ) {
+	unless( -e $opt->{DIST_CORR_FNAME} && -e $opt->{DIST_PARAM_FNAME} ) {
 	    print "correlations.pl or dist-params.pl doesn't exist -- running first batch single-threaded..\n";
 
 	    open SO_SAVE,">&STDOUT";

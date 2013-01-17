@@ -1,0 +1,73 @@
+use strict;
+
+=head2 correlate_patch2
+
+=for usage
+
+ $of = correlate_patch2($im0, $im1, $loc0, $of0, $size0, $patchr0, $corr_thresh);
+
+=for ref
+
+Cross-correlate starfield image patches to identify their offsets.
+This is modeled on correlate_patch, but hopefully more robust.
+
+You feed in two images, a location in one, an offset vector to the
+corresponding location in the other (all in pixel coordinates, of
+course), a size of a region to consider, a patch radius, and a minimum
+correlation coefficient below which the fit is rejected.
+
+You get back out a new offset vector.
+
+=cut
+
+sub correlate_patch2 {
+    my $im0  = shift;   # full image
+    my $im1  = shift;   # full image 
+    my $loc0 = shift;   # 2-PDL: location in im0 (pixels)
+    my $of0  = shift;   # 2-PDL: guess offset in piels to location in im1
+    my $size0 = shift;  # radius of offset ranges to consider (in pixels)
+    my $patchr0 = shift;
+    my $corr_thresh = shift || 0.985;
+    
+    my $size = pdl(0,0)+$size0;
+    my $patchr = (defined $patchr0) ? $patchr0 + pdl(0,0) : $size->copy;
+
+    ##########
+    # step 0: get approximate offset..
+    my $size = $size + $patchr;
+
+    our $reg0 = $im0->range($loc0-$size/2, $size*2+1, 'e')->sever;
+    $reg0 -= $reg0->avg;
+    $reg0 /= sqrt(($reg0*$reg0)->avg);
+
+    our $reg1 = $im1->range($loc0-$size/2 + $of0, $size*2+1, 'e')->sever;
+    $reg1 -= $reg1->avg;
+    $reg1 /= sqrt(($reg1*$reg1)->avg);
+    
+    our $crosscorr = $reg0->(-1:0:-1,-1:0:-1)->convolveND($reg1,{bound=>'t'});
+    my $maxloc = whichND($crosscorr == $crosscorr->max)->(:,(0));
+
+    $maxloc -= $size; 
+    $maxloc += $of0;
+
+    print "preliminary pixel offset is $maxloc\n";
+
+    ##########
+    # step 1: extract the region of interest and carry out a more selective fit...
+
+    $reg0 = $im0->range($loc0 - $size0/2, $size0, 'e')->sever;
+    $reg0 -= $reg0->avg;
+    $reg0 /= sqrt(($reg0*$reg0)->avg);
+
+    $reg1 = $im1->range($loc0 - $size0/2 + $maxloc, $size0, 'e')->sever;
+    $reg1 -= $reg1->avg;
+    $reg1 /= sqrt(($reg1*$reg1)->avg);
+
+    $crosscorr = $reg0->(-1:0:-1,-1:0:-1)->convolveND($reg1,{bound=>'t'});
+
+    
+
+    
+
+}
+    

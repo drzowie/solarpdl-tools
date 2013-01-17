@@ -53,7 +53,7 @@ sub correlate_patch {
     # Step 2: try to maximize correlation with subpixel precision
     use PDL::Transform;
     my $pdims = [($patchr*2+1)->list];
-    my $mparams = {method=>'j',blur=>1.5, pix=>1};
+    my $mparams = {method=>'h',blur=>1.25, pix=>1};
 
     my $corr;
     my $patch0;
@@ -86,7 +86,7 @@ sub correlate_patch {
        return 1.0 - $corr;
     };
 
-    my $x = amoeba($heur, pdl(-0.5,-0.5,-0.5),1,1e-3,1e-5,1e3);
+    my $x = amoeba($heur, pdl(-0.5,-0.5,-0.5),1,1e-2,1e-4,1000);
 
     if(defined($ww0)) {
 	$ww0->release;
@@ -101,9 +101,6 @@ sub correlate_patch {
 	return undef;
     }
 
-#    print "  corr=$corr\n";
-
-    # print "Final offset: $of0 - 2*($of_best) - 2*($x)\n";
     return ( $of0 - $x->(0:1)*2 );
 }
 

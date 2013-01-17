@@ -36,8 +36,8 @@ sub get_distortion_params {
     $opt->{'DIST_CORR_FNAME'}  = "correlations.pl"      unless(exists($opt->{'DIST_CORR_FNAME'}));
     $opt->{'DIST_PARAM_FNAME'} = "distortion-params.pl" unless(exists($opt->{'DIST_PARAM_FNAME'}));
     $opt->{'DIST_CORR_NSAMP'}  = 50                     unless(exists($opt->{'DIST_CORR_NSAMP'}));
-    $opt->{'DIST_CORR_RSIZE'}  = 15                     unless(exists($opt->{'DIST_CORR_RSIZE'}));
-    $opt->{'DIST_CORR_PSIZE'}  = 20                      unless(exists($opt->{'DIST_CORR_PSIZE'}));
+    $opt->{'DIST_CORR_RSIZE'}  = 35                     unless(exists($opt->{'DIST_CORR_RSIZE'}));
+    $opt->{'DIST_CORR_PSIZE'}  = 40                      unless(exists($opt->{'DIST_CORR_PSIZE'}));
     $opt->{'DIST_MIN_PCORR'}   = 0.95                    unless(exists($opt->{'DIST_MIN_PCORR'}));
     $opt->{'DIST_CORRTIME'}    = 10                      unless(exists($opt->{'DIST_CORRTIME'}));
     $opt->{'DIST_GUESS_DRIFTRATE'} = 72/5                unless(exists($opt->{'DIST_GUESS_DRIFTRATE'}));
@@ -125,8 +125,9 @@ sub get_distortion_params {
 		    } else {
 			delete $proc{$pid};
 			$s = sprintf("tmp/proc-%d-output.pl",$pid);
+			print "restoring proc-output: s=$s\n";
 			push(@of, frestore($s));
-			unlink($s);
+#			unlink($s);
 			$n++ if(defined($of[$#of]));
 		    }
 		}
@@ -164,8 +165,9 @@ sub get_distortion_params {
 	    } else {
 		delete $proc{$pid};
 		my $s = sprintf("tmp/proc-%d-output.pl",$pid);
+		print "s is $s\n";
 		push(@of,frestore($s));
-		unlink($s);
+#		unlink($s);
 		$n++ if(defined($of[$#of]));
 	    }
 	}
@@ -238,6 +240,10 @@ print "convenience variables ok\n";
 	my $yr = pdl($opt->{PIXEL_YRANGE});
 print "trimming fit points - xr is $xr\n";
 	# Trim fit points to the region of interest.
+	print "ct1 has dims ".join("x",$ct1->dims)."\n";
+	print "ct2 has dims ".join("x",$ct2->dims)."\n";
+	print "xr has dims ".join("x",$xr->dims)."\n";
+	print "yr has dims ".join("x",$yr->dims)."\n";
 	$ctwhich = which($ct1->((0)) >= $xr->((0)) &	
 			 $ct1->((0)) <= $xr->((1)) &
 			 $ct2->((0)) >= $xr->((0)) &

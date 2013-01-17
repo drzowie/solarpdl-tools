@@ -29,6 +29,10 @@ sub hi2_pipeline {
     print "\n\n";
 
     our $hash = remove_f_corona($in_list, $opt);
+    print "opt is: ";
+    for $k(sort keys $opt) {
+	print "\t$k\t$opt->{$k}\n";
+    }
     if($opt->{DEBUG_PIPELINE}) {
 	print "Dumping raw cube to $opt->{DEBUG_OUTPUT_PREFIX}raw.fits\n";
 	wfits( $hash->{RAW_CUBE}, $opt->{DEBUG_OUTPUT_PREFIX}."raw.fits" );
