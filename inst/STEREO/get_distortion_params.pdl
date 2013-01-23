@@ -35,7 +35,7 @@ sub get_distortion_params {
 
     $opt->{'DIST_CORR_FNAME'}  = "correlations.pl"      unless(exists($opt->{'DIST_CORR_FNAME'}));
     $opt->{'DIST_PARAM_FNAME'} = "distortion-params.pl" unless(exists($opt->{'DIST_PARAM_FNAME'}));
-    $opt->{'DIST_CORR_NSAMP'}  = 50                     unless(exists($opt->{'DIST_CORR_NSAMP'}));
+    $opt->{'DIST_CORR_NSAMP'}  = 20                     unless(exists($opt->{'DIST_CORR_NSAMP'}));
     $opt->{'DIST_CORR_RSIZE'}  = 35                     unless(exists($opt->{'DIST_CORR_RSIZE'}));
     $opt->{'DIST_CORR_PSIZE'}  = 40                      unless(exists($opt->{'DIST_CORR_PSIZE'}));
     $opt->{'DIST_MIN_PCORR'}   = 0.95                    unless(exists($opt->{'DIST_MIN_PCORR'}));
@@ -107,6 +107,11 @@ sub get_distortion_params {
 	$im0->sethdr($hash->{'RAW_HDRS'}->[$st_dex]);
 	$im1->sethdr($hash->{'RAW_HDRS'}->[$en_dex]);
 
+	use PDL::Transform;
+	$im1 = $im1->match($im0,{method=>'g'});
+	$im0 = $im0->match($im0,{method=>'g'});
+
+
 	my $guess_offset = ($t1 - $t0)/3600/24   * $opt->{DIST_GUESS_DRIFTRATE};
 	my $deltat = ($t1-$t0)/3600/24;
 
@@ -127,7 +132,7 @@ sub get_distortion_params {
 			$s = sprintf("tmp/proc-%d-output.pl",$pid);
 			print "restoring proc-output: s=$s\n";
 			push(@of, frestore($s));
-#			unlink($s);
+			unlink($s);
 			$n++ if(defined($of[$#of]));
 		    }
 		}
@@ -142,13 +147,13 @@ sub get_distortion_params {
 		unless($pid) {
 		    ## daughter
 		    eval {
-			$a = correlate_patch($im0->clip(0)->sqrt, $im1->clip(0)->sqrt,
+			$a = - correlate_patch2($im0->clip(0)->sqrt, $im1->clip(0)->sqrt,
 					     pdl( ($i+0.5) * ($hash->{'BKSUB_CUBE'}->dim(0)/$opt->{'DIST_CORR_NSAMP'}),
 						  ($j+0.5) * ($hash->{'BKSUB_CUBE'}->dim(1)/$opt->{'DIST_CORR_NSAMP'})
 					     ),
 					     pdl( $guess_offset, 0 ),
-					     $opt->{'DIST_CORR_RSIZE'},
-					     $opt->{'DIST_CORR_PSIZE'},
+					     $opt->{'DIST_CORR_RSIZE'}/2,
+					     $opt->{'DIST_CORR_PSIZE'}/2,
 					     $opt->{'DIST_MIN_PCORR'});
 			fdump($a,sprintf("tmp/proc-%d-output.pl",$$));
 		    };
@@ -183,7 +188,7 @@ sub get_distortion_params {
 	      (($of0->((1)))->abs < 6) &
 	      ((($looplocs-512)*($looplocs-512))->sumover->sqrt < 400)
 	    );
-	     
+	$mask = isfinite($of0->((0))) & isfinite($of0->((1)));
 
 	print "mask=$mask\n";
 

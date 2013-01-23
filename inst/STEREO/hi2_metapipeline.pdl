@@ -19,7 +19,7 @@ sub hi2_metapipeline {
 	BATCH_PREFIX            => "",
 	PROCESSES		=> 5,
 	DIST_CORRTIME   	=> 5,
-	DIST_CORR_NSAMP 	=> 150,
+	DIST_CORR_NSAMP 	=> 50,
 	DIST_GUESS_DRIFTRATE	=> 72/5,
 	NULL_SMOOTH_SIZE	=> 5,
 	PIXEL_XRANGE		=> pdl(0,1023),
@@ -31,7 +31,7 @@ sub hi2_metapipeline {
     }
 
     print "*********\nHI-2 metapipeline - found ".(0+@$files)." files to process.  Reading their headers...\n";
-    my @headers = map { rfits($_,{data=>0}) } @$files;
+    my @headers = map { print "."; rfits($_,{data=>0}) } @$files;
 
     my @times = map { str2time($_->{"DATE-OBS"}) + $_->{"EXPTIME"}/2 } @headers;
     my $times = pdl(@times);
