@@ -42,7 +42,6 @@ sub clean_bad {
 	    $nearcube = $nearcube->setbadif($nearcube < -100);
 	    $chunks = $nearcube->range( $badloc - 2, [5,5,5] ,'e' );
  	    $repl = $chunks->clump(1,2,3)->mv(1,0)->average;
-	    print "repl has ".($repl->isbad->sum)." bad elements ";
 	    $out = $inframe->copy;
 	    $out->indexND($badloc) .= $repl;
 	    $out->sethdr($in->[$i]->hdr_copy);
@@ -58,13 +57,9 @@ sub clean_bad {
 	    print "$if[$i] -> $of[$i] ($i of $#$infiles). ".
 		"no BAD points.\n";
 	}
-	if(defined($w)&& ($badloc->nelem || ($i%10==0))) {
-	    $w->imag($out,0,30); $w->hold;
-	    $w->text("$i of $#if - $if[$i]",100,100);
-	}
     };
 
-    multicore([2..$#if-3],$sub,4);
+    multicore([2..$#if-3],$sub,7);
 
 }
     
