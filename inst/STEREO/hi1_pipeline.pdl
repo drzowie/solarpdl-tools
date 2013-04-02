@@ -49,6 +49,7 @@ sub hi1_pipeline {
 	FILTER_CUTOFF_PPF       => 1,
 	FILTER_HYPERSMOOTHING   => 1,
 	FILTER_REMOVE_FIXED     => 0,
+	FILTER_ZAP_HF           => 0,
 
 	PIXEL_XRANGE            => pdl(2,1022),
 	PIXEL_YRANGE            => pdl(2,1022),
