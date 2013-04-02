@@ -36,6 +36,7 @@ sub  remove_f_corona {
      $opt->{'MASK_THRESH'} = 500 unless( exists($opt->{'MASK_THRESH'}) );
      $opt->{'MASK_RADIUS'} = 500 unless(exists($opt->{'MASK_RADIUS'}));
      $opt->{'MARK_BAD'} = 1 unless(exists($opt->{'MARK_BAD'}));
+     $opt->{'IMG_SIZE'} = 1024 unless(exists($opt->{'IMG_SIZE'}));
 
      print cards($opt);
      # Make sure we have a data cube in usable form
@@ -92,8 +93,8 @@ sub  remove_f_corona {
 	     my @cube;
 	     for my $fname(@$in) {
 		 my $im = float rfits($fname,{hdrcpy=>1});
-		 if($im->dim(0) != 1024 || $im->dim(1) != 1024) {
-		     print "File $fname isn't 1024x1024.  Skipping.\n";
+		 if($im->dim(0) != $opt->{IMG_SIZE} || $im->dim(1) != $opt->{IMG_SIZE}) {
+		     print "File $fname isn't $opt->{IMG_SIZE}x$opt->{IMG_SIZE}.  Skipping.\n";
 		 } else {
 		     push @cube, $im;
 		 }

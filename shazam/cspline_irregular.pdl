@@ -1,4 +1,4 @@
-=sub cspline_irregular - interpolate using csplines on an irregularly sampled dataset
+=head2 cspline_irregular - interpolate using csplines on an irregularly sampled dataset
 
 =for usage
 
@@ -27,7 +27,9 @@ sub cspline_irregular {
 }
 
 no PDL::NiceSlice;
-use Inline PDLPP => <<'EOF'
+`mkdir ./_Inline`;
+use Inline (PDLPP=>Config=>DIRECTORY=>"./_Inline/");
+use Inline PDLPP => <<'EOF';
 
 pp_def('my_cspline_irregular',
 	Pars=>'x(k); dat(k); xloc(); c(); [o]out();',

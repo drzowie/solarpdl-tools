@@ -23,7 +23,7 @@ sub shift_to_instrument {
     our $t_nl = t_nl(@{$hash->{'D_PARAMS'}->{'tnl_params'}});
     
     
-    $hash->{'CLEAN_CUBE'}= zeroes(float, $hash->{RAW_HDRS}->[0]->{NAXIS1}, $hash->{RAW_HDRS}->[0]->{NAXIS2}, $hash->{CEL_CUBE}->dim(2));
+    $hash->{'CLEAN_CUBE'}= PDL->new_from_specification(float, $hash->{BKSUB_CUBE}->dims);
     
     
     for $i(0..$hash->{'CEL_CUBE'}->dim(2)-1) {
@@ -32,20 +32,20 @@ sub shift_to_instrument {
 	my $delta_t =  ($t0 - $hash->{'UTIME'}->(($i)) ) / 3600 /24;
 	my $orbital_rotation = $hash->{'D_PARAMS'}->{'ospeed'} * $delta_t;
 	
-	print "Shifting by $delta_t days (".(-$orbital_rotation)." degrees)...\n";
+	print "Shifting back by $delta_t days (".(-$orbital_rotation)." degrees)...\n";
 	my $t_o = t_linear(pre=> [ $orbital_rotation, 0]);
 	
         my $t_crop = t_linear(pre=>[ - $xr->at(0) , -$yr->at(0) ]);
 	
 	$hash->{'CLEAN_CUBE'}->(:,:,($i)) .= 
-	    (1001 + $hash->{'CEL_CUBE'}->(:,:,($i)))->map(
+	    $hash->{'CEL_CUBE'}->(:,:,($i))->map(
 		!$t_nl x !$t_o x $t_nl x !$t_crop, 
-		[$hash->{CLEAN_CUBE}->dim(0),$hash->{CLEAN_CUBE}->dim(1)],
+		[$hash->{BKSUB_CUBE}->dim(0),$hash->{BKSUB_CUBE}->dim(1)],
 		{method=>'j', pix=>1}
-	    ) - 1001;
+	    );
     }
 
-    $hash->{'CLEAN_CUBE'} = $hash->{'CLEAN_CUBE'}->setbadif($hash->{'CLEAN_CUBE'}<=-1000);
+#    $hash->{'CLEAN_CUBE'} = $hash->{'CLEAN_CUBE'}->setbadif($hash->{'CLEAN_CUBE'}<=-1000);
     
     return $hash;
 }

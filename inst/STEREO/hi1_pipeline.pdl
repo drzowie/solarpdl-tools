@@ -28,21 +28,28 @@ sub hi1_pipeline {
 	MASK_RADIUS             => 0,
 	MARK_BAD                => 0,
 
-	ALIGN_PATCHSIZE		=> 30,
+	DIST_CORRTIME           => 2,
+	DIST_CORR_NSAMP		=> 50,
+	DIST_CORR_RSIZE         => 35,
+	DIST_CORR_PSIZE         => 35,
+	DIST_GUESS_DRIFTRATE    => 260/5,
 
 	NULL_MIN_PCT		=> 5,
 	NULL_SMOOTH_SIZE	=> [7,5],
 
 	MIN_SMOOTH_SIZE		=> 5,
-	POLY_ORDER              => 6,
+	POLY_ORDER              => 4,
 
-	FILTER_APOD_MARGIN      => 80,
-	FILTER_MASK_TRIGGER     => 3,
-	FILTER_CUTOFF_PPF       => 0.5,
+	MOTION_FILTER           => 1,
+	FILTER_APOD_FRAMES      => 5,
+	FILTER_MAX_SIZE         => 30,
+	FILTER_APOD_MARGIN      => 40,
+	FILTER_MASK_TRIGGER     => 1e-12,
+	FILTER_US_SIZE		=> 11,
+	FILTER_CUTOFF_PPF       => 1,
+	FILTER_HYPERSMOOTHING   => 1,
+	FILTER_REMOVE_FIXED     => 0,
 
-	DIST_GUESS_DRIFTRATE	=> 260/5,
-	DIST_CORRTIME	        => 2,
-	DIST_CORR_NSAMP	        => 25,
 	PIXEL_XRANGE            => pdl(2,1022),
 	PIXEL_YRANGE            => pdl(2,1022),
 	DEBUG_PIPELINE          => 1,
@@ -60,7 +67,7 @@ sub hi1_pipeline {
     our $hash;
 	
     $hash = remove_f_corona($in_list, $opt);      # initial f coronal background sub
-    delete $opt->{RAW_CUBE};
+    delete $hash->{RAW_CUBE};
 
     print "distortion parameters...\n";
     get_distortion_params($hash, $opt);   # measure stellar drift
@@ -78,11 +85,21 @@ sub hi1_pipeline {
 
     print "Removing polynomials...\n";
     $opt->{POLY_CUBE} = "BKSUB";
+    local($opt->{POLY_PRESMOOTH}) = 5;
     remove_polynomials($hash,$opt);       # remove slow background drift
 
-    
     print "shift_to_celestial...\n";
     shift_to_celestial($hash, $opt);      # nullify stellar drift
+    
+    if($opt->{DEBUG_PIPELINE}) {
+	$a = $opt->{OUTPUT_DIR}."-cel";
+	`mkdir $a`;
+	for $i(0..$hash->{CEL_CUBE}->dim(2)-1){
+	    my $im = $hash->{CEL_CUBE}->(:,:,($i))->copy;
+	    $im->sethdr($hash->{RAW_HDRS}->[$i]);
+	    wfits($im, sprintf("%s/frame-%4.4d.fits",$a,$i));
+	}
+    }
 
     delete $opt->{BKSUB_CUBE};
 
@@ -93,19 +110,37 @@ sub hi1_pipeline {
     $a = $opt->{OUTPUT_DIR}."-nofft";
     `mkdir $a`;
     print "i: ".$opt->{CLEAN_MARGIN_FRAMES}."..".$hash->{CEL_CUBE}->dim(2)-1-$opt->{CLEAN_MARGIN_FRAMES}."\n";
-    for $i($opt->{CLEAN_MARGIN_FRAMES}..$hash->{CEL_CUBE}->dim(2)-1-$opt->{CLEAN_MARGIN_FRAMES}) {
-        print "$i\n";
-	my $im = $hash->{CEL_CUBE}->(:,:,($i))->copy;
-	$im->sethdr($hash->{RAW_HDRS}->[$i]);
-	my $fname = sprintf("%s/frame-%4.4d.fits",$a,$i);
-	printf("Writing test file %d of %d\n",$i,$hash->{CEL_CUBE}->dim(2)-1);
-	wfits($im,$fname);
+
+    if($opt->{DEBUG_PIPELINE}) {
+        for $i($opt->{CLEAN_MARGIN_FRAMES}..$hash->{CEL_CUBE}->dim(2)-1-$opt->{CLEAN_MARGIN_FRAMES}) {
+	    my $im = $hash->{CEL_CUBE}->(:,:,($i))->copy;
+	    $im->sethdr($hash->{RAW_HDRS}->[$i]);
+	    my $fname = sprintf("%s/frame-%4.4d.fits",$a,$i);
+	    wfits($im,$fname);
+	}
+	print "Done writing nulled stuff...\n";
     }
-    print "Done writing nulled stuff...\n";
 
-    motion_filter($hash,$opt);  # final clean... I hope.
+    if($opt->{MOTION_FILTER}) {
+	print "Motion filter...\n";
+	motion_filter($hash,$opt);  # final clean... I hope.	
+    } else {
+	print "No motion filter...\n";
+    }
 
-#    final_zero($hash);                    # last-ditch attempt...
+    if($opt->{DEBUG_PIPELINE}){
+	$a = $opt->{OUTPUT_DIR}."-fft";
+	`mkdir $a`;
+	print "i: ".$opt->{CLEAN_MARGIN_FRAMES}."..".$hash->{CEL_CUBE}->dim(2)-1-$opt->{CLEAN_MARGIN_FRAMES}."\n";
+	for $i($opt->{CLEAN_MARGIN_FRAMES}..$hash->{CEL_CUBE}->dim(2)-1-$opt->{CLEAN_MARGIN_FRAMES}) {
+	    print "$i\n";
+	    my $im = $hash->{CEL_CUBE}->(:,:,($i))->copy;
+	    $im->sethdr($hash->{RAW_HDRS}->[$i]);
+	    my $fname = sprintf("%s/frame-%4.4d.fits",$a,$i);
+	    printf("Writing test file %d of %d\n",$i,$hash->{CEL_CUBE}->dim(2)-1);
+	    wfits($im,$fname);
+	}
+    }
 
     shift_to_instrument($hash,$opt);      # put back in instrument coordinates
 

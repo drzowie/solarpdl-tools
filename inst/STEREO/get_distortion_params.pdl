@@ -35,7 +35,7 @@ sub get_distortion_params {
 
     $opt->{'DIST_CORR_FNAME'}  = "correlations.pl"      unless(exists($opt->{'DIST_CORR_FNAME'}));
     $opt->{'DIST_PARAM_FNAME'} = "distortion-params.pl" unless(exists($opt->{'DIST_PARAM_FNAME'}));
-    $opt->{'DIST_CORR_NSAMP'}  = 20                     unless(exists($opt->{'DIST_CORR_NSAMP'}));
+    $opt->{'DIST_CORR_NSAMP'}  = 30                     unless(exists($opt->{'DIST_CORR_NSAMP'}));
     $opt->{'DIST_CORR_RSIZE'}  = 35                     unless(exists($opt->{'DIST_CORR_RSIZE'}));
     $opt->{'DIST_CORR_PSIZE'}  = 40                      unless(exists($opt->{'DIST_CORR_PSIZE'}));
     $opt->{'DIST_MIN_PCORR'}   = 0.95                    unless(exists($opt->{'DIST_MIN_PCORR'}));
@@ -44,6 +44,7 @@ sub get_distortion_params {
     $opt->{'NPROC'} = 8                                  unless(exists($opt->{'NPROC'}));
     $opt->{'PIXEL_YRANGE'} = pdl(75,950)  unless(exists($opt->{'PIXEL_YRANGE'}));
     $opt->{'PIXEL_XRANGE'} = undef        unless(exists($opt->{'PIXEL_XRANGE'}));
+    $opt->{'DEBUG'} = 0 unless(exists($opt->{'DEBUG'}));
 
     ##############################
     # Convert timestamps to UNIX time...
@@ -147,7 +148,7 @@ sub get_distortion_params {
 		unless($pid) {
 		    ## daughter
 		    eval {
-			$a = - correlate_patch2($im0->clip(0)->sqrt, $im1->clip(0)->sqrt,
+			$a = correlate_patch2($im0->clip(0)->sqrt, $im1->clip(0)->sqrt,
 					     pdl( ($i+0.5) * ($hash->{'BKSUB_CUBE'}->dim(0)/$opt->{'DIST_CORR_NSAMP'}),
 						  ($j+0.5) * ($hash->{'BKSUB_CUBE'}->dim(1)/$opt->{'DIST_CORR_NSAMP'})
 					     ),
@@ -180,7 +181,6 @@ sub get_distortion_params {
 	my $of0 = pdl(@of);
 	print "making mask.  of0 is $of0; guess offset is $guess_offset, nsamp is $opt->{'DIST_CORR_NSAMP'}\n";
 	my $looplocs = ((ndcoords($opt->{'DIST_CORR_NSAMP'},$opt->{'DIST_CORR_NSAMP'})+0.5)*( pdl( $hash->{'BKSUB_CUBE'}->dims )->(0:1) )/$opt->{'DIST_CORR_NSAMP'})  -> mv(2,1)->clump(1,2);
-	print "looplocs=$looplocs\n";
 
 	my $mask = 
 	    ( ($of0->((0))!=0) & 
@@ -215,7 +215,7 @@ sub get_distortion_params {
 
     ##############################
     # Now check if theres's a dump file for the actual parameterized fit.
-    if( -e $opt->{'DIST_PARAM_FNAME'} ) {
+    if( $opt->{'DIST_PARAM_FNAME'} and  (-e $opt->{'DIST_PARAM_FNAME'}) ) {
 	printf("get_distortion_params - restoring parameter information from $opt->{'DIST_PARAM_FNAME'}\n");
 	
 	my $h = frestore($opt->{'DIST_PARAM_FNAME'});
@@ -243,6 +243,7 @@ print "convenience variables ok\n";
 	}
 
 	my $yr = pdl($opt->{PIXEL_YRANGE});
+
 print "trimming fit points - xr is $xr\n";
 	# Trim fit points to the region of interest.
 	print "ct1 has dims ".join("x",$ct1->dims)."\n";
@@ -267,6 +268,7 @@ print "trimming fit points - xr is $xr\n";
 
 	
 	# shrink horizontal range by the pixel offset calculated, with an extra 10% margin.
+	print "\n***\nshrinking xr by $margin\n\n";
 	$xr += pdl(1,-1) * $margin * 1.1;
 	$xr = floor($xr+0.5);
 	print "column range is $xr "."(margin is $margin)\n";

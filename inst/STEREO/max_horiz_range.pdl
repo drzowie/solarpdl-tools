@@ -42,8 +42,9 @@ sub max_horiz_range {
     for( $i=$center; $all_ok->(($i)) && $i >= $opt->{HORIZ_XMIN}; $i--) {}
     my $mincol = $i + $margin;
 
-    if($maxcol - $mincol < 100) {
-	die("Not enough good columns in max_horiz_range -- check data quality\n");
+    if($maxcol - $mincol < 60) {
+    print "HORIZ_BADTHRESH=$opt->{HORIZ_BADTHRESH}\n";
+	die("Not enough good columns in max_horiz_range (".($maxcol-$mincol).")-- check data quality\n");
     }
 
     return [$mincol,$maxcol];
