@@ -74,6 +74,7 @@ sub hi1_metapipeline {
 #	$opt->{DIST_CORR_FNAME}  =  sprintf("correlations.pl",$batchno);
 #	$opt->{DIST_PARAM_FNAME} =  sprintf("param-batch%3.3d.pl",$batchno);
 
+	if(0){
 	unless( (-e "correlations.pl") and (-e "dist-params.pl")) {
 	    print "correlations.pl doesn't exist -- running first batch single-threaded..\n";
 
@@ -88,7 +89,7 @@ sub hi1_metapipeline {
 	    close BAR;
 	    close FOO;
 	}
-	
+	}
 	else {
 	
 	    print "Batch $batchno - sending ".(0+@batchfiles)." files to subprocess: \n".(join("--",@batchfiles[0,$#batchfiles]))."\n\n";
@@ -111,8 +112,8 @@ sub hi1_metapipeline {
 		eval {
 		    $opt->{OUTPUT_DIR}       =  sprintf("batch-%3.3d",$batchno);
 		    $opt->{DEBUG_OUTPUT_PREFIX}  =  sprintf("tmp/o-%3.3d",$batchno);
-		    $opt->{DIST_CORR_FNAME}  =  sprintf("correlations.pl",$batchno);
-		    $opt->{DIST_PARAM_FNAME} =  sprintf("dist-params.pl",$batchno);
+		    $opt->{DIST_CORR_FNAME}  =  sprintf("correlations-%3.3d.pl",$batchno);
+		    $opt->{DIST_PARAM_FNAME} =  sprintf("dist-params-%3.3d.pl",$batchno);
 
 		    open STDOUT,sprintf(">log-batch-%3.3d",$batchno);
 		    open STDERR,STDOUT;
