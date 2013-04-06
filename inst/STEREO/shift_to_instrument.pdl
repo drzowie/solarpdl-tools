@@ -36,6 +36,8 @@ sub shift_to_instrument {
 	my $t_o = t_linear(pre=> [ $orbital_rotation, 0]);
 	
         my $t_crop = t_linear(pre=>[ - $xr->at(0) , -$yr->at(0) ]);
+
+	$hash->{'CLEAN_CUBE'}->badflag(1);
 	
 	$hash->{'CLEAN_CUBE'}->(:,:,($i)) .= 
 	    $hash->{'CEL_CUBE'}->(:,:,($i))->map(

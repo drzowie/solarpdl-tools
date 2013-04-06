@@ -1,4 +1,4 @@
-=head2 hi1_pipeline - invoke the background-subtraction pipeline on a batch of hi1 data.
+=head2 hi1_pipeline - invoke the background-subtraction pipeline on a single batch of hi1 data.
 
 =for usage
      
@@ -6,8 +6,9 @@
 
 =for ref
 
-     Accepts a list of FITS files, generates a collection of FITS files in a specified output
-     directory.
+Accepts a list of FITS files, generates a collection of FITS files in a specified output
+directory.
+
 
 =cut
 $PDL::BIGPDL = 1;
@@ -28,8 +29,8 @@ sub hi1_pipeline {
 	MASK_RADIUS             => 0,
 	MARK_BAD                => 0,
 
-	DIST_CORRTIME           => 2,
-	DIST_CORR_NSAMP		=> 50,
+	DIST_CORRTIME           => 3,
+	DIST_CORR_NSAMP		=> 40,
 	DIST_CORR_RSIZE         => 35,
 	DIST_CORR_PSIZE         => 35,
 	DIST_GUESS_DRIFTRATE    => 260/5,
@@ -53,7 +54,7 @@ sub hi1_pipeline {
 
 	PIXEL_XRANGE            => pdl(2,1022),
 	PIXEL_YRANGE            => pdl(2,1022),
-	DEBUG_PIPELINE          => 1,
+	DEBUG_PIPELINE          => 0,
 	DEBUG_OUTPUT_PREFIX     => "tmp/",
 	CLEAN_MARGIN_FRAMES     => 2,
 

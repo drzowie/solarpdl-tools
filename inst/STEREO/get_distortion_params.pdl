@@ -41,7 +41,7 @@ sub get_distortion_params {
     $opt->{'DIST_MIN_PCORR'}   = 0.95                    unless(exists($opt->{'DIST_MIN_PCORR'}));
     $opt->{'DIST_CORRTIME'}    = 10                      unless(exists($opt->{'DIST_CORRTIME'}));
     $opt->{'DIST_GUESS_DRIFTRATE'} = 72/5                unless(exists($opt->{'DIST_GUESS_DRIFTRATE'}));
-    $opt->{'NPROC'} = 8                                  unless(exists($opt->{'NPROC'}));
+    $opt->{'NPROC'} = 3                                  unless(exists($opt->{'NPROC'}));
     $opt->{'PIXEL_YRANGE'} = pdl(75,950)  unless(exists($opt->{'PIXEL_YRANGE'}));
     $opt->{'PIXEL_XRANGE'} = undef        unless(exists($opt->{'PIXEL_XRANGE'}));
     $opt->{'DEBUG'} = 0 unless(exists($opt->{'DEBUG'}));
@@ -131,14 +131,13 @@ sub get_distortion_params {
 		    } else {
 			delete $proc{$pid};
 			$s = sprintf("tmp/proc-%d-output.pl",$pid);
-			print "restoring proc-output: s=$s\n";
 			push(@of, frestore($s));
 			unlink($s);
 			$n++ if(defined($of[$#of]));
 		    }
 		}
 		
-		print "** i=$i, j=$j - ".($i*$opt->{'DIST_CORR_NSAMP'}+$j)." of ".($opt->{'DIST_CORR_NSAMP'}**2).", kept $n, nproc=".(0+keys(%proc))."\n";
+		print $n."/".($i*$opt->{'DIST_CORR_NSAMP'}+$j)."  ";
 		
 		my $pid = fork();
 		if ($pid < 0) {
@@ -171,15 +170,13 @@ sub get_distortion_params {
 	    } else {
 		delete $proc{$pid};
 		my $s = sprintf("tmp/proc-%d-output.pl",$pid);
-		print "s is $s\n";
 		push(@of,frestore($s));
-#		unlink($s);
+		unlink($s);
 		$n++ if(defined($of[$#of]));
 	    }
 	}
 	
 	my $of0 = pdl(@of);
-	print "making mask.  of0 is $of0; guess offset is $guess_offset, nsamp is $opt->{'DIST_CORR_NSAMP'}\n";
 	my $looplocs = ((ndcoords($opt->{'DIST_CORR_NSAMP'},$opt->{'DIST_CORR_NSAMP'})+0.5)*( pdl( $hash->{'BKSUB_CUBE'}->dims )->(0:1) )/$opt->{'DIST_CORR_NSAMP'})  -> mv(2,1)->clump(1,2);
 
 	my $mask = 
@@ -189,15 +186,6 @@ sub get_distortion_params {
 	      ((($looplocs-512)*($looplocs-512))->sumover->sqrt < 400)
 	    );
 	$mask = isfinite($of0->((0))) & isfinite($of0->((1)));
-
-	print "mask=$mask\n";
-
-	print "mask components:\n";
-	print "of0 nonzero: ",($of0->((0)) != 0),"\n";
-	print "of0 near guess offset: ",(($of0->((0))-$guess_offset)->abs < 6),"\n";
-	print "of0 horizontal: ",($of0->((1))->abs<6),"\n";
-	print "locations near center: ",((($looplocs-512)*($looplocs-512))->sumover->sqrt < 400),"\n";
-
 
 	my $loc = $looplocs->(:, which($mask));
 	my $of = $of0->(:, which($mask));
@@ -232,7 +220,6 @@ sub get_distortion_params {
 	my $ct1 = $hash->{'CORR'}->{loc};
 	my $ct2 = $hash->{'CORR'}->{of} + $ct1;
 	my $ii=0;
-print "convenience variables ok\n";
 
 	# Identify maximum horizontal range...
 	
@@ -244,12 +231,7 @@ print "convenience variables ok\n";
 
 	my $yr = pdl($opt->{PIXEL_YRANGE});
 
-print "trimming fit points - xr is $xr\n";
 	# Trim fit points to the region of interest.
-	print "ct1 has dims ".join("x",$ct1->dims)."\n";
-	print "ct2 has dims ".join("x",$ct2->dims)."\n";
-	print "xr has dims ".join("x",$xr->dims)."\n";
-	print "yr has dims ".join("x",$yr->dims)."\n";
 	$ctwhich = which($ct1->((0)) >= $xr->((0)) &	
 			 $ct1->((0)) <= $xr->((1)) &
 			 $ct2->((0)) >= $xr->((0)) &
@@ -279,6 +261,8 @@ print "trimming fit points - xr is $xr\n";
 	my $ct2a;
 
 	# Define a fit heuristic -- RMS error in location
+	my $heur_ret;
+
 	our $heur = sub {
 	    my $dx = shift;
 	    my ($delta1, $delta2, $deltamu, $roll_angle, $r2, $orbital_rotation, $q, $qq) = $dx->list;
@@ -300,7 +284,6 @@ print "trimming fit points - xr is $xr\n";
 	    $avg = 1e6 if(!isfinite($avg));
 	    $avg = 1e6 if(any(isbad($dists)));
 
-	    print "NL fit to ".($ct1a->dim(1))." points: ii=$ii; dx: $dx; heur=$avg\n";
 	    if($opt->{DISPLAY}) {
 		our $ww0;
 		unless(defined $ww0) {
@@ -313,7 +296,7 @@ print "trimming fit points - xr is $xr\n";
 		$ww0->panel(1); $ww0->imag($z->(:,:,(0)),-2,2); $ww0->hold;
 		$ww0->panel(2); $ww0->imag($z->(:,:,(1)),-2,2); $ww0->hold;
 	    }
-
+	    $heur_ret = $avg;
 	    return $avg;
 	};
 	
@@ -331,11 +314,11 @@ print "trimming fit points - xr is $xr\n";
 	print "fitted with the basic six -- refining....\n";
 	$nlx = $nlx->append(pdl(0,0));
 
-	print "new loop...\n";
 	my $ii_targ = $ii+10;
 	for(;$ii<$ii_targ;$ii++) {
 	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-6, 1e-9, 1e4);
 	    push(@nlx, $nlx);
+	    print "ii=$ii; h=$heur_ret  ";
 	}
 
 	# Discard the worst 20% of the distances (ad hoc) to remove occasional missed stars
@@ -347,9 +330,9 @@ print "trimming fit points - xr is $xr\n";
 	my $ii_targ = $ii+10;
 	my $ii0 = $ii;
 	for(;$ii0<$ii_targ;$ii0++) {
-	    $ii = "loop $ii0 of reduced round\n";
 	    $nlx = amoeba($heur, $nlx, $siz/sqrt($ii+1), 1e-7, 1e-9, 1e4);
 	    push(@nlx, $nlx);
+	    print "r:ii0=$ii0; h=$heur_ret  ";
 	}
 	
 	print "done!\n";

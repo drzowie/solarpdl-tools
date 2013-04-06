@@ -100,21 +100,10 @@ sub correlate_patch2 {
     my $xcen = ($crosscorr_subpix * $xv)->sum;
     my $ycen = ($crosscorr_subpix * $yv)->sum;
     
-    print "xcen is $xcen; ycen is $ycen\n";
     $final_pix_of += pdl($xcen,$ycen);
 
-    print "last corr is ".($crosscorr_subpix->max)."\n";
     ##########
     # step 5: check the correlation coefficient with proper resampling, for thresholding
-
-    my $pdim = sub { print "$_[0] is ".join("x", eval("dims(\$$_[0])"))."\n";};
-    &$pdim("im1");
-    &$pdim("final_pix_of");
-    &$pdim("loc0");
-    &$pdim("sized");
-    print "sized value is $sized\n";
-    print "final_pix_of is $final_pix_of\n";
-    print "loc0-sized/2 is ".($loc0-$sized/2)."\n";
 
     $reg0 = $im0->map( t_linear(pre=>-($loc0-$patchd/2)),               [($patchd+1)->list], {method=>'g',pix=>1});
     $reg0 -= $reg0->avg;
@@ -126,15 +115,9 @@ sub correlate_patch2 {
 
     my $corr = ($reg0 * $reg1)->sum;
 
-    &$pdim("reg0");
-    &$pdim("reg1");
-
     my $corr = ($reg0*$reg1)->avg;
 
-    print "Offset is $final_pix_of; correlation coeff is $corr.\n";
-
     $final_pix_of = asin(pdl(1.1,1.1)) if($corr < $corr_thresh);
-
 
     return $final_pix_of;
 }

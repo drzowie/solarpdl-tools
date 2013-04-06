@@ -37,7 +37,7 @@ sub merge_batches {
 	unless(exists($filenames{$fdate})){
 	    $filenames{$fdate} = [];
 	}
-
+	
 	push(@{$filenames{$fdate}}, $file);
     }
 
@@ -88,6 +88,7 @@ sub merge_batches {
 		print "Spawned task for $mfname\n";
 	    } else {
 		# daughter
+		print "Evalling...\n";
 		eval {
 		    $ksiz = $opt->{MARGIN}*2 + 1;
 		    my $k = (1 + cos(rvals($ksiz,$ksiz)*3.14159/$opt->{MARGIN})) 
@@ -96,10 +97,12 @@ sub merge_batches {
 		    
 		    print "$f: ".(0+@{$filenames{$f}})." files...";
 		    @cube = mrfits(@{$filenames{$f}});
-		    $cube = pdl(@cube)->mv(-1,0)->sever;
+		    my $cube = pdl(@cube)->mv(-1,0)->sever;
+		    my $hdr = $cube[0]->gethdr;
+		    undef @cube;
 		    
 		    $cube->where($cube->isbad) .= -100;
-		    $badmask = (($cube <-1) | (!($cube->isfinite)))->short;
+		    $badmask = (($cube <-1)->short | (!($cube->isfinite))->short);
 
 		    # Expand the badmask so we can feather it later
 		    for $i(0..$badmask->dim(0)-1) {
@@ -114,10 +117,13 @@ sub merge_batches {
 		    }
 		    
 		    $avg = ($cube*$mask)->sumover / $mask->sumover;
-		    $avg->sethdr($cube[0]->gethdr);
+		    $avg->sethdr($hdr);
 		    print "writing $fname\n";
 		    wfits( $avg, $mfname);
 		};
+		if($@){
+			print STDERR "daughter: $@\n";
+		}
 		exit 0;
 	    }
 	} else {

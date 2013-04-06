@@ -95,6 +95,9 @@ sub shift_to_celestial {
 	    
 	print "data...";
 
+	$hash->{'BKSUB_CUBE'}->badflag(1);
+	$hash->{'CEL_CUBE'}->badflag(1);
+
 	$hash->{'CEL_CUBE'}->(:,:,($i)) .= 
 	    $hash->{'BKSUB_CUBE'}->(:,:,($i))->map(
 		$t_crop x !$t_nl x $t_o x $t_nl, 

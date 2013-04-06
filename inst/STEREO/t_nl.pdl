@@ -30,8 +30,6 @@ sub t_nl {
         );
 
     if(defined $q) {
-	print "4ier ";
-
 	my $tc = t_code(
 	    sub {
 		my $d = $_[0]->copy;
