@@ -87,6 +87,10 @@ sub shift_to_celestial {
 	    print "Finding nudge...";
 	    $nudge = amoeba($heur, pdl(0,0),0.1,1e-3,1e-5,1e3);
 	    print "nudge is $nudge, corr is $corr.  ";
+	    if($corr<0.95){
+		print "Correlation sucks. Ignoring nudge\n";
+		$nudge = pdl(0,0);
+	    }
 	} else {
 	    $nudge = pdl(0,0);
 	}
