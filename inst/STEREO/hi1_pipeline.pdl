@@ -144,7 +144,18 @@ sub hi1_pipeline {
 	}
     }
 
+    print "Final median...";
+    {
+        my $c2 = $hash->{CEL_CUBE}->copy;
+	for $i(1..$hash->{CEL_CUBE}->dim(2)-2){
+	    $hash->{CEL_CUBE}->(:,:,($i)) .= $c2->(:,:,$i-1:$i+1)->mv(-1,0)->medover;
+	    print "$i ";
+	}
+    }
+    print "\n";
+
     shift_to_instrument($hash,$opt);      # put back in instrument coordinates
+
 
     # Dump output to files...
     `mkdir $opt->{OUTPUT_DIR}`;
