@@ -36,7 +36,8 @@ sub hi1_pipeline {
 	DIST_GUESS_DRIFTRATE    => 260/5,
 
 	NULL_MIN_PCT		=> 5,
-	NULL_SMOOTH_SIZE	=> [7,5],
+	NULL_SMOOTH_SIZE	=> [9,7],
+	NULL_SMOOTH_FRAMES      => 1,
 
 	MIN_SMOOTH_SIZE		=> 5,
 	POLY_ORDER              => 4,
@@ -144,18 +145,7 @@ sub hi1_pipeline {
 	}
     }
 
-    print "Final median...";
-    {
-        my $c2 = $hash->{CEL_CUBE}->copy;
-	for $i(1..$hash->{CEL_CUBE}->dim(2)-2){
-	    $hash->{CEL_CUBE}->(:,:,($i)) .= $c2->(:,:,$i-1:$i+1)->mv(-1,0)->medover;
-	    print "$i ";
-	}
-    }
-    print "\n";
-
     shift_to_instrument($hash,$opt);      # put back in instrument coordinates
-
 
     # Dump output to files...
     `mkdir $opt->{OUTPUT_DIR}`;

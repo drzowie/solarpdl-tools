@@ -8,6 +8,7 @@ sub null_stars {
 
     $opt = {} unless defined($opt);
 
+    $opt->{NULL_SMOOTH_FRAMES}=1 unless(defined($opt->{NULL_SMOOTH_FRAMES}));
     $opt->{NULL_SMOOTH_SIZE} = [11,5] unless(defined($opt->{NULL_SMOOTH_SIZE}));
     $opt->{NULL_MIN_PCT}     = 10 unless(defined($opt->{NULL_MIN_PCT}));
     #
@@ -32,10 +33,27 @@ sub null_stars {
     } else {
 	$smooth = ones($opt->{NULL_SMOOTH_SIZE},$opt->{NULL_SMOOTH_SIZE});
     }
-    print "smooth is ",join("x",$smooth->dims),"\n";    
-    for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
-	$hash->{CEL_CUBE}->(:,:,($i)) .= $hash->{CEL_CUBE}->(:,:,($i))->med2d($smooth);
+
+    $nframes = int ( ($opt->{NULL_SMOOTH_FRAMES}-1)/2 ) * 2.0 + 1;
+
+    if($nframes <= 1) {
+	print "smooth is ",join("x",$smooth->dims),"\n";    
+	for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
+	    $hash->{CEL_CUBE}->(:,:,($i)) .= $hash->{CEL_CUBE}->(:,:,($i))->med2d($smooth);
+	}
+    } else {
+	print "nframes=$nframes\n";
+	# Smooth across frames too
+	my $c2 = $hash->{CEL_CUBE}->copy;
+	for $i(0..$hash->{CEL_CUBE}->dim(2)-1) {
+	    my $plane = $c2->range( ndcoords($smooth->dim(0), $smooth->dim(1), $nframes) - pdl($smooth->dim(0)/2,$smooth->dim(1)/2,$nframes/2)->floor + pdl(0,0,$i), 
+				    [$c2->dim(0), $c2->dim(1), 0], 'e'
+		)->clump(3)->medover;
+	    print "$i: plane is ".join("x",$plane->dims)."\n";
+	    $hash->{CEL_CUBE}->(:,:,($i)) .= $plane;
+	}
     }
+	
 
       print "null_stars: setting bad again...\n";
     $hash->{CEL_CUBE} = $hash->{CEL_CUBE}->setbadif($hash->{CEL_MASK}==0);
