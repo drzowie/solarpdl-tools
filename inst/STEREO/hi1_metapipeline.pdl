@@ -17,10 +17,6 @@ sub hi1_metapipeline {
 	BATCH_STEP      	=> 0.5,
 	BATCH_MIN_FRAC          => 0.75,
 	PROCESSES		=> 2,
-	DIST_CORRTIME   	=> 3,
-	DIST_CORR_NSAMP 	=> 75,
-	DIST_GUESS_DRIFTRATE	=> 260/5,
-	NULL_SMOOTH_SIZE	=> 5
     };
 	
     for $k(keys %$defaults) {
