@@ -48,7 +48,7 @@ sub hi1_pipeline_batch {
     my $opt = shift // {};
 
     # Force particular options
-    $opt->{BATCHLENGTH} = 5;   # days
+    $opt->{BATCHLENGTH} = 7;   # days
     $opt->{BATCH_STEP}  = 0.5; # days
     $opt->{CADENCE}     = 40;  # minutes for nominal cadence for the instrument
 
