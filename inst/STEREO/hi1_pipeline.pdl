@@ -111,7 +111,8 @@ sub hi1_pipeline {
 
     print "Write nulled stuff...\n";
     $a = $opt->{OUTPUT_DIR}."-nofft";
-    `mkdir $a`;
+    `mkdir $a` if($opt->{DEBUG_PIPELINE});
+
     print "i: ".$opt->{CLEAN_MARGIN_FRAMES}."..".$hash->{CEL_CUBE}->dim(2)-1-$opt->{CLEAN_MARGIN_FRAMES}."\n";
 
     if($opt->{DEBUG_PIPELINE}) {
