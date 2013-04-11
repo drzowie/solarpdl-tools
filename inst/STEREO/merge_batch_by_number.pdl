@@ -1,0 +1,65 @@
+=head2 merge_batch_by_number
+
+=for ref 
+
+You feed in a batch number and for each file in that batch, merge_batch_by_number
+finds all files that exist in that batch *and not in the next batch* and merges
+all copies of those files in the corresponding batch directory and earlier batches.
+
+=cut
+
+sub merge_batch_by_number {
+    my $batchno = shift;
+    my $opt = shift;
+
+    $opt->{BATCHDIR_TEMPLATE} = "batch-%4.4d" unless(exists($opt->{BATCHDIR_TEMPLATE}));
+    $opt->{BATCH_CHECK_COUNT} = 20 unless(exists($opt->{BATCHCOUNT}));
+    $opt->{REGEXP} = 'clean\-(.*)\-\-BATCH.*' unless(defined $opt->{REGEXP});
+
+    my $bd = sprintf($opt->{BATCHDIR_TEMPLATE},$batchno);
+    print "bd is $bd\n";
+
+    my $src_part = sub {	
+        my $fn = shift;
+	return undef unless($fn =~ m/$opt->{REGEXP}/);
+	return $1;
+    };
+
+    # Start the candidate list
+    my %candidates = ();
+    for my $file( <$bd/*>) {
+	my $s = &$src_part($file);
+	unless($s) {
+	    print "Ignoring $s (doesn't fit regexp)\n";
+	    next;
+	}
+	$candidates{$s}=[$file];
+    }
+
+    # Now remove any candidate that is in the followign batch
+    my $bd1 = sprintf($opt->{BATCHDIR_TEMPLATE},$batchno+1);
+    for my $file( <$bd1/*> ) {
+	my $s = &$src_part($file);
+	delete $candidates{$s} if(exists($candidates{$s}));
+    }
+
+    # Now troll the last several batches, looking for copies of the same
+    # file.
+    for my $batch( $batchno - $opt->{BATCH_CHECK_COUNT} .. $batchno-1 ) {
+	my $bd1 = sprintf($opt->{BATCHDIR_TEMPLATE},$batch);
+	for my $file( <$bd1/*> ) {
+	    my $s = &$src_part($file);
+	    if($s  and  $candidates{$s}) {
+		push(@{$candidates{$s}}, $file);
+	    }
+	}
+    }
+    # Just for symmetry, put the main entry at the end of each list...
+    for $k(keys %candidates) {
+	push(@{$candidates{$k}}, shift(@{$candidates{$k}}));
+    }
+    
+    for my $k(sort keys %candidates) {
+	merge_batches($candidates{$k}, $opt);
+    }
+}

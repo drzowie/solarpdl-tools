@@ -35,6 +35,10 @@ to be organized in daily directories named in C<yyyymmdd> form.
 This is the output directory as a sprintf template string.  Default is
 "hi1-batch-%4.4d".
 
+=item VERBOSE
+
+If set, then print a lot of stuff to stdout.  (If not set, print a little stuff to stdout)
+
 =back
 
 =cut
@@ -61,7 +65,7 @@ sub hi1_pipeline_batch {
     for $k(keys %$opt_defaults){
 	$opt->{$k} = $opt_defaults->{$k} unless exists($opt->{$k});
     }
-    print "opt is ".sdump($opt);
+    print "hi1_pipeline_batch: opt is ".sdump($opt) if($opt->{VERBOSE});
 
     unless($opt->{HI1_SC} =~ m/^[ab]$/) {
 	die "hi1_pipeline_batch: HI1_SC option must contain 'a' or 'b' to specify a spacecraft\n";
@@ -80,7 +84,7 @@ sub hi1_pipeline_batch {
     for($i=$t0; $i<$t1; $i+= 3600*24){
 	push(@dirlist, $l1dir."/".time2str("%Y%m%d",$i,'Z'));
     }
-    print "dirlist is ".join(",",@dirlist)."\n";
+    print "dirlist is ".join(",",@dirlist)."\n" if($opt->{VERBOSE});
 
     
     ##############################
@@ -98,25 +102,25 @@ sub hi1_pipeline_batch {
 
     ## Accumulate probably-ok files and their CROTA values into @f and @cr.
     for $fc(@fcheck) {
-	print "\n$fc ";
+	print "\n$fc " if($opt->{VERBOSE});
 	my $h = eval { rfits($fc,{data=>0}) };
 	next unless(ref($h) eq 'HASH');
 	
 	my $ht = str2time($h->{'DATE-OBS'});
-	print "ht:$h->{'DATE-OBS'}  ";
+	print "ht:$h->{'DATE-OBS'}  " if($opt->{VERBOSE});
 	next unless($ht >= $t0  and  $ht < $t1);
 	
-	print "SIZ:$h->{NAXIS1}x$h->{NAXIS2}  ";
+	print "SIZ:$h->{NAXIS1}x$h->{NAXIS2}  " if($opt->{VERBOSE});
 	next unless($h->{NAXIS1} > 1000);
 	next unless($h->{NAXIS2} > 1000);
 
-	print "exp:$h->{EXPTIME}  ";
+	print "exp:$h->{EXPTIME}  " if($opt->{VERBOSE});
 	next unless($h->{EXPTIME} > 1000);
 	
 	push(@f, $fc);
 	push(@cr, $h->{CROTA});
     }
-    print "\n\n";
+    print "\n\n" if($opt->{VERBOSE});
 
     ## Now look for files that deviate by more than a degree
     ## from the median of the batch, and reject those.
@@ -124,7 +128,7 @@ sub hi1_pipeline_batch {
     my $crmed = $cr->median;
     my @crok = (abs($cr - $crmed) < 1 )->list;
 
-    print "crmed is $crmed; cr is $cr\n";
+    print "crmed is $crmed; cr is $cr\n" if($opt->{VERBOSE});
     
     my @ff = ();
     for $i(0..$#f){
@@ -139,7 +143,8 @@ sub hi1_pipeline_batch {
 
     $opt->{OUTPUT_FILES} = 1;
     $opt->{OUTPUT_DIR} = sprintf($opt->{HI1_OUTPUT_TEMPLATE},$batchno);
-    
+    $opt->{DIST_CORR_FNAME}  = sprintf("hi1-batch-%4.4d-corr.pl",$batchno)   unless($opt->{DIST_CORR_FNAME});
+    $opt->{DIST_PARAM_FNAME} = sprintf("hi1-batch-%4.4d-params.pl",$batchno) unless($opt->{DIST_PARAM_FNAME});
     hi1_pipeline(\@ff, $opt);
 }
     

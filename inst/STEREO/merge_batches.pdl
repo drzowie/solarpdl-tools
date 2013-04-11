@@ -9,17 +9,22 @@
 You feed in a collection of file names and an optional options hash, and the files are merged into a single set of FITS files in the destination directory ("merged" by default or set by the option "MERGED_DIR").
 
 =cut
+use Date::Format;
 
 sub merge_batches {
     my $files = shift;
     my $opt = shift;
     
     $opt = {} unless defined($opt);
-    $opt->{MERGED_DIR} = "merged" unless(defined $opt->{MERGED_DIR});
+    $opt->{MERGED_DIR} = "L2" unless(defined $opt->{MERGED_DIR});
     $opt->{PROCESSES} = 8 unless(defined $opt->{PROCESSES});
     $opt->{MARGIN} = 20 unless(defined $opt->{MARGIN});    
-    $opt->{START} = 20 unless(defined $opt->{START});
+    $opt->{START} = 0 unless(defined $opt->{START});
     $opt->{REGEXP} = 'clean\-(.*)\-\-BATCH.*' unless(defined $opt->{REGEXP});
+
+    if($opt->{MERGED_DIR}  and  !(-d $opt->{MERGED_DIR})){
+	`mkdir $opt->{MERGED_DIR}`;
+    }
 
     my %filenames = ();
     
@@ -41,8 +46,6 @@ sub merge_batches {
 	push(@{$filenames{$fdate}}, $file);
     }
 
-    `mkdir $opt->{MERGED_DIR}`;
-
     # Now the filenames have been sorted.  Begin accumulating.
 
     my %pids = ();
@@ -53,7 +56,9 @@ sub merge_batches {
     }
 
     @k = sort keys %filenames;
+    print "start is $opt->{START}; k is $#k\n";
     for $ii($opt->{START}..$#k) {
+
 	$f = $k[$ii];
 
 	next unless(@{$filenames{$f}} > 1);
@@ -117,9 +122,19 @@ sub merge_batches {
 		    }
 		    
 		    $avg = ($cube*$mask)->sumover / $mask->sumover;
+		    
+		    ##############################
+		    # Add new header fields
+		    $hdr->{COMMENT} .= "Background model removed; some stars and artifacts may remain\n";
+		    $hdr->{HISTORY} .= "Removed background model (SwRI pipeline; PDL) CED\n   (Some artifacts may remain)";
+
+		    $hdr->{DATE} = time2str("%Y-%m-%dT%H:%M:%S",time,'Z');
+		    $hdr->{FILENAME} =~ s/_1(....\.fts)$/_2$1/;  # update L1 to L2
+
 		    $avg->sethdr($hdr);
+		    $fname = sprintf("%s/%s",($opt->{MERGED_DIR} || "."),$hdr->{FILENAME});
 		    print "writing $fname\n";
-		    wfits( $avg, $mfname);
+		    wfits( $avg, $fname);
 		};
 		if($@){
 			print STDERR "daughter: $@\n";
@@ -129,5 +144,10 @@ sub merge_batches {
 	} else {
 	    print "Hmmm...\n";
 	}
+    }
+    while(keys %pids) {
+	$p = wait();
+	return unless(defined($p) and $p>0);
+	delete $pids{$p};
     }
 }    
