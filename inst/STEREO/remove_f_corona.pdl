@@ -37,6 +37,7 @@ sub  remove_f_corona {
      $opt->{'MASK_RADIUS'} = 500 unless(exists($opt->{'MASK_RADIUS'}));
      $opt->{'MARK_BAD'} = 1 unless(exists($opt->{'MARK_BAD'}));
      $opt->{'IMG_SIZE'} = 1024 unless(exists($opt->{'IMG_SIZE'}));
+     $opt->{'REJECT_BY_SUM'} = 0.10 unless(exists($opt->{'REJECT_BY_SUM'}));
 
      print cards($opt);
      # Make sure we have a data cube in usable form
@@ -114,7 +115,7 @@ sub  remove_f_corona {
      ##############################
      # Handle negative values - BAD or maxval
      if($opt->{'neg'} eq 'bad') {
-	 $ims->setbadif($ims<0);
+	 $ims = $ims->setbadif($ims<0);
      } elsif($opt->{'neg'} eq 'max') {
 	 $ims->where($ims<0) .= $ims->max;
      } elsif($opt->{'neg'} eq 'zero') {
@@ -123,6 +124,25 @@ sub  remove_f_corona {
 	 $ims->where($ims<0) .= $ims->max + 10000;
      } else {
 	 die("remove_f_corona: neg option must be 'bad' or 'max'\n");
+     }
+
+     ##############################
+     # Deal with rejecting bad files...
+     if($opt->{'REJECT_BY_SUM'}) {
+	 my $sums = $ims->sumover->sumover;
+	 my $median = $sums->median;
+	 my $medlo = $median / (1 + $opt->{'REJECT_BY_SUM'});
+	 my $medhi = $median * (1 + $opt->{'REJECT_BY_SUM'});
+	 
+	 my @baddies = (($sums > $medhi) | ($sums < $medlo))->which->list;
+	 
+	 if(@baddies) {
+	     print "Remove_f_corona: Rejecting frames ".join(",",@baddies)."\n";
+	     my $goodies = (($sums <= $medhi) & ($sums >= $medlo))->which;
+	     $ims = $ims->(:,:,$goodies)->sever;
+	     $in->{RAW_CUBE} = $ims;
+	     $in->{RAW_HDRS} = [ @{$in->{RAW_HDRS}}[$goodies->list] ];
+	 }
      }
 
      if($opt->{'REMOVE_FLUCTUATIONS'}) {
