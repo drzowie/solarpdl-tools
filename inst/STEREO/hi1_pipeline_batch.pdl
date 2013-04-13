@@ -55,6 +55,7 @@ sub hi1_pipeline_batch {
     $opt->{BATCHLENGTH} = 7;   # days
     $opt->{BATCH_STEP}  = 0.5; # days
     $opt->{CADENCE}     = 40;  # minutes for nominal cadence for the instrument
+    $opt->{LIST_ONLY}   = 0 unless(exists($opt->{LIST_ONLY}));
 
     my $opt_defaults = {
      HI1_SC              => "a",
@@ -145,7 +146,12 @@ sub hi1_pipeline_batch {
     $opt->{OUTPUT_DIR} = sprintf($opt->{HI1_OUTPUT_TEMPLATE},$batchno);
     $opt->{DIST_CORR_FNAME}  = sprintf("hi1-batch-%4.4d-corr.pl",$batchno)   unless($opt->{DIST_CORR_FNAME});
     $opt->{DIST_PARAM_FNAME} = sprintf("hi1-batch-%4.4d-params.pl",$batchno) unless($opt->{DIST_PARAM_FNAME});
-    hi1_pipeline(\@ff, $opt);
+
+    unless($opt->{LIST_ONLY}) {
+        hi1_pipeline(\@ff, $opt);
+    } else {
+        return @ff;
+    }
 }
     
     
