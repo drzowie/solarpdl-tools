@@ -29,7 +29,7 @@ sub  remove_f_corona {
      $opt = {} unless defined($opt);
 
      # Set default values for options
-     $opt->{'neg'}    = "mask"  unless( exists( $opt->{'neg'}  )  ); # how to handle negative values
+     $opt->{'neg'}    = "bad"  unless( exists( $opt->{'neg'}  )  ); # how to handle negative values
      $opt->{'pct'}    = 5      unless( exists( $opt->{'pct'}  )  ); # percentile for background
      $opt->{'sm'}     = [7,30] unless( exists( $opt->{'sm'}   )  ); # smoothing of background
      $opt->{'bin'}    = 0      unless( exists( $opt->{'bin'}  )  ); # whether to deal with multiply binned full-frame images
@@ -111,6 +111,7 @@ sub  remove_f_corona {
 	 die "remove_f_corona: need a hash ref or an array ref as first argument\n";
      }
 
+     $ims->where(!isfinite($ims)) .= -1e10; # force large negative values to -1
 
      ##############################
      # Handle negative values - BAD or maxval
@@ -138,6 +139,7 @@ sub  remove_f_corona {
 	 
 	 if(@baddies) {
 	     print "Remove_f_corona: Rejecting frames ".join(",",@baddies)."\n";
+	     print "median sum is $median, medhi is $medhi, medlo is $medlo\nsums are $sums\n";
 	     my $goodies = (($sums <= $medhi) & ($sums >= $medlo))->which;
 	     $ims = $ims->(:,:,$goodies)->sever;
 	     $in->{RAW_CUBE} = $ims;
