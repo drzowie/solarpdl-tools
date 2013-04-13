@@ -130,7 +130,7 @@ sub get_distortion_params {
 			%proc = ();
 		    } else {
 			delete $proc{$pid};
-			$s = sprintf("tmp/proc-%d-output.pl",$pid);
+			$s = sprintf("tmp/proc-%d-%s-output.pl",$pid,$ENV{'HOST'});
 			push(@of, frestore($s));
 			unlink($s);
 			$n++ if(defined($of[$#of]));
@@ -155,7 +155,7 @@ sub get_distortion_params {
 					     $opt->{'DIST_CORR_RSIZE'}/2,
 					     $opt->{'DIST_CORR_PSIZE'}/2,
 					     $opt->{'DIST_MIN_PCORR'});
-			fdump($a,sprintf("tmp/proc-%d-output.pl",$$));
+			fdump($a,sprintf("tmp/proc-%d-output-%s.pl",$$,$ENV{'HOST'}));
 		    };
 		    exit(0);
 		}
