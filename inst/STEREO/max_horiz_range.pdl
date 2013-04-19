@@ -27,19 +27,19 @@ sub max_horiz_range {
     my $margin = $opt->{HORIZ_MARGIN};        # how much margin do we leave before the bad cols?
 
     # Identify (X,t) of columns that are OK -- $okcols is 2-D.
-    my $okcols = ($hash->{'BKSUB_CUBE'}->mv(1,0) > $badthresh)->sumover < $badcount;
+    my $okcols = ( ($hash->{'BKSUB_CUBE'}->mv(1,0)->isfinite == 0)->sumover < $badcount );
 
     # all_ok shows which columns (in X) are OK.
     my $all_ok = $okcols->mv(1,0)->andover;
-    
+
     my $center = $hash->{'BKSUB_CUBE'}->dim(0)/2;
     my $i;
 
     # Walk out from the center to identify the range.
-    for( $i=$center; $all_ok->(($i)) && $i <= $opt->{HORIZ_XMAX}; $i++) {}
+    for( $i=$center; $i<$all_ok->dim(0) && $all_ok->(($i)) && $i <= $opt->{HORIZ_XMAX}; $i++) {}
     my $maxcol = $i - $margin;
     
-    for( $i=$center; $all_ok->(($i)) && $i >= $opt->{HORIZ_XMIN}; $i--) {}
+    for( $i=$center; $i >= 0 && $all_ok->(($i)) && $i >= $opt->{HORIZ_XMIN}; $i--) {}
     my $mincol = $i + $margin;
 
     if($maxcol - $mincol < 60) {

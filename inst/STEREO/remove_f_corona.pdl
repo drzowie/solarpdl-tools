@@ -37,7 +37,9 @@ sub  remove_f_corona {
      $opt->{'MASK_RADIUS'} = 500 unless(exists($opt->{'MASK_RADIUS'}));
      $opt->{'MARK_BAD'} = 1 unless(exists($opt->{'MARK_BAD'}));
      $opt->{'IMG_SIZE'} = 1024 unless(exists($opt->{'IMG_SIZE'}));
-     $opt->{'REJECT_BY_SUM'} = 0.10 unless(exists($opt->{'REJECT_BY_SUM'}));
+     $opt->{'REJECT_BY_SUM'} = 0.03 unless(exists($opt->{'REJECT_BY_SUM'})); 
+     $opt->{'REJECT_BY_CROTA'} = 2 unless(exists($opt->{'REJECT_BY_CROTA'}));
+     $opt->{'CLEAN_BAD'} = 1 unless(exists($opt->{'CLEAN_BAD'}));
 
      print cards($opt);
      # Make sure we have a data cube in usable form
@@ -111,7 +113,7 @@ sub  remove_f_corona {
 	 die "remove_f_corona: need a hash ref or an array ref as first argument\n";
      }
 
-     $ims->where(!isfinite($ims)) .= -1e10; # force large negative values to -1
+#     $ims = $ims->setbadif(!isfinite($ims));
 
      ##############################
      # Handle negative values - BAD or maxval
@@ -125,6 +127,34 @@ sub  remove_f_corona {
 	 $ims->where($ims<0) .= $ims->max + 10000;
      } else {
 	 die("remove_f_corona: neg option must be 'bad' or 'max'\n");
+    }
+
+     ##############################
+     # Clean bad values if asked for and needed
+     if($opt->{'CLEAN_BAD'}){
+	 my $badloc = whichND($ims->isbad);
+	 if($badloc->nelem){
+	     print "Found ".$badloc->nelem." bad locations.  Patching...";
+	     $ims->indexND($badloc) .= $ims->range($badloc-2,[5,5,5],'e')->clump(1,2,3)->mv(1,0)->average;
+	     $badloc = whichND($ims->isbad);
+	     print "Cube now has ".$badloc->nelem."\n";
+	 }
+     }
+
+     ##############################
+     # Deal with rejecting rotated files...
+     if($opt->{'REJECT_BY_CROTA'}) {
+	 my $crota = pdl( map { $_->{CROTA}} @{$in->{RAW_HDRS}} );
+	 my $cm = $crota->median;
+	 my $mask = ( ( $crota <= $cm + $opt->{'REJECT_BY_CROTA'} ) & 
+		      ( $crota >= $cm - $opt->{'REJECT_BY_CROTA'} ) );
+	 if($mask->sum < $mask->nelem) {
+	     print "Rejecting frames for CROTA: ".((!$mask)->which)."\n";
+	     my $goodies = $mask->which;
+	     $ims = $ims->(:,:,$goodies)->sever;
+	     $in->{RAW_CUBE} = $ims;
+	     $in->{RAW_HDRS} = [ @{$in->{RAW_HDRS}}[$goodies->list] ];
+	 }
      }
 
      ##############################
@@ -139,7 +169,7 @@ sub  remove_f_corona {
 	 
 	 if(@baddies) {
 	     print "Remove_f_corona: Rejecting frames ".join(",",@baddies)."\n";
-	     print "median sum is $median, medhi is $medhi, medlo is $medlo\nsums are $sums\n";
+	     print "median sum is $median, medhi is $medhi, medlo is $medlo\n";
 	     my $goodies = (($sums <= $medhi) & ($sums >= $medlo))->which;
 	     $ims = $ims->(:,:,$goodies)->sever;
 	     $in->{RAW_CUBE} = $ims;
@@ -178,6 +208,8 @@ sub  remove_f_corona {
 #     $out->{SORTED} = $sorted;
 #     $out->{FBK} = $bk;
      $out->{BKSUB_CUBE} = $ims - $bk;
+
+     $out->{FCORONA} = $bk;
 
      print "Making badval masks...\n";
      $out->{MASK_CUBE} = ones(byte, $out->{BKSUB_CUBE}->dims);

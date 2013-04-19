@@ -47,29 +47,40 @@ sub correlate_patch2 {
     # step 1:
     my $bigsized = $sized + $patchd;
 
-    our $reg0 = $im0->range($loc0-$bigsized/2, $bigsized+1, 'e')->sever;
+    our $reg0 = $im0->range($loc0-$bigsized/2, $bigsized+1, 't')->sever;
     $reg0 -= $reg0->avg;
     $reg0 /= sqrt(($reg0*$reg0)->sum);
 
-    our $reg1 = $im1->range($loc0-$bigsized/2 + $of0, $bigsized+1, 'e')->sever;
+    our $reg1 = $im1->range($loc0-$bigsized/2 + $of0, $bigsized+1, 't')->sever;
     $reg1 -= $reg1->avg;
     $reg1 /= sqrt(($reg1*$reg1)->sum);
-    
+
+    $reg0->inplace->setbadtoval(0);
+    $reg1->inplace->setbadtoval(0);
+
     our $crosscorr = $reg0->(-1:0:-1,-1:0:-1)->convolveND($reg1,{bound=>'t'});
     my $maxloc = whichND($crosscorr == $crosscorr->max)->(:,(0));
 
-    my $prelim_of = $maxloc - $bigsized/2 + $of0;
+    my $prelim_of;
+    if($maxloc->nelem) {
+        $prelim_of = $maxloc - $bigsized/2 + $of0;
+    } else {
+	$prelim_of = pdl(0,0);
+    }
 
     ##########
     # step 2: extract the region of interest and carry out a more selective fit to get
     # just the pixel field around the ROI.
-    $reg0 = $im0->range($loc0 - $patchd/2,              $patchd+1, 'e')->sever;
+    $reg0 = $im0->range($loc0 - $patchd/2,              $patchd+1, 't')->sever;
     $reg0 -= $reg0->avg;
     $reg0 /= sqrt(($reg0*$reg0)->sum);
 
-    $reg1 = $im1->range($loc0 - $patchd/2 + $prelim_of, $patchd+1, 'e')->sever;
+    $reg1 = $im1->range($loc0 - $patchd/2 + $prelim_of, $patchd+1, 't')->sever;
     $reg1 -= $reg1->avg;
     $reg1 /= sqrt(($reg1*$reg1)->sum);
+
+    $reg0->inplace->setbadtoval(0);
+    $reg1->inplace->setbadtoval(0);
 
     $crosscorr = $reg0->(-1:0:-1,-1:0:-1)->convolveND($reg1,{bound=>'t'});
 
@@ -80,9 +91,11 @@ sub correlate_patch2 {
     ##########
     # step 3: check the location of the peak.
 
-    $reg1 = $im1->range($loc0-$patchd/2 + $pix_of, $patchd+1,'e')->sever;
+    $reg1 = $im1->range($loc0-$patchd/2 + $pix_of, $patchd+1,'t')->sever;
     $reg1 -= $reg1->avg;
     $reg1 /= sqrt(($reg1*$reg1)->sum);
+
+    $reg1->inplace->setbadtoval(0);
     
     $crosscorr = $reg0->(-1:0:-1,-1:0:-1)->convolveND($reg1,{bound=>'t'});
     $maxloc = whichND($crosscorr==$crosscorr->max)->(:,(0));
@@ -113,9 +126,7 @@ sub correlate_patch2 {
     $reg1 -= $reg1->avg;
     $reg1 /= sqrt(($reg1*$reg1)->avg);
 
-    my $corr = ($reg0 * $reg1)->sum;
-
-    my $corr = ($reg0*$reg1)->avg;
+    my $corr = ($reg0 * $reg1)->avg;
 
     $final_pix_of = asin(pdl(1.1,1.1)) if($corr < $corr_thresh);
 

@@ -23,7 +23,7 @@ sub hi1_pipeline {
 	OUTPUT_FILES		=> 1,           # Whether to generate output
 
 	pct			=> 2,     # 2% for F corona
-	sm                      => [5,5],            
+	sm                      => undef, # [5,50],            
 	bin			=> 0,
 	REMOVE_FLUCTUATIONS	=> 1,
 	MASK_RADIUS             => 0,
@@ -36,11 +36,14 @@ sub hi1_pipeline {
 	DIST_GUESS_DRIFTRATE    => 260/5,
 
 	NULL_MIN_PCT		=> 5,
-	NULL_SMOOTH_SIZE	=> [9,7],
+	NULL_SMOOTH_SIZE	=> [3,3],
 	NULL_SMOOTH_FRAMES      => 1,
+	NULL_UNSHARP_FILTER     => 6,
 
 	MIN_SMOOTH_SIZE		=> 5,
 	POLY_ORDER              => 4,
+
+	ALIGN_DEJITTER          => 1,
 
 	MOTION_FILTER           => 1,
 	FILTER_APOD_FRAMES      => 5,
@@ -73,23 +76,22 @@ sub hi1_pipeline {
     delete $hash->{RAW_CUBE};
 
     print "distortion parameters...\n";
-    get_distortion_params($hash, $opt);   # measure stellar drift
+    get_distortion_params2($hash, $opt);   # measure stellar drift
 
 
-    print "Despiking...\n";
-    
-    for $i(0..$hash->{BKSUB_CUBE}->dim(2)-1){
-	my $im = spikejones($hash->{BKSUB_CUBE}->(:,:,($i)),{dilation=>1});
-	$im = spikejones($im,{dilation=>2});
-	$hash->{BKSUB_CUBE}->(:,:,($i)) .= $im;
-	print "$i...";
-    }
-    print "\n";
-
-    print "Removing polynomials...\n";
-    $opt->{POLY_CUBE} = "BKSUB";
-    local($opt->{POLY_PRESMOOTH}) = 5;
-    remove_polynomials($hash,$opt);       # remove slow background drift
+#    print "Despiking...\n";
+#    
+#    for $i(0..$hash->{BKSUB_CUBE}->dim(2)-1){
+#	my $im = spikejones($hash->{BKSUB_CUBE}->(:,:,($i)),{dilation=>1});
+#	$im = spikejones($im,{dilation=>2});
+#	$hash->{BKSUB_CUBE}->(:,:,($i)) .= $im;
+#	print "$i...";
+#    }
+#    print "\n";
+#    print "Removing polynomials...\n";
+#    $opt->{POLY_CUBE} = "BKSUB";
+#    local($opt->{POLY_PRESMOOTH}) = 5;
+#    remove_polynomials($hash,$opt);       # remove slow background drift
 
     print "shift_to_celestial...\n";
     shift_to_celestial($hash, $opt);      # nullify stellar drift

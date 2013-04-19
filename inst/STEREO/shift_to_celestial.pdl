@@ -84,7 +84,9 @@ sub shift_to_celestial {
 		$corr = ($p0p * $p1p)->average / $p0sd / $p1sd;
 		return 1.0 - $corr;
 	    };
+
 	    print "Finding nudge...";
+
 	    $nudge = amoeba($heur, pdl(0,0),0.1,1e-3,1e-5,1e3);
 	    print "nudge is $nudge, corr is $corr.  ";
 	    if($corr<0.95){
@@ -94,7 +96,6 @@ sub shift_to_celestial {
 	} else {
 	    $nudge = pdl(0,0);
 	}
-	    
 	my $t_crop = t_linear(pre=>[ - $xr->at(0) + $nudge->at(0), -$yr->at(0) + $nudge->at(1)]);
 	    
 	print "data...";
@@ -117,7 +118,7 @@ sub shift_to_celestial {
 		{method=>'s',pix=>1}
 	    );
 	    
-	print ($hash->{CEL_MASK}->(:,:,$i)->sum)." OK points\n";
+	print (($hash->{CEL_MASK}->(:,:,$i)->sum)." OK points\n");
 
     }
     
