@@ -18,6 +18,7 @@ sub multicore {
     my $iterator = shift;
     my $code = shift;
     my $maxpids = shift || 4;
+    my $sleep = shift || 0;
     
     my %pids = ();
     
@@ -43,6 +44,9 @@ sub multicore {
 	    eval {&$code($it)};
 	    print $@ if($@);
 	    exit(0);
+	}
+	if($sleep) {
+	    sleep $sleep;
 	}
     }
     while(wait()>0){print "waiting...\n"};
