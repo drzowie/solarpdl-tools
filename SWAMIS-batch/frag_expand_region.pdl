@@ -1,0 +1,33 @@
+
+sub frag_expand_region {
+  my($w,$locus,$r) = @_;
+
+  return $locus unless($r>0);
+
+  my($lxy) = cat($locus % $w, $locus / $w);
+  $l1 = $lxy->copy;
+  $l2 = $lxy->copy;
+
+  # expand in X
+  for $i(1..$r) {
+    $l1->(:,(0))--;
+    $l2->(:,(0))++;
+    $lxy = $lxy->append($l1->append($l2));
+  }
+
+  # expand in Y
+  $l1 = $lxy->copy;
+  $l2 = $lxy->copy;
+  for $i(1..$r) {
+    $l1->(:,(1))--;
+    $l2->(:,(1))++;
+    $lxy = $lxy->append($l1->append($l2));
+  }
+
+  # Clip
+  $lxy->(:,(0)) .= clip($lxy->(:,(0)),0,$w-1);
+  $lxy->(:,(1)) .= clip($lxy->(:,(1)),0,($locus->nelem / $w)-1);
+  
+  return ($lxy->(:,(0)) + $lxy->(:,(1))*$w)->uniq;
+}
+

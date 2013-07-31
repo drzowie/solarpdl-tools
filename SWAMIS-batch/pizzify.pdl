@@ -1,0 +1,94 @@
+use PDL::NiceSlice;
+
+=head2 pizzify -- plot tracked movies.
+
+=for usage
+
+pizzify(\@from_files,\@out_files,\@mag_files,$raw_range,$ncores);
+
+=for ref
+
+
+=cut
+
+sub pizzify {
+  my $from = shift;
+  my $to = shift;
+  my $raw_from = shift;
+  my $raw_range = shift;
+  my $ncores = shift || 1;
+  undef $raw_img;
+  my $unsigned_ids = shift;
+  print "pizzify: unsigned_ids=$unsigned_ids\n";
+#	$w=pgwin(xs);
+
+  my $sub = sub {
+      my $i = shift;
+      print "i=$i\n";
+      my $f_to;
+
+      my $image = rfits($from->[$i]);
+      $image->hdrcpy(1);
+      
+      my $raw_im = undef;
+
+      if(defined $raw_from && defined $raw_from->[$i]) {
+	print "loading raw image....\n";
+	  $raw_img = rfits($raw_from->[$i]);
+	  $raw_img->hdrcpy(1);	
+	  if(defined $raw_range) {
+	      $raw_img = $raw_img->($raw_range->at(0,0):$raw_range->at(0,1),
+				    $raw_range->at(1,0):$raw_range->at(1,1));
+	  } else {
+##	      $raw_img .= $raw_img->clip(-20,20);
+	  }
+
+	  if($unsigned_ids) {
+	    print "unsigned ids -- multiplying...\n";
+	      $image *= ($raw_img <=> 0);
+	  }
+      }
+      
+#      $w->imag($image);
+#      $w->hold;
+
+      
+      $im2 = $image->(:,:,*3)->copy;
+
+    $im2->sethdr($image->hdr_copy);
+
+    $rr = $im2->(:,:,((0)));
+    $gg = $im2->(:,:,((1)));
+    $bb = $im2->(:,:,((2)));
+
+    $rr .= floor( ($image<0)*( 0.7 + 0.3 * (0.5 * (1 + sin(float($image)*34000))) )*255);
+    $gg .= floor( ($image!=0) * (0.7 + 0.3 * (0.5 * (1 + sin(float($image)*54392+54))) )*255);
+    $bb .= floor( ($image>0) * (0.7 + 0.3 * (0.5 + (1 + sin(float($image)*23233-103))))*255);
+
+    if(defined $raw_img) {
+      my $idx = whichND($gg==0);
+
+      $imr = 150;
+      $raw_img += $imr;
+      $raw_img *= (255/(2*$imr));
+
+      $im2->indexND($idx) .= $raw_img->clip(0,255)->indexND($idx);
+    }
+
+      print "setting to...\n";
+    wim($im2,$to->[$i]);
+  };
+
+  if($ncores <= 1) {
+      for my $i(0..$#$from) {
+	  &$sub($i);
+      }
+  } else {
+      multicore([0..$#$from],$sub,$ncores);
+  }
+}
+
+
+     
+      
+    
