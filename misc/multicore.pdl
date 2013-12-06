@@ -2,7 +2,8 @@
 
 =for usage
 
-multicore(\@iteration,sub { stuff }, $maxpids);
+multicore(\@iteration, sub { stuff }, $maxpids, $delay);
+multicore(\@iteration, sub { common-stuff }, sub { stuff }, $maxpids, $delay);
 
 =for ref
 
@@ -17,6 +18,11 @@ number of CPU cores in your system.
 sub multicore {
     my $iterator = shift;
     my $code = shift;
+    my $code1;
+    if(ref($_[0]) eq 'CODE') {
+      $code1 = $code;
+      $code = shift;
+    }
     my $maxpids = shift || 4;
     my $sleep = shift || 0;
     
@@ -29,6 +35,10 @@ sub multicore {
 		die;
 	    }
 	    delete $pids{$goner};
+	}
+
+	if(defined($code1)) {
+	  &$code1($it);
 	}
 	
 	my $pid = fork();
