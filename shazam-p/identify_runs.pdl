@@ -1,0 +1,48 @@
+=head2 identify_runs - find sequences of good frames
+
+=for ref
+
+@runs = identify_runs(\@f, \@values, $thresh, $runsize, $use_phase);
+
+You feed in some filenames, quality values, a runsize, and a threshold
+(q>=t). You get back a list of list refs, each of which contains a run
+of $runsize image names that are good.  If you specify $use_phase then
+the runs have to start with the phase number you specified.
+
+=cut
+
+sub identify_runs {
+    my $f = shift;
+    my $vals = shift;
+    my $thresh = shift;
+    my $runsize = shift || 16;
+    my $use_phase = shift;
+
+    my @current_run;
+    my $last_phase = -1;
+    my @out;
+    for $i(0..$#$f) {
+	# Get the phase number from the filename
+	$f->[$i] =~ m/_P(\d\d)\.fits/ || next;
+	my $phase = $1;
+	if($vals->[$i]>=$thresh &&
+	   (!@current_run || 
+	    $phase == $last_phase + 1 ||
+	    ($phase == 0 && $last_phase == 15)
+	    )) {
+	    push(@current_run, $f->[$i]) if( @current_run || 
+					     !defined($use_phase) || $phase==$use_phase );
+	    $last_phase = $phase;
+	    if(@current_run >= $runsize) {
+		push(@out,[@current_run]);
+		@current_run = ();
+		print "Found run ending with $f->[$i] (".(0+@out)." so far)\n";
+	    }
+	} else {
+	    @current_run = ();
+	}
+    }
+	return @out;
+}
+
+    

@@ -1,0 +1,9 @@
+use PDL::NiceSlice;
+$s = "/usr/local/src/localpdl/Graphics/CubeMarkup.pm";
+do $s;
+
+
+$a=frestore('70-traces.pl')
+
+@a = map { pdl( 
+   

@@ -1,0 +1,49 @@
+=head2 gen_calibration - make a calibration object, given dark and flat field data
+
+=for usage
+
+$cal = gen_calibration($darkfit, $flats, [$order], [$intended_exp])
+
+=for ref
+
+You hand over a dark fit (from gen_darks) and a $flats sequence (from
+collect_exposure_sequence) and you get back a prefrobnicated
+calibration object. This step handles the nonlinear calibration of the
+cameras, but not flat field effects due to the polarizer rotation;
+that should be handled separately by dividing out polarized flat
+fields.
+
+If you specify the intended exposure time then the $darks are discarded and 
+the return value gets just a single dark frame for the intended exposure time.
+
+=for author
+
+Craig DeForest
+
+=for history 
+
+0.1 9-May-2009
+
+=cut
+
+sub gen_calibration {
+    my $darks = shift;
+    my $flats = shift;
+    my $n = shift || 10;
+    my $normalization = shift || 1;
+
+    my $fl = $flats->[1]->copy;
+
+    # Dark-correct the flat exposure files
+    print "Dark-correcting flat exposures...\n";
+    for $i(0..$flats->[0]->nelem-1) {
+	$d = dark($darks,$flats->[0]->at($i));
+	$fl->(($i)) -= $d;
+    }
+
+    print "Fitting the corrected exposures...\n";
+    $out = poly_fit_domain($fl,$flats->[0],5,0,3000);
+
+    return $out;
+}
+

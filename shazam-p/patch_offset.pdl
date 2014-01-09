@@ -1,0 +1,54 @@
+=head2 patch_offset - find the relative offset (in pixels) between two patches of similar images
+
+=for usage
+
+$of = $patch_offset($im1, $im2, $center, $patchsize, $range);
+
+=for ref
+
+
+No threading (yet), though threading over center is desired later.
+
+The sense of the offset is such that t must be *added* to the coordinates of $im2 -- that is to say,
+C<$im1->interpND($xy)> is the equivalent location to C<$im2->interpND($xy + $of)>.
+
+=cut
+
+use PDL::Transform;
+
+
+sub patch_offset {
+    my $im1 = shift;
+    my $im2 = shift;
+    my $coords = shift;
+    my $patchsize = shift || 30;
+    my $range = shift || 15;
+
+    my $patch1 = $im1->range($coords-$patchsize/2,$patchsize,'e')->copy;
+    my $patch1_mean = $patch1->avg;
+    my $patch1_mm = $patch1-$patch1_mean;
+    my $patch1_sigma = sqrt( ($patch1_mm * $patch1_mm)->avg );
+
+    my $ndcoords = ndcoords($patchsize,$patchsize);
+    $ndcoords += $coords - $patchsize/2;
+    
+    
+    my $heur = sub { 
+	my $vec = shift;
+#	my $t = t_linear('post' => - $vec, 'pre'=> - floor($coords - $patchsize/2));
+#	my $patch2 = $im2->map( $t, [$patchsize,$patchsize], { m=>'l', pix=>1 });
+	$patch2 = $im2->interpND($ndcoords + $vec);
+	$patch2 -= $patch2->avg;
+	my $patch2_sigma = sqrt( ($patch2 * $patch2)->avg );
+	
+	my $correlate =  - ($patch1_mm * $patch2)->clump(2)->avg / ($patch2_sigma * $patch1_sigma);
+	return $correlate;
+    };
+
+    return amoeba($heur, pdl(-0.25,-0.25), 0.5, 2e-4, 1e-8, 1e3, $range);
+
+}
+	
+	
+
+	

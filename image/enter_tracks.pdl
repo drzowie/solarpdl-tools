@@ -1,0 +1,90 @@
+=head2 enter_tracks - given a PDL data cube, enter mouse data tracking features through the movie
+
+=for usage
+
+  @cube = mrfits(<*fits>);
+  $tracks = enter_tracks(\@cube, $options;
+
+=for ref
+
+On return, $tracks has a collection of values (trackno, x, y, t),
+where x and y are pixel coordinates and t is frame number.
+
+Options are:
+
+=over 3
+
+=item termopt
+
+Hash ref containing options to be sent to the gpwin() command
+
+=item plotopt
+
+Hash ref containing plot options for each render
+
+=back
+
+Interactive commands accepted are:
+
+=over 3
+
+=back
+
+
+=cut
+
+sub enter_tracks {
+    my $cube = shift;
+    my $opt = shift;
+
+    my $defaults = {
+	window   => undef,
+	termopt  => {size=>[9,9],enhanced=>1},
+	plotopt  => {}
+    };
+    for my $k(keys %$defaults) {
+	$opt->{$k} = $defaults->{$k} unless(exists($opt->{$k}));
+    }
+
+    
+    ##############################
+    # Make sure we have a window open
+    our $w;
+    if(defined($opt->{$window})) {
+	$w = $opt->{$window};
+    } else {
+	$w = gpwin(x11,%{$opt->{termopt}});
+    }
+    unless($w->{mouse}) {
+	die "enter_tracks: A mousing gnuplot window is required (recommend X11); but that doesn't seem to exist.  Sorry.";
+    }
+
+    print "initial plot...\n";
+    $w->plot($opt->{plotopt}, with=>'image', $cube->[0]->copy, {title=>"Setup for tracking"});
+    print "ok\n";
+
+    $lp_hack = \ $w->{last_plot}->{args}->[2];
+    die "Hmmm, lp_hack isn't a PDL.  That's odd" unless(UNIVERSAL::isa($$lp_hack,'PDL'));
+    
+    my $dex = 0;
+    
+    my $actions = {">" =>   
+		       sub {
+			   $dex++ if($dex < $#$cube);
+			   $$lp_hack = $cube[$dex];
+			   $w->{last_plot}->{options}->{title} = "Frame $dex of ".(0+@$cube);
+		   },
+		   "<" => 
+		       sub { 
+			   $dex-- if($dex>0);
+			   $$lp_hack = $cube[$dex];
+			   $w->{last_plot}->{options}->{title} = "Frame $dex of ".(0+@$cube);
+		   }
+    };
+
+    $p = $w->read_polygon(actions=>$actions);
+}
+
+    
+    
+    

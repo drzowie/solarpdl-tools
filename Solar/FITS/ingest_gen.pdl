@@ -1,0 +1,6 @@
+sub ingest_gen {
+  print "generic ingester isn't here yet!  Returning your header unchanged...\n";
+  return shift;
+}
+	
+	

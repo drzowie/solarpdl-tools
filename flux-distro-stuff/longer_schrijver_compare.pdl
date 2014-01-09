@@ -1,0 +1,60 @@
+sub longer_schrijver_compare {
+
+  $thresholds = shift;
+  $sourcedir = shift || '2-hovered';
+  print "sourcedir='$sourcedir'\n";
+  chomp(@f = `ls ${sourcedir}/*`);
+
+  $strengths = pdl(0);
+  $sizes = pdl(0);
+  
+  for $ii(1..10) {
+    @ff = splice(@f,0,5);
+    print @ff;
+    ($stren, $im, $b) = find_distro($thresholds, \@ff, ':,0:500', '');
+    
+    print "im=$im\nb=$b\n";
+
+    $strengths= append($strengths,$stren  * $im->gethdr->{CDELT1} * $im->gethdr->{CDELT2} * 60 * 60 * 0.7 * 0.7 * 1e16 / 1e18);
+
+    $sizes = append($sizes,		    $md::sizes * $b->gethdr->{CDELT1} * $b->gethdr->{CDELT2} * 60 * 60 * 0.7 * 0.7);
+    print $strengths;
+
+
+  }  
+
+  ##########
+  # Put the histogram in units of 10^18 Maxwells (converting from gauss-pixels)
+  # the 60 converts arcmin to arcsec, 0.7 to Mm, and 1e16 to cm^2.
+  
+#  $strengths *= 3; # Duplicate Schrijver's fudge factor of 3.0
+
+  $str_step = 0.4;
+  $offset= 0.4;
+  $str_histo = histogram(abs($strengths),$str_step,0,11.0/$str_step)/$str_step;
+  $str_histo_y = ($str_histo->dummy(1,100)->xchg(0,1)->flat)->(100*$offset/$str_step:);
+  $str_histo_x = (xvals($str_histo_y)/100.0*$str_step) + $offset;
+  
+  $siz_step = 0.4;
+  $siz_histo = histogram(abs($sizes),$siz_step,0,20/$siz_step);
+  $siz_histo_y = $siz_histo->dummy(0,100)->flat->(100*$offset/$siz_step:);
+  $siz_histo_x = xvals($siz_histo_y)/100.0*$siz_step + $offset;
+  
+  $device='distribution-plots.ps/ps';
+  $pane = new PDL::Graphics::PGPLOT::Window(Device=>$device,AspectRatio=>2,WindowWidth=>3,Charsize=>2.0,NYPanel=>2,HardLW=>1);
+  $pane->panel(2);
+  
+  $pane->line($str_histo_x,log10($str_histo_y),{yrange=>[0.5,3],xrange=>[0,7]});
+  $pane->label_axes("Absolute flux (10\\u18\\dMx)","log\\d10\\u count","Freq. dist. of fragment fluxes (MDI)");
+  
+  $pane->panel(1);
+  
+  $pane->line($siz_histo_x,log10($siz_histo_y)->clip(0,3),{xrange=>[0,15]});
+  $pane->label_axes("Fragment size (Mm\\u2\\d)","log\\d10\\u count","Frequency distribution of fragment sizes");
+
+  $pane->close;
+
+
+}
+
+

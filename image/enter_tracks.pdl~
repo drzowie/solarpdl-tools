@@ -1,0 +1,30 @@
+=head2 enter_tracks - given a PDL data cube, enter mouse data tracking features through the movie
+
+=for usage
+
+  @cube = mrfits(<*fits>);
+  $tracks = enter_tracks(\@cube, $options;
+
+=for ref
+
+On return, $tracks has a collection of values (trackno, x, y, t),
+where x and y are pixel coordinates and t is frame number.
+
+Options are:
+
+=over 3
+
+=item termopt
+
+Hash ref containing options to be sent to the gpwin() command
+
+=item plotopt
+
+Hash ref containing plot options for each render
+
+=back
+
+=cut
+
+sub enter_tracks {
+    my 

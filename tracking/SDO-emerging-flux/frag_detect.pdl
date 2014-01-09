@@ -1,0 +1,270 @@
+=pod
+
+=head2 frag_detect
+
+=for ref
+
+Detect and label above-threshold loci in an image sequence.
+
+=for usage
+
+$mask = frag_detect(IMAGE-ARRAY|STRING-ARRAY,\%OPTIONS);
+
+=for example
+
+$masks = frag_detect(\@image_list,{thresh=>[20,10],masks=>[\@mask_list]]});
+
+The image_list is a perl list of 2-D pdls containing images to scan.
+The return value is an ARRAY REF containing a list of masks.  The masks
+are zero wherever nothing is detected, 1 where positive-going features
+are detected, and -1 where negative-going features are detected.
+
+=for options
+
+=over 3
+
+=item diag
+
+(default=0) Include diagonal neighbor relations in neighbor searches?
+Because hysteresis is 3-D, there are a bunch of levels of diag:
+
+0 -  6 neighbors (no diagonals)
+
+1 - 10 neighbors (image plane diagonals only)
+
+2 - 18 neighbors (single-plane diagonals only)
+
+3 - 26 neighbors (all diagonals allowed)
+
+=item thresh
+
+Threshold for detection in the absence of hysteresis.  This is a pdl
+containing 1 or 2 values.  The maximum is the value smaller than which
+a point can't be, and still "anchor" a downhill flow.  The minimum is
+the hysteretic value, smaller than which points aren't considered nonzero.  
+Hysteresis is allowed in the temporal, as well as spatial, directions.
+Default is (20,10).
+
+=item masks
+
+ARRAY REF to fill with mask pdls.  If you do not pass this in, you get
+all your masks contained in memory.  You can pass in a tied DiskCache
+list here (matched in size to the image_list and set to rw mode), and
+all the images will be put in it, saving virtual memory.
+
+=item behind
+
+Sets the number of frames for look-behind.  Set it to -1 for infinite
+look-behind, 0 for no look-behind, or a positive integer C<n> to look
+at most C<n> frames behind the latest frame examined so far.  (Default 
+is -1).
+
+=item verbose
+
+Chat
+
+=item start_frame
+
+Frame to start with (if non-zero, there are "lookback frames" before)
+
+=back
+
+=for method
+
+Hysteretic thresholding is done in multiple passes through the image
+array (which may be tied to a DiskCache object).  Frag_detect uses a
+walk-through algorithm which is designed to minimize "thrashing"
+(multiple long traverses through the data set, which would require
+extensive paging to/from disk) in most cases.
+
+=for bugs
+
+None known at this time (14 January 2008).
+
+=for history
+
+Craig DeForest, 14-Nov-2001.  Based on code and algorithms developed by
+Parnell.
+
+2.0-b: 15-April-2004
+
+01-June-2005 Derek Lamb implemented "behind" option
+
+13-January-2008 Derek Lamb fixed a bug whereby not all the pixels
+were picked up in some special cases.
+
+Joe Peterson 15-Feb-2010 add pipeline ability
+
+=cut
+
+use Carp;
+use strict;
+use PDL::NiceSlice;
+
+ $main::VERSION{"frag_detect"} = '2.0-b';
+
+# Helper for assembling diagonal elements...
+sub frag_detect_diag {
+##  my ($diag,$frloc,$chk);
+  my $diag = shift;
+  my $frloc = shift;
+  my $chk = shift; 
+
+  $chk = $chk(:,:)->glue(1,map { ($frloc + pdl($_))->(:,:) } ([0,1],[0,-1],[1,0],[-1,0]))
+    if($diag >= 0 && $frloc->nelem);
+
+  $chk = $chk(:,:)->glue(1,map { ($frloc + pdl($_))->(:,:) } ([1,1],[1,-1],[-1,1],[-1,-1]))
+    if($diag >= 1 && $frloc->nelem);
+
+  $chk = pdl(0) unless defined($chk);
+
+  return $chk->(:,:);
+}
+
+sub frag_detect {
+  my($opt,$cube) = find_opt(@_);
+  my $masks;
+  my $start_frame;
+  
+  local $_;
+  
+  croak "frag_detect needs an array ref of fits images\n!"
+    if(ref $cube ne "ARRAY" && ref $cube ne "PDL::DiskCache");
+  
+  
+  ##############################
+  ## Set up initial conditions and options
+  $opt->{thresh} = pdl(20,10) unless (defined($opt->{thresh}));
+  $opt->{thresh} = pdl($opt->{thresh});
+  
+  $opt->{behind} = -1 unless (defined $opt->{behind});
+  
+  $masks = (defined($opt->{masks})) ? $opt->{masks} : [];
+  $start_frame = (defined($opt->{start_frame})) ? $opt->{start_frame} : 0;
+  
+  my($lthresh,$hthresh) = ($opt->{thresh}->min, $opt->{thresh}->max);
+  
+  ##############################
+  ## @locus tells us which pixels are newly selected and
+  ## hence need attention in the next and/or previous frames.
+  ## When we update a particular frame, we clear the @locus entry
+  ## for the previous frame, and append our new stuff to the next @locus
+  ## entry.  The loci are 2xn PDLs, to avoid the overhead of creating
+  ## perl lists -- is this a false economy?
+  ## 
+  
+  my( @ploci, @nloci, $null, $i );
+  $null = pdl([[-10,-10]]); #$null is 2 x 1
+  map { push(@ploci,$null); push(@nloci,$null); } (0..$#$cube);
+  
+  ##############################
+  ## Main loop 
+  my $frame = $start_frame;
+  my $frmax = 0;
+  do {
+      my ($ploc,$nloc,$fr_ploc,$fr_nloc,$nfound,$pfound);  
+      
+      print "Frame $frame of $#$cube ";
+      #### If necessary, generate the initial mask from high-threshold values
+      print "def\n";
+      unless( defined($masks->[$frame])){
+	  
+	  $masks->[$frame] =     ( $cube->[$frame] >= $hthresh ) 
+	      -  ( $cube->[$frame] <= -$hthresh );
+	  $ploc = whichND($masks->[$frame]>0);
+	  $nloc = whichND($masks->[$frame]<0);
+      } else {
+	  $ploc = $nloc = $null;
+      }
+
+      #### If necessary, add locus values from the next and previous frames
+      print "fr ";    
+
+      $fr_ploc = ( PDL::glue( ($frame == 0 ? $null : $ploci[$frame-1]), 1, 
+			      ($frame < $#$cube ? $ploci[$frame+1] : $null),
+			      ($frame == 0 ? $null : $null->glue(1,scalar whichND($masks->[$frame-1]>0))),
+			      (($frame < $#$cube && defined $masks->[$frame+1]) ? $null->glue(1,scalar whichND($masks->[$frame+1]>0)) : $null)
+			      )
+		   ) -> uniqvec;
+
+      $fr_nloc = ( PDL::glue( ($frame == 0 ? $null : $nloci[$frame-1]), 1,
+			      ($frame < $#$cube ? $nloci[$frame+1] : $null),
+			      ($frame == 0 ? $null : $null->glue(1,scalar whichND($masks->[$frame-1]<0))),
+			      (($frame < $#$cube && defined $masks->[$frame+1]) ? $null->glue(1,scalar whichND($masks->[$frame+1]<0)) : $null)
+			      )
+		   ) -> uniqvec;
+
+      print "diag ";
+      my $pchk = frag_detect_diag($opt->{diag}-2, $fr_ploc, $fr_ploc);
+      my $nchk = frag_detect_diag($opt->{diag}-2, $fr_nloc, $fr_nloc);
+      
+      #### Now add current locus points and their offsets, and loop until 
+      #    satisfied with the current mask.
+      my $total_found=0;
+      
+      print "loop ";
+      do {
+	  print ".";
+	  print "\n\t: " if($opt->{verbose});
+	  
+	  $ploc = $null unless $ploc->nelem;
+	  $nloc = $null unless $nloc->nelem;
+	  
+	  $pchk = frag_detect_diag($opt->{diag}, $ploc, $pchk)->glue(1,$ploc);
+	  $nchk = frag_detect_diag($opt->{diag}, $nloc, $nchk)->glue(1,$nloc);
+	  
+	  # Simplify the loci to check.
+	  $pchk = $pchk->uniqvec;#DAL if($pchk->nelem > 5000);
+	  $nchk = $nchk->uniqvec;#DAL if($nchk->nelem > 5000);
+	  
+	  # Locate new pixels, and update ploc/nloc.
+	  
+	  printf("Checking: n - %6d; p - %6d;  ",$nchk->((0))->nelem-9,$pchk->((0))->nelem-9) if($opt->{verbose});
+	  
+	  my $pcpix = $cube->[$frame]->range($pchk,0,'t')->sever;
+	  my $pmpix = $masks->[$frame]->range($pchk,0,'t');
+	  $pfound = which(($pmpix == 0) & ($pcpix >= $lthresh));
+	  $ploc = ($pfound->nelem ? 
+		   $pchk->xchg(0,1)->range($pfound(*1),0,'f')->xchg(0,1) : 
+		   $null
+		   );
+	  $pmpix->range($pfound(*1),0,'f') .= 1;
+	  
+	  my $ncpix = $cube->[$frame]->range($nchk,0,'t')->sever;
+	  my $nmpix = $masks->[$frame]->range($nchk,0,'t');
+	  $nfound = which(($nmpix == 0) & ($ncpix <= -$lthresh));
+	  $nloc = ($nfound->nelem ? $nchk->xchg(0,1)->($nfound)->xchg(0,1) : $null);
+	  $nmpix->indexND($nfound(*1)) .= -1;
+	  
+	  $ploci[$frame] = $ploci[$frame]->glue(1,$ploc) if($pfound->nelem);
+	  $nloci[$frame] = $nloci[$frame]->glue(1,$nloc) if($nfound->nelem);
+      
+	  $nchk = $pchk = $null;
+	  $total_found += $pfound->nelem + $nfound->nelem;
+	  printf("Found: n - %6d; p - %6d",$nfound->nelem,$pfound->nelem) if($opt->{verbose});
+	  
+      } while($pfound->nelem || $nfound->nelem);
+      
+      print($total_found ? " found $total_found new points\n": "\n");
+      
+      $ploci[$frame] = $ploci[$frame]->uniqvec;
+      $nloci[$frame] = $nloci[$frame]->uniqvec;
+
+      my $maxback = ($opt->{behind} ==-1) ? 0      :
+	          ( ($opt->{behind} == 0) ? $frmax : 
+                  pdl($frmax - $opt->{behind},0)->max );
+
+      if($frame and $total_found and ($frame > $maxback) ){
+	  $frame -= 1;
+      } else {
+	  $ploci[$frame-1] = $nloci[$frame-1] = $null
+	      unless($frame==0);
+	  
+	  $frame += 1;
+	  $frmax=$frame if($frame>$frmax);
+      }
+  } while($frame <= $#$cube);
+
+  return $masks;
+  
+}

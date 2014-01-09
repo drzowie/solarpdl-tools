@@ -1,0 +1,60 @@
+=pod
+
+=head2 hanning_interp
+
+=for ref
+
+Interpolate two piddles point-by-point using a Hanning weighting function.
+
+=for usage
+
+hanning_interp($penultimate,$last,$first,$second[,%opt]);
+
+OPTIONS
+
+=over 3
+
+=item num (default 14)
+
+Number of ghost images to insert between the last and first image.
+
+=back
+
+=cut
+
+use strict;
+use PDL;
+use PDL::NiceSlice;
+use constant PI=>acos(-1);
+
+sub hanning_interp{
+
+    my $penultimate = shift;
+    my $last = shift;
+    my $first = shift;
+    my $second = shift;
+    my $opt = shift;
+    my $num_ghost = defined($opt->{'num'})?$opt->{'num'}:14;
+    return undef unless $num_ghost;
+    my $xdim = $first->dim(0);
+    my $ydim = $first->dim(1);    
+    my $i = sequence($num_ghost + 4);
+    my $is = $i(1:-2)-1;
+    $is = $is->dummy(0)->dummy(0); 
+    my $p = zeroes($xdim,$ydim,$i->dims);
+    
+#    $p->((0)) .= $penultimate;
+#    $p->((1)) .= $last;
+##insert $num_ghost blank frames here
+#    $p->((-2)) .= $first;
+#    $p->((-1)) .= $second;
+
+    my $alpha = cos($is*PI/2/($num_ghost+1))**2;
+
+    $p->(:,:,1:-2) .= (($last - $penultimate)*$is + $last->dummy(2,$num_ghost+2))*$alpha + 
+	(($first - $second)*($num_ghost+1-$is) + $first->dummy(2,$num_ghost+2))*(1-$alpha);
+
+    return $p->(:,:,2:-3);
+# 0  1  2  3
+#-4 -3 -2 -1
+}

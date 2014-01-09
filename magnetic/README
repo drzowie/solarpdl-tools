@@ -1,0 +1,11 @@
+Here you will find code related to simple magnetic extrapolations. 
+
+monopole.pdl - a routine that returns the potential field from a monopole
+at the specified location.
+
+shoot_line.pdl - rk4 shooter to trace a field line in a given field.
+(The field is represented as a sub ref).
+
+sleaze.pdl - given a collection of sources, return a code ref that will
+generate the sleazy field model value (suitable for input to shoot_line).
+

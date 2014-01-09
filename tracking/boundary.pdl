@@ -1,0 +1,97 @@
+=pod
+
+=head2 boundary
+
+=for ref
+
+Given a feature ID and an id image, returns an outline of the feature.
+
+=for usage
+
+$outline = boundary($id,$id_image[,\%options])
+
+$outline is returned in pixel coordinates, and is suitable for passing
+to PDL::Graphics::PGPLOT::Window::lines.
+
+OPTIONS
+
+=over 3
+
+=item color (default based on ID number)
+
+If you don't pass in a color, it will use a color based on the ID
+number of the feature.  There are only 12 colors available like this,
+so there's a chance of having some similar colors nearby.
+
+=back
+
+=for author
+
+Derek Lamb (December 2007).
+
+=cut
+
+use PDL::NiceSlice;
+use strict;
+
+sub boundary {
+    my ($fragid,$id,$opt) = @_;
+    
+    return null() unless($fragid);
+
+#this version of boundary doesn't need a tabline, it gets all of its
+#info from the id image.
+    barf("boundary() syntax has changed, check your call") if $id->getndims !=2;
+
+    my $color = $opt->{color} || ($fragid%12 +2);
+    
+#grab the lowest and highest x and y to get $subim
+    my ($lx,$ly,$hx,$hy,$allxy);
+    $allxy = whichND($id==$fragid);
+    my ($low,$hi)=$allxy->transpose->minmaximum;
+    ($lx,$ly) = $low->list;
+    ($hx,$hy) = $hi->list;
+    my $subim_size = $hi-$low+3;
+#    my $subim_size = pdl($hx-$lx+3,$hy-$ly+3);
+    
+#get $subim and the shifted subims. This is the same thing as below:
+#$subs((0)) is $subim, $subs((1)) is $s1, etc.
+    my $offsets = pdl([1,1],[0,1],[2,1],[1,0],[1,2]);
+    my $subs = $id->range($low-$offsets,$subim_size,'t')->sever->abs == abs($fragid);
+#    my $subim = $id->range([$lx-1,$ly-1],$subim_size,'t')->sever->abs == abs($fragid);
+#    my $s1 = $id->range([$lx,$ly-1],     $subim_size,'t')->sever->abs == abs($fragid);
+#    my $s2 = $id->range([$lx-2,$ly-1],   $subim_size,'t')->sever->abs == abs($fragid);
+#    my $s3 = $id->range([$lx-1,$ly],     $subim_size,'t')->sever->abs == abs($fragid);
+#    my $s4 = $id->range([$lx-1,$ly-2],   $subim_size,'t')->sever->abs == abs($fragid);
+    
+    my $xvals = xvals($subs((1)));
+    my $yvals = yvals($subs((1)));
+#these pixels need a line on their right side
+    my ($rightx,$righty) = where($xvals,$yvals,$subs((1))-$subs((0))>0);
+#these pixels need a line on their left side
+    my ($leftx,$lefty) = where($xvals,$yvals,$subs((2))-$subs((0))>0);
+#these pixels need a line on their top side
+    my ($topx,$topy) = where($xvals,$yvals,$subs((0))-$subs((3))>0);
+#these pixels need a line on their bottom side
+    my ($botx,$boty) = where($xvals,$yvals,$subs((0))-$subs((4))>0);
+
+    my @out;
+    for my $rindex(0..$rightx->nelem-1){
+	push(@out,$rightx->at($rindex)+.5+$lx-1,$righty->at($rindex)-.5+$ly-1,$color);
+	push(@out,$rightx->at($rindex)+.5+$lx-1,$righty->at($rindex)+.5+$ly-1,0);
+    }
+    for my $lindex(0..$leftx->nelem-1){
+	push(@out,$leftx->at($lindex)-.5+$lx-1,$lefty->at($lindex)-.5+$ly-1,$color);
+	push(@out,$leftx->at($lindex)-.5+$lx-1,$lefty->at($lindex)+.5+$ly-1,0);
+    }
+    for my $tindex(0..$topx->nelem-1){
+	push(@out,$topx->at($tindex)-.5+$lx-1,$topy->at($tindex)+.5+$ly-1,$color);
+	push(@out,$topx->at($tindex)+.5+$lx-1,$topy->at($tindex)+.5+$ly-1,0);
+    }
+    for my $bindex(0..$botx->nelem-1){
+	push(@out,$botx->at($bindex)-.5+$lx-1,$boty->at($bindex)-.5+$ly-1,$color);
+	push(@out,$botx->at($bindex)+.5+$lx-1,$boty->at($bindex)-.5+$ly-1,0);
+    }
+
+    return pdl(@out)->reshape(3,scalar @out /3);
+}

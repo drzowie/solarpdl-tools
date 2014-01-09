@@ -1,0 +1,38 @@
+sub process_some {
+$start = shift; 
+$end=shift || $start+1000;
+
+$flat = gen_flat('flat-0');
+@f = <stereo1-0/*>;
+use PDL::IO::Dumper;
+$ranks = do 'frame_quality.pl';
+@good = (which($ranks >= 25))->list;
+$xrange = [225,775];
+$yrange = [75,575];
+
+$patchsize = 30;
+$nx = int(($xrange->[1]-$xrange->[0] - $patchsize*2)/$patchsize);
+$ny = int(($yrange->[1]-$yrange->[0] - $patchsize*2)/$patchsize);
+
+
+$im1 = rflat($flat,$f[$good[$start]])->($xrange->[0]:$xrange->[1],$yrange->[0]:$yrange->[1]);
+@offsets = ();
+for $i($start..$end) {
+  $im0 = $im1;
+  $im1 = rflat($flat,$f[$good[$i]])->($xrange->[0]:$xrange->[1],$yrange->[0]:$yrange->[1]);
+  
+  $offsets = zeroes(2,$nx,$ny);
+
+  for($ix=0;$ix<$nx;$ix++) {
+      for($iy=0;$iy<$ny; $iy++) {
+          $x = $ix*$patchsize + $patchsize;
+          $y = $iy*$patchsize + $patchsize;
+          
+          $of = $offsets->(:,($ix),($iy)) .= patch_offset($im0, $im1, pdl($x,$y), int($patchsize), $patchsize/2);
+          print "image $i of $#good, ".($iy+$ny*$ix)." of ".($nx*$ny)." finished ($of)...\n";
+      }
+  }
+  push(@offsets,$offsets);
+  fdump([@offsets],"offsets-calc-of$start.pl");
+}
+}

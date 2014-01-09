@@ -1,0 +1,35 @@
+
+# Return the center locations of triangles with radius r and initial
+# offset (x,y) in a playing field of size (w,h).
+
+sub triangles {
+    my($r,$x0,$y0,$w,$h) = @_;
+    my($row) = 0;
+    my(@out);
+
+    while(1) {
+
+	my($x) = $x0;
+	my($y) = $y0 + sqrt(3) * $r * $row;
+
+	last unless($y<$h);
+
+	$x += $r if($row % 2);
+	
+	$col = 0;
+	while($x < $w) {
+	    push(@out,pdl($x,$y));
+	    $x += $r;
+#	    $x += $r unless(($col+$row) % 2);
+	    $x += $r;
+	    $col++;
+	}
+
+	$row++;
+    }
+
+
+    return(cat(@out));
+}
+
+

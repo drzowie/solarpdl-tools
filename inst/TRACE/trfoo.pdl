@@ -1,0 +1,152 @@
+=head2 trace_denoise
+
+=for usage
+
+   $a = trace_denoise($im, $prev, $next, [$value]);
+
+=for ref 
+
+TRACE denoisifier (eliminates read noise).
+
+You feed in three TRACE images that are adjacent in a time sequence and
+have been adjusted for exposure-time offsets.  The first one is the 
+image to denoise; the others are its neighbors.
+
+$value is a normalizing value that determines how high a spike in the
+Fourier plane must be, relative to its neighbors, before it is eliminated.
+Default is 30.  Recommended values:  30 for FUV images; 10 for active
+region 195A images.
+
+The difference is Fourier transformed and used to generate a 
+mask of "bad" Fourier components.  The first image is denoised 
+using the bad components, and returned.  Note that this relies on the
+beat pattern changing from frame to frame, and also throws away twice
+as many components as it "needs" to. 
+
+The mask is found by comparing the FFT image to its X-enantiomorph.
+The bad components are drawn from the image's X-enantiomorph.
+
+Returns the modified version of $im0.  Is inplace aware.
+
+
+This version adds the second harmonic of every detected 
+frequency to the bad list.
+
+=cut
+ 
+sub trace_denoise {
+  my $im0 = shift->new_or_inplace;
+  my $im1a = shift;
+  my $im1b = shift;
+
+  my $a = $im0 - $im1a;
+  my $b = $im0 - $im1b;
+
+
+  $im0z = zeroes($im0);
+  fftnd($im0,$im0z);
+  
+  my $masker = sub {
+    my $ir = shift;
+    my $ii = shift;
+    my $a = shift->copy;
+    my $az = zeroes($a);
+    
+    fftnd($a,$az);
+
+    # Find magnitude of difference between the FFTs
+    $a -= $ir;    $az -= $ii;
+    $az *= $az;   $a *= $a; 
+    $a += $az;
+
+    # Find smoothed version of magnitudes...
+    $az .= boxcar($a,[5,5]);
+    
+    #Weighted harmonic average between local and global averages
+    $az .= 3.0 / (1.0/$az + 2.0/$a->avg);
+    
+    my $mask = ( ( $a - $a->indexNDb(ndcoords($a) * pdl(-1,1),'p') )
+	      /
+	      $az
+	      ) > 30;
+    print "---";
+    return $mask;
+  };
+
+  $m1 = &$masker($im0,$im0z,$im1a);
+  $m2 = &$masker($im0,$im0z,$im1b);
+  
+  $mask = $m1 & $m2;
+
+  # Locate points in mask, and spread 'em around
+  $w0 = whichND($mask);        
+
+  # Add harmonics to badlist.  Note that going outside the cell will just
+  # reflect back in (we use periodic conditions)...
+#  $w0 = ($w0 
+#	 ->glue(1,$w0*pdl(2,1) )
+#	 );
+
+  $w1 = $w0->copy;
+  # Smear by 1 in the X axis...
+  $w0 = ( $w0
+	  ->glue(1,$w0+pdl(1,0))
+	  ->glue(1,$w0+pdl(-1,0))
+	  );
+
+  # Reflect through 0
+  $w0 = $w0->glue(1,-$w0);    
+
+  print "Found ".$w0->dim(1)." points\n";
+
+
+  # Old code: just copy the average of the enantiomorph 
+  # components into this component.
+ 
+  ###
+  ##
+  ##  $im0->range($w0,0,'p') .= ($im0->range($w0*pdl(-1,1),0,'p') + 
+  ##                             $im0->range($w0*pdl(1,-1),0,'p')
+  ##                            )/2;
+  ##  $im0z->range($w0,0,'p') .=  ( $im0z->range($w0*pdl(-1,1),0,'p') + 
+  ##                                $im0z->range($w0*pdl(1,-1),0,'p')
+  ##                            )/2;
+  ##
+  ###
+
+  # New code: Try to minimize the total amplitude of the result.
+  my $nn = $w0->dim(1);
+  $im0r  = $im0-> range($w0,0,'p');
+  $im0zr = $im0z->range($w0,0,'p');
+
+  print "im0r is ",join("x",dims($im0r),"\n");
+  my $compare_sub= sub {
+    my $a = shift;
+    print "compare: \$a has ",join(',',dims($a))," elements (nn=$nn)";
+    $im0r .= $a->(0:$nn-1);
+    $im0zr .= $a->($nn:-1);
+    print ".";
+    my $im1 = $im0->copy;
+    my $im1z = $im0z->copy;
+    print ".";
+    fftnd($im1,$im1z);
+    print "\n";
+    return ($im1 * $im1)->sum;
+  };
+  
+  my $start = zeroes($nn*2);
+  my $p = amoeba($compare_sub, $start);
+
+  fftnd($im0,$im0z);
+
+  # Clean up from the FFT (forward xform only -- need to fix fftnd): 
+  # divide by # of pixels, and then reflect around (0,0).
+  
+  my @d = $im0->dims;
+
+  $im0 /= $im0->nelem;
+  $im0z .= $im0->(-1:-$d[0], -1:-$d[1]);      # Reflect
+  $im0 .= $im0z->range([-1,-1],[$im0z->dims],'p');  # Offset by 1
+
+  return $im0;
+}

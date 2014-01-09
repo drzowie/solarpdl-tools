@@ -1,0 +1,139 @@
+=head2 read_triangulation - read in ASCII object-triangulation data from STEREO
+
+=for ref
+
+Read in a file from Howard & Tappin's triangulation efforts, showing
+feature lon/lat in Stonyhurst heliographic coordinates (solar
+lon/lat/r with prime meridian containing the current sub-Earth point
+on the Sun).
+
+You get back a hash containing:
+
+=over 3
+
+=label event 
+
+An event label (an IDL-style identifier string)
+
+=label lonlat_hee 
+
+A 2x<n> PDL containing samples of longitude and latitude in
+heliocentric earth ecliptic coordinates ("lon" is like RA but in
+degrees, "lat" is declination, origin is at Sun center) at the start 
+of the observation.
+
+=label lonlat_hs
+
+a 2x<n> PDL containing samples of longitude and latitude in 
+heliographic Stonyhurst coordinates at the start of the observation.
+
+=label jday
+
+an <N>-PDL containing the julian date number for each moment in which
+the feature was observed.
+
+=label elongation
+
+an <N>-PDL containing the elongation (from the POV of STEREO-A) of the event
+
+=label point_p_dist
+
+an <N>-PDL containing the Point P distance from Sun Center, in A.U.
+
+=back
+
+The file format is as described in notes from Tim Howard.  The first
+line of the file contains the label.  Then a blank line is expected
+and then one or more lines with four whitespace-delimited numbers
+containing the lat/lon coordinates, then another blank line followed
+by three columns containing JDAY, elongation, and Point P distance.
+
+
+ KEY FOR TRIANGULATION
+ =====================
+ Event Label
+ -Period-
+ Helicentric Earth Ecliptic Latitude (degrees, + = north)
+ Helicentric Earth Ecliptic Longitude (degrees, + = east (left))
+ Heliographic Latitude (degrees, + = north)
+ Heliographic Longitude (degrees, + = east (left))
+ -Period-
+ Julian Day Number
+ Elongation (degrees)
+ Point P Distance (AU)
+
+On error, an exception is thrown with the error message.
+
+=cut
+
+sub read_triangulation {
+    my $filename = shift;
+    local($_);
+    my $rt = "read_triangulation";
+
+    my $out = {};
+    
+    open FOO,"<$filename" || die "$rt: couldn't open $filename for reading\n";
+    my @lines = map { s/\s*$//; $_ } <FOO>;
+    close FOO;
+
+    ## Read label line
+    $_ = shift @lines;
+    m/^[a-z]\w+$/i || die "$rt: First line of $filename doesn't seem to contain an identifier ('$_') in $rt\n";
+    $out->{event} = $_;
+    
+    ## Read blank line
+    $_ = shift @lines;
+    die "$rt: Second line of $filename isn't blank ('$_')\n" if(m/\w/);
+    
+    ## Read lon/lats
+    my @row;
+    my @lonlats = ();
+    while( (@row = split /\s+/, $lines[0]) == 4 ){
+	shift @lines;
+	push(@lonlats,[@row]);
+    }
+    unless(@lonlats) {
+	die "$rt: No lon/lat rows detected in '$filename'\n";
+    }
+    my $p = pdl(@lonlats);
+    $out->{lonlat_hee} = $p->(1:0:-1)->copy;
+    $out->{lonlat_hs}  = $p->(3:2:-1)->copy;
+    
+    ## Read blank line
+    $_ = shift @lines;
+    die "$rt: Missing blank line in '$filename'\n" if(m/\w/);
+    
+    ## Read radial information
+    my @radii = ();
+    while( (@row = split /\s+/, $lines[0]) == 3) {
+	shift @lines;
+	push(@radii, [@row]);
+    }
+    unless(@radii) {
+	die "$rt: No radii found in '$filename'\n";
+    }
+    $radii = pdl(@radii);
+    ($out->{jday}, $out->{elongation}, $out->{point_p_dist}) = map { $_->sever } $radii->mv(0,-1)->dog;
+
+
+    $out->{type} = "Triangulation";
+
+    return $out;
+}
+    
+    
+
+    
+    
+    
+   
+	
+
+	
+	
+
+    
+
+
+

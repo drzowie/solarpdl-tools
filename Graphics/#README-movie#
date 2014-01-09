@@ -1,0 +1,31 @@
+use PDL::NiceSlice;
+$s = "/usr/local/src/localpdl/Graphics/CubeMarkup.pm";
+do $s;
+
+
+$a=frestore('70-traces.pl');
+
+@a = map { 
+    $newx = xvals( ($a->[$_]->((2))->max - $a->[$_]->((2))->min)*25 + 1 ) / 25 + $a->[$_]->((2))->min,
+    pdl( 
+	CubeMarkup::cspline( $a->[$_]->((2))->copy, 
+			     $a->[$_]->((0))->copy, 
+			     $newx,
+			     0
+	),
+	CubeMarkup::cspline( $a->[$_]->((2))->copy, 
+			     $a->[$_]->((1))->copy, 
+			     $newx,
+			     0
+	)
+	);
+} [0..$#$a];
+
+`mkdir composite-frames`;
+
+    
+	
+
+
+	       
+   

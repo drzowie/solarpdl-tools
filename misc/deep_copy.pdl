@@ -1,0 +1,91 @@
+##############################################-*-perl-*-##############
+=head1 NAME
+
+deep_copy -- Make a deep copy of an arbitrary data structure. 
+
+=head1 DESCRIPTION
+
+Makes and returns a deep copy of a nested data structure.  Any
+blessed references contained in the structure should have
+->copy methods; if they don't, they're just copied by reference
+and not by value.
+
+=head1 USAGE
+
+$a = deep_copy($b);
+
+=head1 HISTORY
+
+Kludged up as an "eval Dumper" replacement, 23-Mar-2000, C. DeForest
+(eval Dumper gives problems when you dump a PDL -- an additional reference
+to the PDL is created in perl space but not in internal PDL routine space,
+so that on deallocation perl dumps core.)
+
+=cut
+sub deep_copy {
+    
+    my($in);
+    my(@out);
+
+    while(defined ($in=shift)) {
+	my($ref) = ref $in;
+	
+	if(!$ref) {
+	    return $in;
+	}
+	elsif($ref eq 'SCALAR') {
+	    my($scalar) = $ {$ref};
+	    push(@out,\$scalar);
+	}
+	elsif($ref eq 'ARRAY') {
+	    my(@ry);
+	    my($item);
+	    foreach $item(@{$in}) {
+		if(ref $item) {
+		    push(@ry,deep_copy($item));
+		} else {
+		    push(@ry,$item);
+		}
+	    }
+	    push(@out,\@ry);
+	}
+	elsif($ref eq 'HASH') {
+	    my(%hash);
+	    my($item);
+	    foreach $item(keys %{$in}) {
+		if (ref $in->{$item}) {
+		    $hash{$item} = deep_copy($in->{$item});
+		} else {
+		    $hash{$item} = $in->{$item};
+		}
+	    }
+	    push(@out,\%hash);
+	}
+	elsif($ref =~ m/CODE|IO|GLOB/) {  # Code, IO, glob are copied by ref.
+	    push(@out,$ref);
+	}
+	elsif($ref eq 'PDL') { # special case; eliminate when
+	                       # the eval copy memory leak is
+	                       # plugged in the core module!
+	  push(@out,$in->copy);
+	}	
+	else { # Blessed reference -- use ->copy if available
+	    my $copy;
+	    eval "\$copy = \$in->copy"; 
+	    $err = $@;
+	    if($err) {
+		chop $err;
+		$err =~ s/at.*//;
+		print "Warning: $err; copying by reference.\n";
+		push(@out,$ref);
+	    } else {
+		push(@out,$copy);
+	    }
+	}
+    }
+    
+    if(@out > 1) {return @out}
+    else {return $out[0]};
+}
+    
+

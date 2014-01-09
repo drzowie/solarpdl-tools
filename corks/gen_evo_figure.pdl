@@ -1,0 +1,41 @@
+# Read in a bunch of images and turn into a single panel
+sub gen_evo_figure {
+  
+  @columns = ('foo-sg','foo','foo-mag','hrmag-noise','fdmag-noise');  # What goes where?
+  $delay = 60;                # Minutes between rows
+  $n = 7;
+  
+# Read directories
+  for($i=0;$i<@columns;$i++) {
+    my(@a);
+    chop(@a = `ls $columns[$i]`);
+	 $dirs[$i] = \@a;
+       }
+    
+    $test_im = rpic(sprintf("%s/%s",$columns[0],$dirs[0]->[0]));
+    @size = $test_im->dims;
+    
+    $out = zeroes( scalar(@columns) * ($size[0] + 20) - 20 ,
+		   $n * ($size[1] + 20) - 20) + 255;
+    
+    for($i=0;$i<$n;$i++) {
+      for($j=0;$j<scalar(@columns);$j++) {
+	my($im);
+	eval '$im = rpic(sprintf("%s/%s",$columns[$j],$dirs[$j]->[$delay * $i]));';
+	next unless(defined $im);
+	$s = sprintf("%d:%d,%d:%d",	
+			    $j     * ($size[0]+20),
+			    ($j+1) * ($size[0]+20) -21,
+			    ($n-$i-1) * ($size[1] + 20),
+		     ($n-$i) * ($size[1] + 20) - 21);
+	print $s;
+	$out->slice($s)
+	  .= $im;
+      }
+    }
+return $out;
+}
+			    
+			    
+
+

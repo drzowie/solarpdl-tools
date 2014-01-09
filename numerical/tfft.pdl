@@ -1,0 +1,73 @@
+=head2 tfft
+
+=for ref
+
+Threading fft - variable number of active dims.  inplace-flag aware.
+The 0 dim of the input must be 2, running across (real, imaginary). By
+default there is one additional active dim that is transformed over.
+You can set how many additional dims are transformed, or specify that
+all them should be, using an options hash.
+
+See also C<trfft> for real variables.
+
+Accepted options are:
+
+=over 3
+
+=item inverse (default 0)
+
+This flags an inverse transform.  You can also get this behavior
+by calling ifft instead of fft.
+
+=item ndims (default 1)
+
+This indicates the number of dimensions you want transformed.
+If you feed in 0, then *all* data dimensions are transformed over.
+(see also "all",  below)
+
+=item all (default 0)
+
+This flag, if true, overrides C<ndims> and transforms over all
+relevant dimensions.
+
+=back
+
+=cut
+use PDL::Options;
+use PDL::FFT qw/:Func/;
+
+sub tfft {
+    my $data = shift->new_or_inplace;
+    my $u_opt = shift // {};
+    my $opt = parse(
+	{
+	    inverse => 0,
+	    ndims   => 1,
+	    all     => 0
+	},
+	$u_opt
+	);
+    
+    if($data->dims < 2 or $data->dim(0) < 2) {
+	die "fft: 0 dim must run across (real,imaginary)"
+    }
+    my $d2 = $data->mv(0,$data->ndims-1);
+
+    if($opt->{dims} == 0 or  $opt->{all} == 1 ) {
+	$opt->{dims} = ($data->ndims - 1);
+    }
+    unless($opt->{dims} > 0 && $opt->{dims} < $data->ndims) {
+	die "tfft: Dim count out of range";
+    }
+
+    for my $i(0..$opt->{dims}-1) {
+	if($opt->{inverse}) {
+	    ifft($d2->mv($i,0)->dog);
+	} else {
+	    fft($d2->mv($i,0)->dog);
+	}
+    }
+
+    return $data;
+}
+

@@ -1,0 +1,62 @@
+=head1 NAME
+
+ifits -- "ingest" a solar FITS file.  Read it in from an instrument and try to give it
+correct headers.
+
+=head1 SYNOPSIS
+
+   $a = ifits('filename');
+
+   $a = rfits('filename');
+   $b = ifits($a);
+
+=head1 AUTHOR
+ 
+   Craig DeForest, 18-Jun-2002
+
+=cut
+use Carp;
+
+sub ifits {
+  my($opt,@files) = find_opt(@_);
+  my(@out);
+
+  my($f);
+  foreach $f(@files) {
+    my($hdr);
+    
+    # Read in file if necessary, or else use header if that's what we've got
+    if(ref $f && UNIVERSAL::isa($f,'PDL')) {  # If it's a PDL, use its header
+      $hdr = $f->gethdr();
+    } elsif(ref $f eq 'HASH') {             # If it's just a header, use that
+      $hdr = $f;
+    } else {                                  # If it's a filename, read it
+      $f = rfits($f); 
+      $hdr = $f->gethdr();
+    }
+    
+    # Identify what it is
+    $inst = guess_instrument($hdr);
+    Carp::cluck("Couldn't identify an instrument -- trying generic...\n")
+      unless defined($inst);
+
+    # Attempt to fix it.
+    my($h2);
+    eval '$h2 = ingest_'.lc($inst || 'gen').'($hdr)';
+    
+    Carp::cluck("No ingestor for instrument '$inst' -- returning raw header\n")
+      unless defined($h2);
+    $h2 = $hdr unless defined($h2);
+
+    if(ref $f && UNIVERSAL::isa($f,'PDL')) {
+      $f->sethdr($h2);
+    } elsif(ref $f eq 'HASH') {
+      $f = $h2;
+    }
+
+    return $f unless(wantarray);
+    push(@out,$f);
+  }
+
+  return @out;
+}

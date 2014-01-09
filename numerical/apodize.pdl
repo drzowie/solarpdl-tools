@@ -1,0 +1,97 @@
+=head2 apodize 
+
+=for usage
+
+$b = $a->apodize($npix, $dims)
+$b = apodize($a, $npix, $dims);
+
+=for ref
+
+Apodize an array with Hanning rolloff.
+
+You specify the number of pixels in the rolloff window and the
+dimension(s) on which to do the rolloff.
+
+If $npix is a 1-D PDL or a list ref, it is applied pixelwise to the dimensions.
+If $dims is a scalar, it is the dimension to use. If it is a list ref or a 1-D PDL, 
+then apodization takes place on those dimensions.  If it is missing, then the 0 dim 
+is used or the first <n> dims if npix is specified.
+
+If npix isn't specified then 10% of the dimension is used.
+
+=cut
+*PDL::apodize = \&apodize;
+use Safe::Isa;
+
+sub apodize {
+ my $in = shift;
+ my $npix = shift;
+ my $dims = shift;
+
+ my $out = $in->new_or_inplace;
+
+ if(defined($npix)) {
+     unless( ref($npix) ) {
+	 $npix = [$npix];
+     } elsif( $npix->$_isa('PDL') ) {
+	 if($npix->ndims > 1) {
+	     die "apodize: npix argument must have no more than 1-D if it is a PDL (not threadable)";
+	 } else {
+	     $npix = [ list $npix ];
+	 }
+     } elsif( ref $npix ne 'ARRAY' ) {
+	 die "apodize: npix argument must be scalar, list ref, or 1-D PDL";
+     }
+ }
+
+ unless(defined($dims)){
+     if(defined($npix)) {
+	 $dims = [ list xvals( 0+@$npix ) ];
+     } else {
+	 $dims = [0];
+     }
+ } elsif( $dims->$_isa('PDL') ) {
+     if($dims->ndims > 1) {
+	 die "apodize:  dims argument must have no more than 1-D if it is a PDL (not threadable)";
+     }
+     $dims = [list $dims];
+ } elsif( !ref($dims) ) {
+     $dims = [$dims+0];
+ } elsif( ref $dims ne 'ARRAY' ) {
+     die "apodize: dims argument must be scalar, list ref, or 1-D PDL";
+ }
+ 
+ unless(defined($npix)) {
+     $npix = [];
+     for my $i(0..$#$dims) {
+	 $npix->[$i] = $in->dim($i)/10;
+     }
+ }
+
+ use PDL::IO::Dumper;
+ # Mock up threading
+ if( @$npix == 0  or  @$dims == 0 ) {
+     die "apodize: empty list refs not allowed!";
+ }
+
+ if( $#$npix != $#$dims ) {
+     if( @$npix == 1 ) {
+	 my $a = $npix->[0];
+	 @$npix = map { $a } 0..$#$dims;
+     } else {
+	 die "apodize: dims and npix must agree in size";
+     }
+ }
+
+ for my $ddex(0..$#$dims) {
+     my $window = 0.5 * (1 - cos ( xvals( $npix->[$ddex] ) * PI / $npix->[$ddex] ));
+     my $o = $out->mv( $dims->[$ddex], 0 );
+     $o->slice([0,$npix->[$ddex]-1]) *= $window;
+     $o->slice([-1,-$npix->[$ddex]]) *= $window;
+ }
+  
+ return $out;
+}
+     
+
+

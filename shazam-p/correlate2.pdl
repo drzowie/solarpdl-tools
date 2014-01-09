@@ -1,0 +1,63 @@
+=head2 correlate2 - find the cross-correlation function across the same subfield of two images
+
+=for usage
+
+$corr = correlate2($im1, $im2, $center, $patchsize, $range);
+
+=for ref
+
+C<$im1> and C<$im2> are the images to compare.  They should be
+approximately aligned.  C<$center> is a PDL containing the coordinates
+of the center of the image patch to compare.  C<$patchsize> is the
+size of patch to cross-correlate, and C<$range> is the range over
+which the patches are allowed to drift.
+
+The operation is asymmetric: the centered patch is chosen from
+C<$im1>, shifted one pixel at a time, and compared to the appropriate
+subpatch of C<$im2>.  The returned image is the normalized
+cross-correlation as a function of offset in pixels.  It is returned as a
+C<$range x $range> PDL.  The origin is at (C<int($range/2,
+$range/2)>).
+
+Normalized correlation cannot easily be accomplished by convolution,
+because the normalization constant changes with subfield.  This
+algorithm is rather inefficient, as it uses C<range()> to produce
+shifted copies of the active patch in C<$im2>, and then explicitly
+correlates each layer.
+
+=cut
+
+sub correlate2 {
+    my $im1 = shift;
+    my $im2 = shift;
+    my $coords = shift;
+    my $patchsize = shift;
+    my $range = shift || $patchsize;
+    
+    my $patch1 = $im1->range($coords-$patchsize/2,$patchsize,'e')->copy;
+    my $patch2 = $im2->range($coords-$patchsize/2-$range/2,$patchsize+$range,'e')->copy;
+
+    my $ndc = ndcoords($range,$range)->mv(0,-1)->clump(2)->mv(-1,0);
+    my $stack = $patch2->range($ndc,[$patchsize,$patchsize])->  # <pixel>, <x-patch>, <y-patch>
+        mv(0,-1);                                            # <x-patch>, <y-patch>, <pixel>
+    
+    my $stack_mean = $stack->clump(2)->average;                  # <pixel>
+    my $stack_mm = ($stack->clump(2)->mv(0,-1) - $stack_mean)->  # <pixel>, <x-patch * y-patch>
+        mv(-1,0);                                             # <x-patch * y-patch>, <pixel>
+    my $stack_sigma = sqrt( ($stack_mm * $stack_mm)->average );  # <pixel>
+    
+    my $patch1_mean = $patch1->avg;
+    my $patch1_mm = $patch1-$patch1_mean;
+    my $patch1_sigma = sqrt( ($patch1_mm * $patch1_mm)->avg );
+
+    my $correlate = (($patch1_mm->clump(2) * $stack_mm)/($stack_sigma->(*1) * $patch1_sigma))->average->reshape($range,$range);
+
+    my $maxloc = 0+whichND($correlate == max($correlate));
+    if($maxloc->dim(1) > 1) {
+	print "Couldn't find the peak -- $maxloc\n";
+    }
+
+    return $correlate;
+}
+    
+    

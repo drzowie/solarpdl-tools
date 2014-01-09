@@ -1,0 +1,20 @@
+sub tv {
+  local \%opt;
+  local @args;
+  local $_;
+  
+  while(defined($_ = shift(@_))) {
+    if(ref $_ eq 'HASH') {
+      $opt = {%{$_[1]}}; 
+      last;
+    } else {
+      push(@args,$_);
+    }
+  }
+  push(@args,@_);
+  
+  $opt->{'PIX'} = 1 unless defined($opt->{'PIX'});
+  $opt->{'SCALE'}=1 unless defined($opt->{'SCALE'});
+  imag @args,$opt;
+}
+

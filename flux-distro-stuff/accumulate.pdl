@@ -1,0 +1,13 @@
+sub accumulate {
+  my($a) = rfits(shift);
+  $a->hdrcpy(1);
+  my($i) = 1;
+  my($f);
+  while($f = shift) {
+    $a += rfits($f);
+    $i++;
+  }
+
+  $a /= $i;
+  return $a;
+}

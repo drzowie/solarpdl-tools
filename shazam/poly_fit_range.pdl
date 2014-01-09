@@ -1,0 +1,404 @@
+=sub poly_fit_range - do a polynomial fit
+
+=for usage
+
+$out = poly_fit_range($x, $data, $order, $lo, $hi);
+
+=for signature
+
+linear_fit_range( x(n), data(n), lo(), hi(), [o]out(m) )
+
+=for ref
+
+Does a polynomial regression on a collection of data points versus index
+coordinate, delivering the Y intercept and the slope of the regressed
+line.  The twist is that only points within the specified range are 
+considered -- points less than $lo, or greater than $hi, are ignored.
+
+If you leave either $lo or $hi undefined, then no limit is applied.
+
+Because this was hacked together fast, I cut-and-pasted the 
+polynomial evaluation code in the C part of the procedure; this makes 
+the routine longer than it necessarily has to be.
+
+=cut
+
+sub poly_fit_range {
+    my $x = shift;
+    my $data = shift;
+    my $order = shift;
+    my $lo = shift || undef;
+    my $hi = shift || undef;
+    my $out = shift || undef;
+
+    my $loflag = (defined $lo);
+    my $hiflag = (defined $hi);
+    
+    if($order > 10) {
+	die "poly_fit_range: maximum polynomial order is 10 (you wanted $order)\n";
+    }
+ 
+    $out = PDL::my_poly_fit_range($x, $data, $lo,$hi,$loflag,$hiflag, $order);
+}
+
+no PDL::NiceSlice;
+use Inline PDLPP => <<'EOF'
+
+pp_def('my_poly_fit_range',
+	Pars=>'x(k); data(k); lo(); hi(); [o]out(n);',
+	OtherPars=>'char loflag; char hiflag; long order => n',
+	Inplace=>0,
+	Code=> <<'EOC'
+       static long foo = 0;
+       long n;
+       double avX,avY;
+       double wgtS, avS;
+       long order;
+
+       order = $SIZE(n);
+       n = 0;
+       avX = avY=0;
+       $out(n=>2) = 0;
+		
+       foo++;
+       if(! (foo % 1000) ) {
+	 printf(".");
+	 fflush(stdout);
+       }
+
+       // Get average X and Y
+       loop(k) %{
+	 $GENERIC() val = $data();
+	 if(
+	    ((!$COMP(loflag)) || val >= $lo()) && 
+	    ((!$COMP(hiflag)) || val <= $hi())
+	    ) {
+	   n++;
+	   avX += $x();
+	   avY += val;
+	 }
+       %}
+       
+       if(!n) {
+         n = 1;
+	 $out(n=>2) = 1;
+       }
+       avX /= n;
+       avY /= n;
+       
+       wgtS = avS = 0;
+       
+       loop(k) %{
+	 $GENERIC() val = $data();
+	 if(
+	    ((!$COMP(loflag)) || val >= $lo()) &&
+	    ((!$COMP(hiflag)) || val <= $hi())
+	    ) {
+	   double diffX = $x() - avX;
+	   wgtS += diffX*diffX;
+	   avS += diffX * (val - avY);
+	 }
+       %}
+
+       if(!wgtS) {
+         wgtS = 1;
+	 $out(n=>2) += 2;
+       }
+
+       avS /= wgtS;
+
+       // Now avS has the slope , avX has the x datum, and avY has the y datum.
+       // Perturb it to make a simplex, and perform a simplex fit.  Slow but 
+       // reliable.
+       {
+	 double vecs[10][11];
+	 double centroid[10];
+	 double rvec[10], scrvec[10];
+	 double rvec_err, scr_err;
+	 double errs[11];
+	 int w,w2,b;
+	 int ii,jj,kk;
+	 double YI = avY - avS * avX;
+	 double err_acc;
+	 double val, xpow;
+	 int err_ct;
+	 int termflag;
+
+
+	 /* Initialize the simplex */
+	 for(ii=0;ii<=order;ii++) {
+	   for(jj=2;jj<order;jj++) {
+	     vecs[jj][ii] = 0;
+	   }
+	   vecs[0][ii] = YI;
+	   vecs[1][ii] = avS;
+	   if(ii<order)
+	     vecs[ii][ii] += 1;
+	   
+
+	   // Calculate the RMS error over the sampled points
+	   err_acc = 0;
+	   err_ct = 0;
+	   loop(k) %{
+	     $GENERIC() val = $data();
+	     if(
+		((!$COMP(loflag)) || val >= $lo()) &&
+		((!$COMP(hiflag)) || val <= $hi())
+		) {
+	       xpow = 1;
+	       val = 0;
+	       for(jj=0;jj<order;jj++){
+		 val += xpow * vecs[jj][ii];
+		 xpow *= $x();
+	       }
+	       err_acc += (val - $data()) * (val - $data());
+	       err_ct++;
+	     }
+	   %}
+	   err_acc /= (err_ct==0 ? 1 : err_ct);
+	   
+	   errs[ii] = err_acc;
+	 }	   
+
+	 /* Now carry out a simplex optimization loop */
+
+	 ii=0;
+         termflag = 0;
+
+	 do {
+	   int shrinkflag = 0;
+
+	   // Find the best, worst, and next-worst points
+	   b=w=0;
+	   for(jj=0;jj<=order;jj++) {
+	     if(errs[jj] < errs[b])
+	       b = jj;               // b gets best
+	     if(errs[jj] > errs[w])
+	       w = jj;               // w gets worst
+	   }
+	   w2 = b;
+	   for(jj=0;jj<=order;jj++) {
+	     if(errs[jj] > w2 && jj != w)
+	       w2 = jj;              // w2 gets next-worst
+	   }
+	 
+
+	   // Find the centroid of the remaining points
+	   for(jj=0;jj<order;jj++) {  // loop over dimension
+	     centroid[jj]=0;
+
+	     for(kk=0;kk<=order;kk++) // loop over vectors
+	       if(kk != w)            // skip the worst vector
+		 centroid[jj] += vecs[jj][kk];
+	     centroid[jj] /= order;
+	   }
+
+	   // Check for termination...
+	   if(  ( (errs[b] - errs[w]) / (errs[w])) < 1e-5  ) {
+	     // Errors look equal - test the error in the centroid too...
+	     err_acc = 0;
+	     err_ct = 0;
+	     loop(k) %{
+	       $GENERIC() val = $data();
+	       if(
+		  ((!$COMP(loflag)) || val >= $lo()) &&
+		  ((!$COMP(hiflag)) || val <= $hi())
+		  ) {
+		 xpow = 1;
+		 val = 0;
+		 for(jj=0;jj<order;jj++){
+		   val += xpow * centroid[jj];
+		   xpow *= $x();
+		 }
+		 err_acc += (val - $data()) * (val - $data());
+		 err_ct++;
+	       }
+	       %}
+	     err_acc /= (err_ct==0 ? 1 : err_ct);
+	     
+	     if( fabs( (errs[b] + errs[w])*0.5 - err_acc) / errs[w] < 1e-5 ) 
+	       termflag = 1;
+	   }
+		
+
+	   if(!termflag) {
+
+	     // Reflect the worst point through the centroid
+	     for(jj=0;jj<order;jj++)
+	       rvec[jj] = centroid[jj] + centroid[jj] - vecs[jj][w];
+	     
+	     // Calculate the RMS error at the new sample point
+	     err_acc = 0;
+	     err_ct = 0;
+	     loop(k) %{
+	       $GENERIC() val = $data();
+	       if(
+		  ((!$COMP(loflag)) || val >= $lo()) &&
+		  ((!$COMP(hiflag)) || val <= $hi())
+		  ) {
+		 xpow = 1;
+		 val = 0;
+		 for(jj=0;jj<order;jj++){
+		   val += xpow * rvec[jj];
+		   xpow *= $x();
+		 }
+		 err_acc += (val - $data()) * (val - $data());
+		 err_ct++;
+	       }
+	       %}
+	     err_acc /= (err_ct==0 ? 1 : err_ct);
+	     
+	     rvec_err = err_acc;
+	     
+	     
+	     // Check simple reflection case : reflected improves on w but doesn't beat b
+	     if( rvec_err < errs[w] && rvec_err >= errs[b] ) {
+	       for(jj=0; jj<order; jj++)
+		 vecs[jj][w] = rvec[jj];
+	       errs[w] = rvec_err;
+	     }
+	     
+	     // Check expansion case: reflected is better than b
+	     else if( rvec_err < errs[b] ) {
+	       for(jj=0; jj<order;jj++) // stretch in the new direction
+		 scrvec[jj] = rvec[jj] + rvec[jj] - centroid[jj];
+	       
+	       // Calculate the RMS error at the new sample point
+	       err_acc = 0;
+	       err_ct = 0;
+	       loop(k) %{
+	       	 $GENERIC() val = $data();
+		 if(
+		    ((!$COMP(loflag)) || val >= $lo()) &&
+		    ((!$COMP(hiflag)) || val <= $hi())
+		    ) {
+		   xpow = 1;
+		   val = 0;
+		   for(jj=0;jj<order;jj++){
+		     val += xpow * scrvec[jj];
+		     xpow *= $x();
+		   }
+		   err_acc += (val - $data()) * (val - $data());
+		   err_ct++;
+		 }
+		 %}
+	       err_acc /= (err_ct==0 ? 1 : err_ct);
+	       
+	       scr_err = err_acc;
+	       
+	       // Check if the stretched sample point is even better!
+	       if( scr_err < rvec_err ) { // Yes - keep new vector
+		 for(jj=0; jj<order;jj++)
+		   vecs[jj][w] = scrvec[jj];
+		 errs[w] = scr_err;
+	       } else {                   // No - keep old reflected vector
+		 for(jj=0; jj<order;jj++)
+		   vecs[jj][w] = rvec[jj];
+		 errs[w] = rvec_err;
+	       }
+	     }
+	     
+	     // Check contraction case
+	     else if( rvec_err >= errs[w2] ) {
+	       
+	       for(jj=0; jj<order; jj++) 
+		 scrvec[jj] = centroid[jj] + 0.5 * (vecs[jj][w] - centroid[jj]);
+	       
+	       // Calculate the RMS error at the new sample point
+	       err_acc = 0;
+	       err_ct = 0;
+	       loop(k) %{
+	       	 $GENERIC() val = $data();
+		 if(
+		    ((!$COMP(loflag)) || val >= $lo()) &&
+		    ((!$COMP(hiflag)) || val <= $hi())
+		    ) {
+		   xpow = 1;
+		   val = 0;
+		   for(jj=0;jj<order;jj++){
+		     val += xpow * scrvec[jj];
+		     xpow *= $x();
+		   }
+		   err_acc += (val - $data()) * (val - $data());
+		   err_ct++;
+		 }
+		 %}
+	       err_acc /= (err_ct==0 ? 1 : err_ct);
+	       
+	       scr_err = err_acc;
+	       
+	       if( scr_err < errs[w] ) {
+		 for(jj=0; jj<order;jj++) 
+		   vecs[jj][w] = scrvec[jj];
+		 errs[w] = scr_err;
+	       } else {
+		 
+		 // give up
+		 shrinkflag = 1;
+	       }
+	     } else { 
+	       // rvec_err is at least as bad as the worst! Just shrink...
+	       shrinkflag = 1;
+	     }
+	     
+	     
+	     if(shrinkflag) {
+	       for(kk=0; kk<=order; kk++) {
+		 if(kk != b) {
+		   for(jj=0; jj<order; jj++) 
+		     vecs[jj][kk] = 0.5 * ( vecs[jj][kk] + vecs[jj][b] );
+		   
+		   // Calculate the RMS error at the new sample point
+		   err_acc = 0;
+		   err_ct = 0;
+		   loop(k) %{
+		     $GENERIC() val = $data();
+		     if(
+			((!$COMP(loflag)) || val >= $lo()) &&
+			((!$COMP(hiflag)) || val <= $hi())
+			) {
+		       xpow = 1;
+		       val = 0;
+		       for(jj=0;jj<order;jj++){
+			 val += xpow * vecs[jj][kk];
+			 xpow *= $x();
+		       }
+		       err_acc += (val - $data()) * (val - $data());
+		       err_ct++;
+		     }
+		     %}
+		   err_acc /= (err_ct==0 ? 1 : err_ct);
+		   
+		   errs[kk] = err_acc;
+		 }
+	       }
+	     }
+	   
+
+	   ii++; 
+
+	   if(ii>=500)
+	     termflag = 1;
+
+	   }	     // end of termflag check
+	   
+	   
+	   
+
+	 } while(!termflag);
+
+	 // Copy the fitted vector into the output array.
+	 loop(n) %{
+	   if(n<order){
+	     $out() = centroid[n];
+	   }	     
+	 %}
+	 $out(n=>order) = ii;
+
+       }
+	     
+	 
+        
+EOC
+       );
+EOF

@@ -1,0 +1,31 @@
+use PDL;
+use PDL::IO::IDL;
+use PDL::NiceSlice;
+use PDL::DiskCache;
+sub process {
+  my $readname = shift;
+  my $dirname=shift;
+    my $raw = shift;
+  my $range = shift;
+  my $unsigned_ids = shift;
+  
+  `mkdir $dirname`;
+  my @images;
+  if(ref $readname) {
+    $images = $a;
+  } else {
+    $a=ridl($readname);
+    $images = [$a->{MASK_ARR}->dog];
+  }
+  
+  
+  $raw = diskcache([<../data/*fits>],{ro=>1}) unless defined($raw);
+  
+  my $i=0;
+  my @outfnames = map { 
+    sprintf("$dirname/frame-%3.3d.png",$i++) 
+    } (0..$#$raw) ;
+  my $out = diskcache(\@outfnames,{write=>sub {wim(@_)}});
+  print "images=$images;\nout=$out\nraw=$raw\nrange=$range\nunsigned_ids=$unsigned_ids\n";
+  pizzify($images,$out,$raw,$range,$unsigned_ids);
+}

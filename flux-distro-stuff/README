@@ -1,0 +1,9 @@
+This directory contains high-level routines to examine the distributio of
+flux sizes.  It relies on the SWAMI's suite (frag_detect and the like) in 
+an earlier incarnation.  It is not clear that it still works -- bit rot
+may have taken over.
+
+--CED
+
+Comment: Jun 2004
+Code: Jun 2002

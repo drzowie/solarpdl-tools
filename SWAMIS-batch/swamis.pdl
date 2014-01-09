@@ -1,0 +1,259 @@
+use strict;
+use warnings;
+use PDL;
+use PDL::DiskCache;
+use DBI;
+
+sub swamis{
+    my $opt = shift || {};
+    die "Hash ref expected as first argument of purge!\n" unless (!defined($opt)   or  ref($opt) eq 'HASH');
+
+    my $tmpdir = defined($opt->{tmpdir})   ? $opt->{tmpdir}   :  ".";
+
+    my $dbh;
+    my $sth;
+    my $res;
+
+    $dbh = DBI->connect("dbi:SQLite:dbname=$tmpdir/swamis.sdb","","");
+
+### Grab params from the database (set in purge())
+    my ($thresh, $method, $min_sz, $v_min, $t_min, $sz_min, $n_back, $max_id, $num_frames);
+    $sth = $dbh->prepare('SELECT * FROM params');
+    $sth->execute();
+    $res = $sth->fetchall_arrayref;
+    $sth->finish;
+    my $num_results = 0;
+    foreach (@$res) {
+        $num_results += 1;
+        if ($num_results > 1) {
+            print "Error: More than one param row!\n";
+            exit 1;
+        }
+        
+        $thresh = [@$_[0], @$_[1]];
+        $method = @$_[2];
+        $min_sz = @$_[3];
+        $v_min  = @$_[4];
+        $t_min  = @$_[5];
+        $sz_min = @$_[6];
+        $n_back = @$_[7];
+        $max_id = @$_[8];
+        $num_frames = @$_[9];
+    }
+
+    #print "Params: $thresh, $method, $min_sz, $v_min, $t_min, $sz_min, $n_back, $max_id\n";
+
+### Populate files table with the set of new files and paths
+    my(@datafiles,@maskfiles,@idfiles,@assocfiles,@tabfiles);
+
+    @datafiles = <$tmpdir/00-data/*.fits>;
+    #@maskfiles = map { ($a=$_)=~s/00-data/01-mask/; $a } @datafiles;
+    #@idfiles = map { ($a=$_)=~s/00-data/02-id/; $a } @datafiles;
+    #@assocfiles = map { ($a=$_)=~s/00-data/03-assoc/; $a } @datafiles;
+    #@tabfiles = map { ($a=$_)=~s/00-data/04-tab/; $a} @datafiles;
+
+    foreach (@datafiles) {
+        my $datafile = $_;
+        my $filename = $_;
+        my $maskfile = $_;
+        my $idfile = $_;
+        my $assocfile = $_;
+        my $tabfile = $_;
+        $filename =~ s/00-data\///;
+        $maskfile =~ s/00-data/01-mask/;
+        $idfile =~ s/00-data/02-id/;
+        $assocfile =~ s/00-data/03-assoc/;
+        $tabfile =~ s/00-data/04-tab/;
+
+        $sth = $dbh->prepare('SELECT filename FROM files WHERE filename=?');
+        $sth->execute($filename);
+        $res = $sth->fetchall_arrayref;
+        $sth->finish;
+        if (!@$res) {
+            $sth = $dbh->prepare('INSERT INTO files VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $sth->execute($filename, $datafile, $maskfile, $idfile, $assocfile, $tabfile, 0, 0, 0, 0, 0);
+            $sth->finish;
+        }
+    }
+
+    #my ($data, $mask, $id, $assoc, $tab);
+    my (@data, @mask, @id, @assoc, @tab);
+    my $tabs;
+
+### Run the individual programs
+    # FRAG_DETECT
+    $res = $dbh->selectall_arrayref('SELECT data_path,mask_path,data_processed,filename FROM files WHERE data_processed<2 ORDER BY filename');
+    if (@$res) {
+        @datafiles = ();
+        @maskfiles = ();
+        my @filenames = ();
+        my $num_seen = 0;
+        my $num_not_seen = 0;
+        foreach (@$res) {
+            push @datafiles, @$_[0];
+            push @maskfiles, @$_[1];
+            push @filenames, @$_[3];
+
+            if ((@$_[2] + 0) == 1) {
+                $num_seen++;
+            } else {
+                $num_not_seen++;
+            }
+        }
+        my $num_files = $num_seen + $num_not_seen;
+        if ($num_not_seen > 0) {
+            my $detect_start_frame;
+            if ($num_seen > $n_back) {
+                $detect_start_frame = $n_back;
+            } else {
+                $detect_start_frame = $num_seen;
+            }            
+            #$data = diskcache(\@datafiles,{ro=>1,bless=>1});
+            #$mask = diskcache(\@maskfiles,{rw=>1,bless=>1});
+            @data = mrfits(@datafiles);
+            @mask = map {(-e $_) ? rfits($_) : undef } @maskfiles;
+            frag_detect(\@data, {diag=>2,masks=>\@mask,thresh=>$thresh,start_frame=>$detect_start_frame,behind=>$n_back});
+            #$mask->sync;
+            my $i = 0;
+            foreach (@mask) {
+                $_->wfits($maskfiles[$i++]);
+            }
+            #$dbh->selectall_arrayref('UPDATE files SET data_processed=2');
+            my $file_num = 0;
+            foreach (@filenames) {
+                $sth = $dbh->prepare('UPDATE files SET data_processed=? WHERE filename=?');
+                if ($file_num < ($num_files - $n_back)) {
+                    $sth->execute(2, $_);
+                } else {
+                    $sth->execute(1, $_);
+                }
+                $sth->finish;
+                $file_num++;
+            }
+        }
+    }
+
+    # FRAG_ID
+    $res = $dbh->selectall_arrayref('SELECT data_path,mask_path,id_path FROM files WHERE mask_processed=0 AND data_processed=2 ORDER BY filename');
+    if (@$res) {
+        @datafiles = ();
+        @maskfiles = ();
+        @idfiles = ();
+        foreach (@$res) {
+            push @datafiles, @$_[0];
+            push @maskfiles, @$_[1];
+            push @idfiles, @$_[2];
+        }
+        @data = mrfits(@datafiles);
+        @mask = mrfits(@maskfiles);
+        @id = map {(-e $_) ? rfits($_) : undef } @idfiles;
+        frag_id(\@data,\@mask,{method=>$method,diag=>1,ids=>\@id,verbose=>1,monitor=>0,min_size=>$min_sz});
+        #$id->sync;
+        my $i = 0;
+        foreach (@id) {
+            $_->wfits($idfiles[$i++]);
+        }
+        $dbh->selectall_arrayref('UPDATE files SET mask_processed=2 WHERE data_processed=2');
+    }
+    
+    # FRAG_ASSOC
+    $res = $dbh->selectall_arrayref('SELECT id_path,assoc_path,id_processed,filename FROM files WHERE id_processed<2 AND mask_processed>0 ORDER BY filename');
+    if (@$res) {
+        @idfiles = ();
+        @assocfiles = ();
+        my @filenames = ();
+        my $num_seen = 0;
+        my $num_not_seen = 0;
+        foreach (@$res) {
+            push @idfiles, @$_[0];
+            push @assocfiles, @$_[1];
+            push @filenames, @$_[3];
+
+            if ((@$_[2] + 0) == 1) {
+                $num_seen++;
+            } else {
+                $num_not_seen++;
+            }
+        }
+        my $num_files = $num_seen + $num_not_seen;
+        if ($num_not_seen > 0) {
+            my $assoc_start_frame;
+            if ($num_seen > 1) {
+                $assoc_start_frame = 1;
+            } else {
+                $assoc_start_frame = $num_seen;
+            }            
+            @id = mrfits(@idfiles);
+            @assoc = map {(-e $_) ? rfits($_) : undef } @assocfiles;
+            frag_assoc(\@id,{dbh=>$dbh,assoc=>\@assoc, monitor=>0, verbose=>1, start_frame=>$assoc_start_frame, start_id=>($max_id + 1)});
+            #$assoc->sync;
+            my $i = 0;
+            foreach (@assoc) {
+                $_->wfits($assocfiles[$i++]);
+            }
+            #$dbh->selectall_arrayref('UPDATE files SET id_processed=2 WHERE mask_processed>0');
+            my $file_num = 0;
+            foreach (@filenames) {
+                $sth = $dbh->prepare('UPDATE files SET id_processed=? WHERE filename=?');
+                if ($file_num < ($num_files - 1)) {
+                    $sth->execute(2, $_);
+                } else {
+                    $sth->execute(1, $_);
+                }
+                $sth->finish;
+                $file_num++;
+            }
+        }
+    }
+    
+    # FRAG_TAB
+    $res = $dbh->selectall_arrayref('SELECT data_path,assoc_path,tab_path FROM files WHERE assoc_processed=0 AND id_processed>0 ORDER BY filename');
+    if (@$res) {
+        @datafiles = ();
+        @assocfiles = ();
+        @tabfiles = ();
+        foreach (@$res) {
+            push @datafiles, @$_[0];
+            push @assocfiles, @$_[1];
+            push @tabfiles, @$_[2];
+        }
+        @data = mrfits(@datafiles);
+        @assoc = mrfits(@assocfiles);
+        @tab = map {(-e $_) ? rfits($_) : undef } @tabfiles;
+        $tabs = frag_tab(\@assoc,\@data,{dbh=>$dbh,verbose=>1,tab=>\@tab,start_frame=>$num_frames});
+        #wfits($tabs,'tabs.fits');
+        #$tab->sync;
+        my $i = 0;
+        foreach (@tab) {
+            $_->wfits($tabfiles[$i++]);
+        }
+        $dbh->selectall_arrayref('UPDATE files SET assoc_processed=2 WHERE id_processed>0');
+
+        # Now do some post filtering of the database
+        frag_filt(\@assoc,{dbh=>$dbh,verbose=>1,start_frame=>$num_frames});
+    }
+    
+    if (0)
+    {
+    # FRAG_HIST
+    $res = $dbh->selectall_arrayref('SELECT data_path,tab_path FROM files WHERE tab_processed=0 AND assoc_processed>0 ORDER BY filename');
+    if (@$res) {
+        @datafiles = ();
+        @tabfiles = ();
+        foreach (@$res) {
+            push @datafiles, @$_[0];
+            push @tabfiles, @$_[1];
+        }
+        @data = mrfits(@datafiles);
+        @tab = mrfits(@tabfiles);
+        my $hist = frag_hist($tabs,\@tab,\@data,{dbh=>$dbh,verbose=>1,sep=>5,ratio=>0.5});
+        #$hist->wfits('hist.fits');
+        $dbh->selectall_arrayref('UPDATE files SET tab_processed=2 WHERE assoc_processed>0');
+        
+        emergence_movie($hist,$tabs,\@data,\@tab,{dir=>'swamis_movie',size=>[8,8],range=>[-300,300],evmask=>[0,0,0,0,0,0],id_feats=>0,contour=>2,format=>'ppm'});   
+### Done!
+    }
+}
+    
+    $dbh->disconnect();
+}

@@ -1,0 +1,88 @@
+use PDL::NiceSlice;
+use strict;
+
+=head2 uniformify
+
+=for usage
+
+uniformify(\@f, $output_dir, \%options)
+
+=for ref
+
+Convert a collection of FITS images sampled at different times into a movie with a given cadence.
+
+If you don't specify the cadence, then the most common image cadence is used.
+
+=cut
+
+use PDL::Options;
+
+use Date::Parse;
+
+sub uniformify { 
+    my $files = shift;
+    my $output_dir = shift // "uniform";
+    my $user_opt = shift // {};
+
+    my $defaults = {
+      cadence => undef,
+      timestamp => 'DATE-OBS',
+      start => undef,
+      end => undef
+    }    ;
+
+    my $opt = {parse( $defaults, $user_opt )};
+
+    ##############################
+    # First, get the timestamps...
+    print "reading headers of ".(0+@$files)." files";
+    my @hdrs = map { print "."; rfits($_,{data=>0}) } @$files;
+    
+    print "Converting timestamps";
+    my $ts = $opt->{timestamp};
+    our @times = map { print "."; str2time($_->{$ts},"UTC") } @hdrs;
+    
+    my $times = pdl(@times);
+
+    my $sort = qsorti($times);
+    unless(all($sort == xvals($sort))) {
+	die "Files not in chronological order";
+    }
+
+    ##############################
+    # Figure the cadence if not present
+    unless($opt->{cadence}) {
+
+	my $dt = $times->(1:-1) - $times->(0:-2);
+	$dt = $dt->rint;
+	
+	$opt->{cadence} = $dt->modeover;
+    }
+    print "cadence is $opt->{cadence}\n";
+
+
+    ##############################
+    # Figure start time if not present
+    unless($opt->{start}) {
+       $opt->{start} = $hdrs[0]->{$ts};
+    }
+    my $tstart = str2time($opt->{start});
+    print "Start time is $opt->{start}\n";
+
+    ##############################
+    # Figure end time if not present
+    unless($opt->{end}) {
+      $opt->{end} = $hdrs[$#hdrs]->{$ts};
+    }
+    my $tend = str2time($opt->{end});
+    print "End time is $opt->{end}\n";    
+
+    ##############################
+    # Figure frame count
+    my $nframes = (($tend - $tstart)/$opt->{cadence})->ceil;
+    print "making $nframes frames...\n";
+
+
+    
+ }
+

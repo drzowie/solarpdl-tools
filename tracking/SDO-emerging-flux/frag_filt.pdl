@@ -1,0 +1,188 @@
+=pod
+
+=head2 frag_hist
+
+=for ref
+
+Filter out features not meeting criteria
+
+=for usage
+
+$tabs = frag_filt(\@frag_assoc_list,{options});
+
+Combs the database table created by frag_tab and removes ids that do not
+meet the critera.
+
+OPTIONS
+
+=over 3
+
+=item verbose
+
+Chat.
+
+=item start_frame
+
+Frame number to start with
+
+=item window
+
+Number of frames to examine
+
+=item DEBUG
+
+Sets verbose option to 2.
+
+=back
+
+BUGS
+
+None at this time (12/31/2007).
+
+HISTORY
+
+Joe Peterson 15-Feb-2010 moved filter (using database) functionality here.
+
+=cut
+
+use strict;
+use PDL;
+use PDL::NiceSlice;
+use PDL::ImageND;
+use DBI;
+
+sub frag_filt {
+    my($opt,$id_list) = find_opt(@_);
+    local($_);
+    
+    ##############################
+    ## Set up options
+    
+    #barf "frag_filt called with all filtering options<=0. Refusing to continue." if ($opt->{v_min}<=0 && $opt->{t_min}<=0 && $opt->{sz_min}<=0);
+
+    $opt->{verbose} = 2 if($opt->{DEBUG});
+
+    my($start_frame) = $opt->{start_frame} || 0;
+    
+    my($dbh) = $opt->{dbh} || undef;
+    my $sth;
+    my $res;
+    my $num_results;
+
+
+    
+    # Grab params from the database
+
+    $res = $dbh->selectall_arrayref('SELECT name,value FROM params');
+    die "Swamis: couldn't get parameters from database (something is seriously wrong!)\n" unless(@$res);
+    my $p = { map { @$_ } @$res };
+
+
+
+    my($window) = $opt->{window} || $p->{nBack} * 4;
+
+    # Find the first frame to examine, based on the passed in start frame
+    # (which is the first frame never examined) and the window to examine.
+    if (($p->{curMaxTbFr} - $window - 2) < $start_frame)
+    {
+        $start_frame = ($p->{curMaxTbFr} - $window - 2);
+        if ($start_frame < 0)
+        {
+            $start_frame = 0;
+        }
+    }
+
+    # Cycle through the IDs, filtering when necessary
+    for (my $search_id=0; $search_id<=$p->{curMaxId}; $search_id++)
+    {
+        print("Looking at ID=$search_id\n");
+        my $volume = 0;
+        my $lifetime = 0;
+        my $max_size = 0;
+        my $born = 1;
+        my $dead = 1;
+        #my $ft_sgn = 0;
+        my ($id, $frame, $flux, $size, $x, $y, $close);
+        $sth = $dbh->prepare('SELECT * FROM tabs WHERE ID=? AND frame>=? ORDER BY frame');
+        $sth->execute($search_id, $start_frame);
+        $res = $sth->fetchall_arrayref;
+        $sth->finish;
+        #my @frames = ();
+        foreach (@$res) {
+            $id     = @$_[0];
+            $frame  = @$_[1];
+            $flux   = @$_[2];
+            $size   = @$_[3];
+            $x      = @$_[4];
+            $y      = @$_[5];
+            $close  = @$_[6];
+
+            #if ($flux < 0.0)
+            #{
+            #    if ($ft_sgn == 1)
+            #    {
+            #        print("Differing flux sign between frames!\n");
+            #        exit(1);
+            #    }
+            #    
+            #    $ft_sgn = -1;
+            #}
+            #else
+            #{
+            #    if ($ft_sgn == -1)
+            #    {
+            #        print("Differing flux sign between frames!\n");
+            #        exit(1);
+            #    }
+            #    
+            #    $ft_sgn = 1;
+            #}
+                
+            if ($frame == $start_frame)
+            {
+                $born = 0;
+            }
+            
+            if ($frame == ($p->{curMaxTbFr} - 1))
+            {
+                $dead = 0;
+            }
+            
+            $volume += $size;
+            $lifetime += 1;
+            if ($size > $max_size)
+            {
+                $max_size = $size;
+            }
+
+            #push(@frames, $frame);
+            
+            print("  frame=$frame, size=$size\n");
+        }
+
+        print("    vol=$volume, life=$lifetime, max=$max_size\n");
+        if ($born && $dead)
+        {
+            if (($volume   < $p->{minVol}) ||
+                ($lifetime < $p->{minLife}) ||
+                ($max_size < $p->{minMaxSize}))
+            {
+                print("      *** Does not meet mins ($p->{minVol}, $p->{minLife}, $p->{minMaxSize})!\n");
+                if (!$close)
+                {
+                    print("       * And no close neighbors...deleting\n");
+                    
+                    $sth = $dbh->prepare('DELETE FROM tabs WHERE ID=?');
+                    $sth->execute($search_id);
+                    $sth->finish;
+                }
+            }
+        }
+        else
+        {
+            print("      --Born before start or still alive...\n");
+        }
+    }
+    
+    print "frag_filt completed successfully.\n";
+}

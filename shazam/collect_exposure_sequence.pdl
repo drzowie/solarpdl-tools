@@ -1,0 +1,111 @@
+=head2 collect_exposure_sequence - gather an exposure scan for dark or flat cal
+
+=for usage
+
+$sequence = collect_exposure_sequence($directory, $nmax, $step);
+
+=for ref
+
+The input is a string containing a directory to search.  Relative
+pathnames are evaluated relative to "/data" or the environment
+variable "SHAZAM_DATA_DIR".  The output is an array ref containing two
+fields: an N-PDL containing the exposure times found, in increasing
+order; and an  NxWxH-PDL containing the exposure data.
+
+$nmax is the maximu number of images to accumulate for a given exposure 
+time, and $step lets you take every $n^{th}$ exposure time in the exposure
+sequence; together, they can save much time and memory.
+
+=for author
+
+Craig DeForest
+
+=for history
+
+v0.1 - 8-May-2009
+
+=cut
+$PDL::BIGPDL = 1;
+
+sub collect_exposure_sequence {
+    my $dir = shift;
+    my $nmax = shift;
+    my $step = shift || 1;
+    print ("dir=$dir, nmax=$nmax, step=$step\n");
+    
+    unless($dir =~ m:^[\/\.]:) {
+	$basedir = $ENV{'SHAZAM_DATA_DIR'} || "/data";
+	$dir = "$basedir/$dir";
+    }
+    print "searching $dir/...\n";
+    my $hdrhash = {};
+    @files = sort { unless($hdrhash->{$a}) {$hdrhash->{$a} = rfits($a,{data=>0});}
+		    unless($hdrhash->{$b}) {$hdrhash->{$b} = rfits($b,{data=>0});}
+		    my $an = $hdrhash->{$a}->{EXPTIME};
+		    my $bn = $hdrhash->{$b}->{EXPTIME};
+		    $an <=> $bn;
+                   } 
+               <$dir/*_e*.fits>;
+    undef $hdrhash;
+    
+    print "collect_exposure_sequence: found ".(@files+0)." files\n";
+    
+    
+    my @times = ();
+    my @n = ();
+    my @ims = ();
+    my @slots=();
+
+    my $new;
+    # Now run through the files, sorting where they go.
+
+    print "Scanning..."; flush STDOUT;
+    i: for $i(0..$#files) {
+        $new = rfits($files[$i],{hdrcpy=>1,data=>0});
+	my $nt = $new->{EXPTIME};
+	if(@n==0 || $nt != $times[$#times]) {
+	    push(@times,$nt);
+	    push(@n,1);
+	} else {
+	    $n[$#n]++;
+	}
+	$slots[$i] = $#n;
+    }
+
+    $step = 1 unless($step);
+
+    print "Allocating ".(ceil(pdl(@n/$step)))." image planes..."; flush STDOUT;
+    $out = zeroes(float, $new->{NAXIS1},$new->{NAXIS2}, (ceil(pdl(@n/$step))));
+    $o2 = $out->mv(-1,0);
+
+    print "Accumulating..."; flush STDOUT;
+    $n = (float pdl(@n))->(0:-1:$step);
+    @nread = ();
+    for $i(0..$#files) {
+	unless($slots[$i] % $step) {
+	    unless($nmax && $nread[$slots[$i]/$step] >= $nmax) {
+		$o2->(($slots[$i] / $step)) += rfits($files[$i]);
+		$nread[$slots[$i]/$step]++;
+		print "."; flush STDOUT;
+	    }
+	}
+       if($i%100==0){print "-"; flush STDOUT;}
+    }
+    
+    print "Dividing (o2 is ",join("x",$o2->dims),"; slots is ".(0+@slots)."..."; flush STDOUT;
+    for $i(0..$#nread) {
+	$o2->(($i)) /= $nread[$i];
+    }
+#    $o2 /= pdl(@nread);
+    
+    print "ok\n";
+    
+    my $t = float pdl(@times);
+    if($step>1){
+     $t = $t->(0:-1:$step)->sever;
+    }
+    return ([$t, $o2]);
+}
+    
+    
+

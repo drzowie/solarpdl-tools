@@ -1,0 +1,55 @@
+use PDL::DiskCache;
+use PDL::Transform;
+use PDL::FFT;
+
+sub rank_frames {
+    my $flatdir = shift;
+    my $dir = shift;
+    $dir =~ s:\/$::;
+    opendir DIR,$dir;
+    my @f = map { "$dir/$_" } sort(grep(/.fits$/, readdir(DIR)));
+    closedir DIR;
+
+    my $flat = gen_flat($flatdir);
+    $ims = diskcache(\@f,{ro=>1,read=>sub { my $a = rflat($flat,$_[0]); return $a->(:,0:$a->dim(1)/2-1)->sever}});
+    my($w,$h) = (200,200);
+
+    my $t = t_radial();
+
+    $xro = ones($w);
+    $yro = ones($h);
+    $w10 = int($w/10);
+    $xro->(0:$w10-1) .= sin(xvals($w10)*3.14159/2/(float $w10));
+    $xro->(0:$w10-1) *= $xro->(0:$w10-1);
+    $xro->(-1:-$w10:-1) .= $xro->(0:$w10-1);
+
+    $h10 = int($h/10);
+    $yro->(0:$h10-1) .= sin(xvals($h10)*3.14159/2/(float $h10));
+    $yro->(0:$h10-1) *= $yro->(0:$h10-1);
+    $yro->(-1:-$h10:-1) .= $yro->(0:$h10-1);
+
+    @out = ();
+    $start=time;
+    for my $i(0..$#$ims) {
+	print "i=$i...";
+        my $dims = [$ims->[$i]->dims];
+        $l = ($dims->[0]-$w)/2;
+        $b = ($dims->[1]-$h)/2;
+        $sub = $ims->[$i]->($l:$l+$w-1,$b:$b+$h-1);
+	$sub1 = $sub->copy;
+	$sub *= $xro;
+	$sub->xchg(0,1) *= $yro;
+        $si = zeroes($sub);
+        fftnd($sub,$si);
+        $sim = sqrt($sub*$sub+$si*$si)->log10;
+        $simm = $sim->map($t,[$w,sqrt($h*$h+$w*$w)],{m=>'l',b=>'p'});
+        $avg = $simm->average->(0:min(pdl($w,$h))/2-1);
+	$idx = which($avg >= $avg->((1))-2.5)->max;
+	$idx = 0 if($idx > $avg->dim(0) * 2.0/3.0);
+	push(@out,$idx);
+	$eta = (@$ims/($i+1)) * (time-$start);
+	$pct = int(10000*($i/@$ims))/100;
+	print "$i of $#$ims: result is $idx; $pct% done, eta is ".int2date('local,all',$start+$eta)." (".sprintf("%d",($eta/60))." min)\n";
+    }
+    return @out;
+}

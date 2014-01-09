@@ -1,0 +1,204 @@
+=pod
+
+=head2 frag_assoc2
+
+=for ref
+
+Associate magnetic features in adjacent frames of a sequence of id masks - faster
+
+=for usage
+
+$assoc_ids = frag_assoc2(\@frag_id_list, {options})
+
+The frag_id_list is the output from frag_id. 
+
+The output is an array of masks with regularized feature ids.
+The feature ids are consecutive in absolute-value space, though the
+sign bit corresponds to the sign of each feature.
+
+=for options
+
+=over 3
+
+=item start_id
+
+If this gets passed in, IDs start here rather than at +/- 1.
+
+=item assoc
+
+List ref (or PDL::DiskCache object) of the output cross-frame associated IDs.
+
+=item monitor
+
+Display the progress in a PDL::Graphics::PGPLOT::Window object.
+
+=item verbose
+
+Chat.  Levels 0 (minimal), 1 (some), and 2 (more).
+
+=back
+
+BUGS
+
+None (of course)
+
+=for history
+
+HISTORY:
+
+Craig DeForest, 27-Nov-2001.  Based on code and algorithms developed by
+Parnell and by Hagenaar.
+Derek Lamb, 24-Jul-2003. Updated display commands for OO.
+ARD 04/07/04 Fixed bug whereby 0 was being used as valid frag id.
+ARD 04/10/04 Removed feature history processing from frag_assoc.
+CED, 28-May-2008.  Updated to use qsortvec for speed.
+
+=cut
+
+use Carp;
+use strict;
+use PDL::NiceSlice;
+
+sub frag_assoc2 {
+  my($opt,$ids) = find_opt(@_);
+  local($_);
+
+  ##############################
+  ## Set up options
+  
+  my($id_out) = $opt->{assoc} || [];
+
+
+  ##############################
+  ## Set up variables
+  ##
+
+  my($nextid) = $opt->{start_id} || 1;  # nextid is next frag id to use
+ 
+  my($frame);                           # Frame no. we are working on
+
+  my($ims) = zeroes(long,2,$ids->[0]->dims);
+  my($curr) = $ims->((0));
+  my($prev) = $ims->((1));
+
+  ##############################
+  # main loop
+
+  print "frag_assoc: processing ".($#$ids+1)." mask images...\n";
+  my $win=pgwin('xs',size=>[6,6]) if $opt->{monitor};
+
+  for $frame(0..$#$ids) {
+    next unless defined($ids->[$frame]);
+
+    $prev .= ($frame ? $id_out->[$frame-1] : 0);
+    $curr .= $ids->[$frame];
+
+    printf("Associating frame %d...",$frame);
+
+    print "indexing...";
+    # Get a list of all like-sign overlapping pixels
+    my $ovlaps = whichND(    ( ($prev>0) & ($curr>0) )   |   ( ($prev<0) & ($curr<0) )    );
+    $foo::ovlaps = $ovlaps;
+    print "indexing (ovlaps is ".join('x',$ovlaps->dims).")...";
+    # Now assemble the pixels themselves into the list.
+    my $fwdhash={};
+    my $fwdcts ={};
+    my $bakhash={};
+    my $bakcts={};
+    my $out_ids = zeroes(long, $curr->dims);
+
+    if($ovlaps->nelem) {
+	my $fwbak = zeroes(long,$ovlaps->dims);
+	$fwbak->((0)) .= abs($prev->indexND($ovlaps)) if($ovlaps->nelem);
+	$fwbak->((1)) .= abs($curr->indexND($ovlaps)) if($ovlaps->nelem);
+	$foo::fwbak= $fwbak;
+	print "sub...";
+
+	# Subtract off the minimum (for later multiplication)
+	my $fwb_of = $fwbak->mv(0,-1)->minimum;
+	print "fwb_of = ".join(",",$fwb_of->list)."\n";
+	$fwbak -= $fwb_of;
+	my $fwb_sc = pdl(1 , $fwbak->((0))->max + 1);
+	
+	print "sorting...";
+	my($sorted) = qsortvec($fwbak);
+	
+	print "counting...";
+	# Collapse to unique vectors, calculate counts, and re-expand...
+	my($fwct, $fwval);
+	($sorted * $fwb_sc)->sumover->rle($fwct=null,$fwval=null);
+
+	my($fwcurr) = floor ($fwval / $fwb_sc->((1))) + $fwb_of->((1));
+	my($fwprev) = floor ($fwval % $fwb_sc->((1))) + $fwb_of->((0));
+	
+	print "fwd hash...";
+	for my $i(0..$fwct->nelem - 1) {
+	    unless($fwdcts->{$fwprev->at($i)} >= $fwct->at($i)) {
+		my $j = $fwprev->at($i);
+		$fwdhash->{$j} = $fwcurr->at($i);
+		$fwdcts ->{$j} = $fwct->at($i);
+	    }
+	}
+	
+	print "rev hash...";
+	for my $i(0..$fwct->nelem - 1) {
+	    unless($bakcts->{$fwcurr->at($i)} > $fwct->at($i)) {
+##		p $fwcurr->at($i)."->".$fwprev->at($i)."->".$fwdhash->{$fwprev->at($i)}."\n";
+		my $j = $fwcurr->at($i);
+		$bakhash->{$j} = $fwprev->at($i);
+		$bakcts ->{$j} = $fwct->at($i);
+	    }
+	}
+	$FOO::fwdhash = $fwdhash;
+	$FOO::bakhash = $bakhash;
+
+	##############################
+	# To recap: now, bakhash has the maximum forward overlap from the previous frame,
+	# and fwdhash has the maximum reverse overlap from the current frame, for each 
+	# ID key.  
+	#
+	# Now we do something devious: populate a PDL lookup table using the current frame IDs as
+	# indices into the table, and the associated previous-frame IDs as values in the table.
+	my $currabs = $curr->abs;
+	my $curr_max = $currabs->max + 1; 
+	my $curr_min = $currabs->flat->where($currabs->flat > 0)->min - 1;
+
+	my $dex = zeroes(long,$curr_max - $curr_min); 
+	my $cvals = $currabs->flat->qsort->uniq; 
+	$FOO::cvals = $cvals;
+
+	for my $i($cvals->list) {
+	    if( $fwdhash->{$bakhash->{$i}} == $i ) {
+		$dex->($i-$curr_min) .=  $bakhash->{$i};
+	    } else {
+		$dex->($i-$curr_min) .= $nextid++ ;
+	    }
+	}
+	print  "dex range is ".(join("..",$currabs->minmax))."...";
+	$out_ids .= $dex->range($currabs->(*1) - $curr_min,0,'t');
+	print "out_ids has ".(sum($out_ids != 0))." nonzero elements; curr has ".(sum($curr !=0));
+	
+    } else {
+	my $currabs = $curr->abs;
+	my $cvals = $currabs->flat->qsort->uniq;
+	my $cvm = $cvals->where($cvals)->min;
+	my $dex = zeroes(long, $cvals->max - $cvm + 2);
+
+	for my $i($cvals->list) {
+	    $dex->($i - $cvm) .= $nextid++;
+	}
+	print "cvm is $cvm; max is ".($cvals->max - $cvm)." after sub; dex is ".(join("x",$dex->dims))." elements...";
+	my $ca = $currabs->(*1)-$cvm;
+	print "ca is ".join("x",$ca->dims)."; range is ".join("-",$ca->minmax)."...";
+	$out_ids .= $dex->indexND( $ca,'t');
+	
+    }
+
+    $id_out->[$frame] = $out_ids;
+    $id_out->sync;
+    print "\n";
+
+  }
+    
+  return $id_out;
+}

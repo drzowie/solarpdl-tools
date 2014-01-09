@@ -1,0 +1,35 @@
+=head2 uniqND
+
+=for usage
+
+$list2 = uniqND( $list1, 3 );
+
+=for ref
+
+Find unique elements in a list of N-D objects
+
+Given an N+1-dimensional PDL that is a collection of N-dimensional
+objects, uniqND returns a collection of the unique elements.
+It works by analogy to uniq, by sorting the list to place duplicates
+next to each other.  The list is sorted with sortND.
+
+uniqND takes two arguments: the PDL to uniqify and the number of 
+dimensions to use.  If you feed in 0 for the dimensionality, you get
+back the same result as if you flattened the piddle and used L<uniq|uniq>.
+
+=cut
+
+sub uniqND {
+  my $self = shift;
+  my $d = shift;
+
+  sortND($self,$d,1);
+
+}
+
+
+
+
+
+
+

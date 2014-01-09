@@ -1,0 +1,237 @@
+=pod
+
+=head2 frag_tab
+
+=for ref
+
+Tabulate features in an associated set of frames (traveling-window version for SDO)
+
+=for usage
+
+$tabs = frag_tab(\@frag_id_list,\@images,{options});
+
+The output is a hash ref containing a large pdl and several perl
+variables about the data set.  The 'summary' field is a pdl indexed by
+(feature, frame, data type) and contains the flux, size, centroid,
+x, and y of each feature in each frame, in that order.  
+
+The IDs get crunched down to a set of consecutive integers.  The
+assoc files can be changed in place (see option 'tab'), so if the thing 
+crashes you have to remake them, but at least it reduces the egregiousness 
+of the disk waste.
+
+This is a variant of frag_tabulate written for the SDO weather-prediction pipeline. (It 
+is probably useful for more than that).  Although it still returns the summary PDL, the 
+database side effects are more important.  It is intended to be called with only a few images
+at a time. 
+
+frag_tab processes the entire frag_id_list at once
+
+OPTIONS
+
+=over 3
+
+A feature with a maximum size smaller than this value will get filtered as 
+noise.
+
+=item tab
+
+Set this option to an array ref or DiskCache object to prevent the assoc 
+files from being changed in place.
+
+=item verbose
+
+Chat.
+
+=item DEBUG
+
+Sets verbose option to 2.
+
+=back
+
+BUGS
+
+None at this time (12/31/2007).
+
+HISTORY
+
+Craig DeForest ??? wrote most of it.
+
+Derek Lamb 15-Nov-2004 added reassociation to fix the swiss cheese problem.
+
+Derek Lamb 02-Jun-2005 added documentation.
+
+Derek Lamb 09-Dec-2007 replaced reassociation with the simpler "any
+contacts?" check on the filtering.
+
+Joe Peterson 15-Feb-2010 add pipeline/database ability
+                         move filtering to frag_filt
+
+NOTES
+
+$summary is the old summary document that didn't scale
+(nearly-diagonal PDL describing features by frame) but now it is OK
+since we only process "a few" frames at a time, and at the end it is
+copied to the DB and dropped on the floor.  Constructing it this way
+might be faster than executing a gazillion DB queries, but mainly lets
+us keep the legacy code from batch SWAMIS.
+
+=cut
+
+use strict;
+use PDL;
+use PDL::NiceSlice;
+use PDL::ImageND;
+use DBI;
+
+sub frag_tab {
+    my($opt,$id_list,$im_list) = find_opt(@_);
+    local($_);
+
+
+
+    
+    ##############################
+    ## Set up options
+    $opt->{tab} = $id_list    unless(defined $opt->{tab}); 
+    #assoc files are set to change in place unless {tab} is defined
+    
+    $opt->{verbose} = 2 if($opt->{DEBUG});
+    
+    my($dbh) = $opt->{dbh};
+    die "frag_tab: needs an active DBH passed in for the swamis temp db!\n" unless(defined $dbh);
+    
+
+    $res = $dbh->selectall_arrayref('SELECT name,value FROM params');
+    die "Swamis: couldn't get parameters from database (something is seriously wrong!)\n" unless(@$res);
+    my $p = { map { @$_ } @$res };
+
+
+  
+    ##############################
+    ## Allocate the features table
+    
+    my($maxfrag) = $id_list->[-1]->abs->max;  
+    print "maxfrag is $maxfrag\n";
+    print "Allocating ".join("x",$maxfrag+1,scalar(@{$id_list}),4)." floats (".($maxfrag+1)*(scalar(@{$id_list})*4*4/1024/1024)," MB)\n";
+
+    ##  summary is indexed by (feature number, frame number, (flux, size, centroid x, centroid y)) 
+    my($summary) = zeroes( float, 1.05 * $maxfrag + 1, scalar(@{$id_list}), 4 );
+    
+    ##############################
+    ## Loop over frames and accumulate data.
+
+    for my $fr(0..$#{$id_list}){
+	next unless (defined($im_list->[$fr]) && defined($id_list->[$fr]));
+	
+	print "(1) summarizing f$fr: \n" if($opt->{verbose});
+	
+	# Retrieve current images & find list of current features
+	my($idmap) = abs($id_list->[$fr]);
+	my($im) = $im_list->[$fr];
+	my($ids) = $idmap->flat->long->uniq;
+	
+	print $ids->nelem," frags" if($opt->{verbose});
+	
+	# Loop over current features
+	my($id);    
+	my($n);
+	
+	my($idml) = $idmap->long;
+	
+	## Prepare a single list of all old-ID values and also a list of their coordinates
+	my $id_fxy = whichND($idmap != 0);
+	my $id_f = $idmap->indexND($id_fxy)->sever;	
+
+	## Loop over old id's and summarize each.
+	for $id($ids->list) {
+	    next unless $id;  # Skip the null case
+
+   	    # Retrieve loci for summary table.
+	    my $xy = $id_fxy->(:,which($id_f==$id));  # 2 x N for feature
+
+	    my($val)       = $im->indexND($xy);
+	    my($flux)      = $val->sumover;
+	    my($size)      = $xy->dim(1);
+	    my($centroid)  = sumover($xy->mv(1,0) * $val) / $flux;
+	    
+##put in a check: if id is bigger than maxfrag, then we need to append
+##a slice to summary. This is an issue if the largest id number in the
+##data set isn't alive in the last frame (i.e., very rarely).
+	    #$summary=$summary->append(zeroes(1,scalar(@{$id_list}),4)) if ($id >= $summary->dim(0));
+
+	    $summary->(($id),($fr),:) .= $flux->append($size)->append($centroid);
+	    
+	    print "$fr,$id: ",$summary->(($id),($fr),:),", ",$flux->append($size)->append($centroid),"\n"
+		if($opt->{verbose}>2);
+	    print "." if($opt->{verbose} && (($n++ % 10 == 0) || $opt->{verbose}>1));
+	    
+	} ##end loop over ids in a frame 
+
+	print "\n" if($opt->{verbose});
+
+    } ##end loop over frames    
+
+    # Write the tab files, which just contain absolute values of the ids
+    for my $fr(0..$#{$im_list}) {
+        $opt->{tab}->[$fr] = $id_list->[$fr]->abs;
+    }
+
+    # Write the information to a SQLite database
+    my $id;
+    my $num_ids;
+    my $frame;
+    my $num_frames;
+    my $k = ones(3,3);
+
+    my $sth = $dbh->prepare('INSERT INTO tabs VALUES (?, ?, ?, ?, ?, ?, ?)');
+
+    $num_ids = $summary->dim(0);
+    $num_frames = $summary->dim(1);
+    for ($id=0; $id<$num_ids; $id++)
+    {
+        for ($frame=0; $frame<$num_frames; $frame++)
+        {
+            my $size = $summary->(($id), ($frame), (1));
+            if ($size > 0)
+            {
+                my $flux = $summary->(($id), ($frame), (0));
+
+                # Check to see if there are other close features to this one
+                my $c = 0;
+                my $ft_sgn = $flux <=> 0;
+                my ($mins,$maxes)=whichND($id_list->[$frame]->abs==$id)->xchg(0,1)->minmaximum;
+                
+                my $sub_idlist = $id_list->[$frame]->range($mins-2,$maxes-$mins+4,'t');
+                my $dilated = convolveND($sub_idlist == $id * $ft_sgn, $k)>0;
+                
+                my $localids = $sub_idlist->where($dilated)->uniq;
+                
+                # localids should at least have $id in it,
+                # and we don't care about 0.
+                if((($localids != $id*$ft_sgn) & ($localids!=0))->any)
+                {
+                    $c = 1;
+                }
+
+                my $x = $summary->(($id), ($frame), (2));
+                my $y = $summary->(($id), ($frame), (3));
+
+		##
+		#
+                $sth->execute($id, $p->{curMaxTbFr} + $frame, $flux, $size, $x, $y, $c);
+		print "frag_tab: INSERTing: id=$id, frame=".($start_frame+$frame).", flux=$flux, size=$size, x=$x, y=$y, c=$c\n";
+
+                $sth->finish;
+            }
+        }
+    }
+
+    ## Update the current number of frames in the DB
+    $sth = $dbh->prepare('UPDATE params SET value=? WHERE name="curMaxTbFr"');
+    $sth->execute($start_frame + $num_frames);
+    $sth->finish;
+
+    print "frag_tab completed successfully.\n";
+    return $summary;
+}

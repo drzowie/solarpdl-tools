@@ -1,0 +1,50 @@
+=head2 sot_psf - evaluate an analytic SOT PSF
+
+=for use
+
+$psf = sot_psf( $size )
+
+=for ref
+
+This returns DeForest's hand-tweaked SOT PSF, suitable for
+deconvolution, as a zero-centered square kernel with sides of length
+$size.
+
+=cut
+
+sub sot_psf {
+    my $rv = shift;
+
+    # (These were hand-fitted by DeForest using the 7-Feb-2008 data)
+    my ($gs, $ls, $w, $h)  = ([1.2=>1,30=>0.00015,3.3=>0.2,8=>0.002,10=>1.5e-3,30=>1e-4],
+			      [800,0.000002,0.4=>0.11],
+			      650,
+			      0.00);
+
+    my $e = $w ? exp(-$rv/$w) : 1;
+    
+    my $k = zeroes($rv);
+    if(ref $gs eq 'ARRAY') {
+	my @g = @$gs;
+	while(@g) {
+	    my $w = shift @g;
+	    my $h = shift @g;
+	    my $e = $h * exp(-$rv*$rv/$w/$w);
+	    $k += $e;
+	}
+    }
+    if(ref $ls eq 'ARRAY') {
+	my @l = @$ls;
+	while(@l) {
+	    my $w = shift @l;
+	    my $h = shift @l;
+	    my $l = $h * $w * $w / ($rv*$rv + $w*$w);
+	    $k += $l;
+	}
+    }
+    $k += exp(-$rv/$w)*$h;
+    $k /= $k->sum;
+    return $k;
+}
+	
+    

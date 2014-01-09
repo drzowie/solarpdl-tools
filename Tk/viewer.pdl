@@ -1,0 +1,15 @@
+use Tk;
+
+sub viewer {
+  my($pdl) = shift;
+  my($w,$h) = $pdl->dims;
+  
+  my $view = new MainWindow();
+  $view->configure(-title=>'View window', -background=>'black');
+  $view->geometry("+${w}+${h}");
+  
+  my $vpane = $view->Photo();
+
+  MainLoop();
+}
+1;

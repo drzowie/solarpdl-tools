@@ -1,0 +1,30 @@
+#
+# Given a fits image containing a magnetogram, find all fragments in it
+# and return a list of the fluxes, in no particular order.
+#
+
+sub mag_distro {
+  my($a) = shift;
+  my($ims) = [$a];
+
+  my($mask) = frag_detect($ims,{verbose=>1});
+  my($ids) = frag_id($ims,$mask,{monitor=>1,verbose=>1,method=>'downhill'});
+  
+  my($maxid) = 10000;
+  my($idlist) = float(histogram($ids->[0]->flat,1,-$maxid,$maxid+1));
+  my($out) = zeroes(($idlist != 0)->sum);
+  
+  my($i,$j);
+  for $i(0..$maxid*2) {
+    next unless $idlist->($i);
+    print ".";
+    $aa= (where($a->flat,$ids->[0]->flat==($i-$maxid))->sum);
+    $out->($j++) .= $aa;
+    print $aa;
+  }
+  print "\n";
+  return $out;
+}
+    
+				
+  

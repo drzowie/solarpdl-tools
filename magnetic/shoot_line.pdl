@@ -1,0 +1,83 @@
+=head2 shoot_line
+
+=for usage
+
+$line = shoot_line(\&field, \&term, $start);
+
+=for ref
+
+Shoot a field line through an analytical (or other) field.  It continues 
+stepping until the termination condition is met.
+
+"field" is a code ref pointing to a sub that accepts a point and returns a 
+field value, e.g. 
+
+  $field = sub { monopole([0,0,0],1,@_); }
+
+"term" is a code ref pointing to a sub that accepts a point and a time
+value and returns FALSE if the shooting should continue, or TRUE if it 
+is finished, e.g.
+
+  $term = sub { ( ($_[0]*$_[0])->sumover > 100 || $_[1]>1000 ) };
+
+will continue so long as the point is within a sphere of radius of 10,
+centered on the origin, and no more than 100 time units have occurred.
+
+The point and returned field value should be 3-PDLs containing (x,y,z).
+
+The returned $line is indexed by (xyz, point).
+
+=cut
+
+sub shoot_line {
+  my $field = shift;
+  my $term = shift;
+  my $start = pdl(shift);
+  my $epsilon = shift || 0.05;
+  my $max_step = shift || undef;
+  my $n = 0;
+  $epsilon = pdl($epsilon);
+  my $e2 = 1e-15;
+
+
+  my $dydt = sub { shift; &$field(@_); };  # ignore time call
+
+  my @locations;
+  my $t = 0;
+  my $dt;
+  $dt = 0.1;
+  my $n= 0;
+
+  $y0 = $start->copy;
+
+  do {
+    push(@locations,$y0->(:,(0)));
+    $f0 = &$dydt(0,$y0);
+    $fmag = sqrt(sum($f0*$f0));
+    my($y1,$y2,$y3,$dy,$ddy);
+
+    $dt = $max_step if($epsilon<0);
+
+    do {
+      $y1 = rk4( $t, $dt/2, $dydt, $y0, $f0 )->(:,(0));
+      $y2 = rk4( $t+$dt/2, $dt/2, $dydt, $y1 )->(:,(0));
+      $y3 = rk4( $t, $dt, $dydt, $y0, $f0 )->(:,(0));
+      $dy = (($y2+$y3)/2 - $y0);
+      $dy = ($dy*$dy)->sum;
+      $ddy = ($y3-$y2);
+      $ddy = ($ddy*$ddy)->sum;
+    } while( $epsilon > 1e-15 and  ( ( ($ddy/($dy+0.001)) > $epsilon or ((defined $max_step) ? sqrt(sum(($y2-$y0)*($y2-$y0))) >= $max_step : 0)) ? $dt /= 2 : 0 )  );
+
+    $y0 = $y2;
+
+    $t += $dt;
+    $dt *= 1.2;
+
+    print "step=$n; t=$t; y0=$y0\n" unless($n%500);
+    $n++;
+  } until(($epsilon >0 and $dt*$fmag < $e2)   or   &$term($y0,$t));
+  push(@locations,$y0->(:,(0)));
+  print "\n" if($n>500);
+  return pdl(@locations);
+}
+  

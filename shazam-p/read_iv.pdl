@@ -1,0 +1,69 @@
+sub read_iv {
+    my $files_raw = shift;
+    my $phase = shift;
+
+    # Massage the files to find the full-rotation runs...
+    my $time_phase = sub {
+	my $fname = shift;
+	$fname =~ m/(\d\d)(\d\d)(\d\d)\.(\d\d)_P(\d\d)/;
+	my($h,$m,$s,$hs,$ph) = ($1,$2,$3,$4,$5);
+	return ($hs * 0.01 + $s + $m*60 + $h*60, $ph);
+    };
+
+    my $files = [];
+    $start = 0;
+
+    $ok = 1;
+    do {
+      print "start=$start...";
+      $ctime = [&$time_phase($files_raw->[$start])];
+
+      rot: for $i(1..15){
+	  $stime = $ctime;
+	  $ctime= [&$time_phase($files_raw->[$i+$start])];
+	  unless ($ctime->[0]-$stime->[0] < 2 && 
+		  ( $ctime->[1]-$stime->[1] == 1 ||
+		    $ctime->[1]-$stime->[1] == -15 )
+		  ) {
+
+	      $start += $i;
+	      $ok = 0;
+	      print "i=$i; ctime: $ctime->[0],$ctime->[1]; stime: $stime->[0],$stime->[1]\n";
+	      last rot;
+	  }
+      }
+
+
+      if($ok) {
+	  for $i(0..15) {
+	      push( @$files, $files_raw->[$i+$start] );
+	  }
+	    $start = $start + 16;
+      }
+      
+    } until(@$files_raw - $start < 16);
+
+    print "files_raw is ".(0+@$files_raw)."; files is ".(0+@$files)."\n";
+
+    
+    my $ph = (xvals(16) + $phase)%16;
+    my $pm = ones(16) - 2*($ph<8);
+    print "pm=$pm";
+    $maxf = (0 + @$files) - (@$files % 16);
+    
+    print "Reading $files->[$i]...\n";
+    $out = zeroes(rfits($files->[0])->dims,2);
+    
+    for $i(0..$maxf-1){
+	$files->[$i] =~ m/_P(\d\d).fits/;
+	my $p = $1;
+	print "$files->[$i]...";
+	my $im = rfits($files->[$i]);
+	$out->(:,:,:,(0)) += $im;
+	$out->(:,:,:,(1)) += $im * $pm->($p);
+    }
+    $out /= $maxf;
+    print "\n";
+    return $out;
+}
+	

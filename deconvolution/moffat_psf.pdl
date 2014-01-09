@@ -1,0 +1,35 @@
+=head2 moffat_psf - generate the Moffat-function model of the TRACE PSF
+
+=for ref
+
+See Gburek & Martens 2006.
+
+Ignores the background parameter as that is intended to be replaced by 
+stray light fit profiles.
+
+Input XY parameter should be in arcsec, not pixels!
+
+=cut
+
+sub moffat_psf {
+    my $xy = 2 * shift;
+    my $a = shift || 1.7405;
+    my $b = shift || 2.3652;
+    my $c = shift || 0.2114;
+    my $eps_x = shift || -0.4520;
+    my $eps_y = shift || 0.3773;
+##    my $bg = shift || 2.14e-5;
+    
+    my $x = $xy->((0));
+    my $y = $xy->((1));
+
+    $eps_tot = sqrt($eps_x*$eps_x + $eps_y*$eps_y);    
+
+    my $r2 = $x*$x * (1 + $eps_tot - $eps_x) 
+             + $y*$y * (1 + $eps_tot + $eps_x)
+	     - $x*$y * 2 * $eps_y;
+	     	     
+    
+    my $out = $c * ( (1 + $r2 / $a / $a) ** (-$b) );
+    return $out;
+}

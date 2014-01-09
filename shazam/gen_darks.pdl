@@ -1,0 +1,28 @@
+=head2 gen_darks - make a dark-current fit PDL
+
+=for usage
+
+$dk = gen_darks($darkdir, $nmax, $step, $downsample);
+
+=for ref
+
+Same calling sequence as collect_exposure_sequence, but returns a dark
+current fit PDL with (offset, slope) in the 0th dim.  The slope is
+given in DN per second.  $exptime is in seconds (e.g. 0.02 for 20
+millisecond exposures).
+
+=cut
+
+sub gen_darks {
+    $ds = $_[3];
+    print "gen_darks...\n";
+    $seq = collect_exposure_sequence(@_[0..2]);
+    if($ds) {
+    print "gen_darks: Downsampling by $ds...\n";
+      $seq->[1] = $seq->[1]->(:,0:-1:$ds,0:-1:$ds);
+    }
+    
+    print "Fitting dark current...\n";
+    return poly_fit_range($seq->[0],$seq->[1],4,10,3500);
+
+}

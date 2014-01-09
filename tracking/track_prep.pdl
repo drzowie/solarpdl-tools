@@ -1,0 +1,289 @@
+=pod
+
+=head2 track_prep
+
+=for ref
+
+Prepare a sequence of MDI magnetograms for processing.
+
+=for usage
+
+track_prep([%options]);
+
+OPTIONS
+
+=over 3
+
+=item rawdir (default 'raw')
+
+The directory to recursively search for magnetogram FITS files.
+
+=item dirs (default ['00-data','01-despiked','02-comp','03-av','04-smooth'] )
+
+The directories for the processing steps. Enter your own like: dirs=>['dir1','dir2',...]
+
+=item delay (default 1)
+
+The cadence (in minutes) of the derotated and averaged magnetograms.
+
+=item fwhm_t (default 5)
+
+The Full Width at Half Maximum (in minutes) of the temporal Gaussian averaging kernel.
+
+=item fwhm_s (default 3)
+
+The Full Width at Half Maximum (in pixels) of the spatial Gaussian averaging kernel.
+
+=item steps (default pdl(1,2,3,4,5) )
+
+Which steps in the preprocessing to perform.  The steps in order are
+Ingesting, Despiking, Deprojecting, Derotating & Averaging. Useful if
+you did something stupid in, say, step 4 and don't want to do
+everything over again, not that that happened a lot or anything...
+
+=item int (default 0)
+
+Set to true if you want to do the region selection interactively.  Set to false if you want the code to try to pick the largest region possible.
+
+=back
+
+AUTHOR
+
+Craig DeForest (date ??) wrote nearly all of the original code.
+
+Derek Lamb made some modifications and turned it into a stand-alone PDL subroutine.
+
+=cut
+
+use Time::Local;
+use PDL::DiskCache;
+use PDL::Transform;
+use PDL::Transform::Cartography;
+use PDL::ImageND;
+use PDL::NiceSlice;
+use strict;
+
+sub track_prep{
+##############################################
+## Part 0: create directories for the processed data, parse options
+    my $opt=shift;
+    my $rawdir=$opt->{rawdir} || 'raw';
+    my $delay =$opt->{delay} || 1;
+    my $fwhm_t=$opt->{fwhm_t} || 5;
+    my $fwhm_s=$opt->{fwhm_s} || 3;
+    my $int=$opt->{int} || 0;
+    my @dirs  = defined $opt->{dirs} ? @{$opt->{dirs}} : ('00-data','01-despiked','02-comp','03-av','04-smooth');
+    `mkdir @dirs`;
+    my $steps=defined $opt->{steps} ? $opt->{steps} :  pdl(1,2,3,4,5);
+    
+    my @rawfnames=<$rawdir/*.fits>;#??_M_*.????.fits>;
+    
+=pod
+
+=begin comment
+	
+To get the largest (lat,long) and size, we need to figure out what
+portion of the first image is going to be outside the FOV at the end
+of the sequence, and what portion of the last image is going to be
+outside the FOV at the beginning of the sequence.  Thankfully, once we
+have one, the other should come easy.
+
+=end
+
+=cut
+	
+    my ($sizex,$sizey,$origin_xy);
+    
+    if (($steps==4)->any){
+	
+	my @a =mrfits($rawfnames[0]); 
+	my @c = mrfits($rawfnames[-2]);
+	
+	my $dt=date2int($c[0]->hdr->{DATE_OBS}) - date2int($a[0]->hdr->{DATE_OBS});
+	
+	my $mockhdr=$a[0]->hdr_copy;
+	$mockhdr->{CROTA1} = $mockhdr->{CROTA2} = $mockhdr->{CROTA} = 0;
+	$mockhdr->{DATE_OBS}=int2date('%yyyy-mm-ddTHH:MM:SSZ',date2int($a[0]->hdr->{DATE_OBS}) + $dt/2);
+	my $outa=dr_mean(\@a,$a[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr,method=>'s'});
+	print "Displaying...\n";
+	if ($int) {
+	    ##let the user pick the size of the box.
+	    my $w=pgwin('xw',size=>[10,10]);
+	    
+	    my $outc=dr_mean(\@c,$c[0]->hdr->{DATE_OBS},2,{o=>pdl(0,0),hdr=>$mockhdr,method=>'s'});
+	    
+	    $w->fits_imag($outa,-500,500,{title=>"Click the upper-left corner of the good area"});
+	    my ($x1,$y1)=$w->cursor({type=>'crosshair'});
+	    
+	    $w->fits_imag($outc,-500,500,{title=>"Click the lower-right corner of the good area"});
+	    my ($x2,$y2)=$w->cursor({type=>'crosshair'});
+	    $w->close;
+            #origin_xy needs to be in arcseconds (solar-x, solar-y).
+            #But sizex and sizey need to be in pixels.
+	    $origin_xy=pdl(($x1+$x2)/2,($y1+$y2)/2);
+	    $sizex=floor($x2-$x1)->at(0)/($mockhdr->{CDELT1}); 
+	    $sizey=floor($y1-$y2)->at(0)/($mockhdr->{CDELT2});
+	    print "\nInteractive boundary results:\nsizex = $sizex\nsizey = $sizey\norigin_xy = $origin_xy\n";
+	}    
+
+	else {
+	    ##try to get the largest box we can automatically (thus
+	    ##reproducibly) without user intervention
+	    my $badcoords=whichND($outa->isbad);
+	    my $xbc=$badcoords((0))->uniq;
+	    my $off=$xbc-$xbc->rotate(1);
+	    my $j_ind=where($xbc,$off>1); #j_ind is the left-most x coord of the block
+	    my $xcurv_max=where($xbc,$xbc<$j_ind)->max;
+	    my $x1=$xcurv_max+1;
+	    my $x2=$outa->dim(0)-1-$x1;
+
+	    my $yblock=where($badcoords((1)),$badcoords((0))>$j_ind)->uniq;
+print "here3\n";
+            #need to figure out if the block is on the top or bottom
+            #might depend on if SOHO is upside-down.
+	    my ($y1,$y2);
+	    
+	    if (rint($yblock->float/$outa->dim(1))->uniq){
+		$y1=$yblock->min;
+		$y2=0;
+	    }
+	    else{
+		$y1=$outa->dim(1);
+		$y2=$yblock->max;
+	    }
+print "here2\n";	    
+	    $origin_xy=pdl(($x1+$x2)/2,($y1+$y2)/2)->apply(t_fits($a[0]));
+	    $sizex=floor($x2-$x1)->at(0);
+	    $sizey=floor($y1-$y2)->at(0);
+	    print "\nNon-interactive boundary results:\nsizex = $sizex\nsizey = $sizey\norigin_xy = $origin_xy\n";
+	}
+    }
+
+#######################################################
+## Part 1: copy the files and standardize filenames
+
+    mdi_ingest("$rawdir","$dirs[0]") if (($steps == 1)->any);
+
+     my @fnames=<$dirs[0]/*>;        
+   
+#############################
+## Part 2: Despike images
+	print "\n\nDespiking....\n\n";
+    my @dspfnames = @fnames;
+    map { s/^$dirs[0]/$dirs[1]/; } @dspfnames;
+    my $datacube = diskcache(\@fnames,{ro=>1});
+    my $dspcube  = diskcache(\@dspfnames,{rw=>1});
+	print "Calling zspike...\n";
+    zspike($datacube,{clean=>1,m=>$dspcube,th=>40,nfr=>4,vth=>[7.9,0.9]}) if (($steps == 2)->any);
+    (tied @$dspcube)->purge(-1); 
+    (tied @$datacube)->purge(-1);
+
+############################################
+## Part 3: Compensate for projection effects;
+## we assume that pointing doesn't change considerably over the observation
+
+    my $a = rfits($fnames[0]);
+    $a->hdrcpy(1);
+    $a=float($a);
+    $a->hdrcpy(0);
+    my $rsun=$a->hdr->{R_SUN};
+    my $rvals=rvals($a,{Center=>[$a->hdr->{CRPIX1},$a->hdr->{CRPIX2}]});
+    my $in_sun=($rvals<=$rsun);
+    my $circ=$rvals*$in_sun/$rsun;
+    my $comp=sqrt(1-$circ*$circ); ##divide by this to correct for projection
+    
+    my @fcomp=@dspfnames;
+    map { s/^$dirs[1]/$dirs[2]/ } @fcomp;
+
+    if (($steps == 3)->any){
+	for my $i(0..scalar(@fcomp)-1){
+	    my $input=rfits($dspfnames[$i]);
+	    my $compensated=$in_sun*$input/$comp;
+	    $compensated->sethdr($input->hdr_copy);
+	    wfits($compensated,$fcomp[$i]);
+	    print "\t\t\t\t\t\t\t$i /",scalar(@fcomp)-1,"\n";
+	}
+    }
+    
+##################################
+## Part 4: Create derotated frames
+    if (($steps == 4)->any){
+	my @times=map{
+	    m/(\d{4})\-(\d{2})\-(\d{2})_(\d{2})\:(\d{2})/;
+	    my ($yr,$mo,$dy,$hr,$min) = ($1,$2,$3,$4,$5);
+	    timegm(0,$min,$hr,$dy,--$mo,$yr);
+	} @fnames;
+	my $times=pdl(@times);
+	
+##b is just an empty frame with the header set appropriately for dr_mean
+	
+	my $b = zeroes($sizex,$sizey); $b->sethdr($a->hdr_copy);
+	$b->hdr->{CRPIX1} = ($sizex+1)/2;	##center the image at the, um, center
+	$b->hdr->{CRPIX2} = ($sizey+1)/2;	##ditto
+	$b->hdr->{NAXIS1} = $sizex;		##number of pixels in x direction
+	$b->hdr->{NAXIS2} = $sizey;		##  "	 "	"  "  y   "
+	$b->hdr->{CRVAL1} = 0;			##the value of CRPIX1 in sci. coords.
+	$b->hdr->{CRVAL2} = 0;			##the value of CRPIX2 in sci. coords
+	$b->hdr->{CUNIT1} = 'arcsec';
+	$b->hdr->{CUNIT2} = 'arcsec';
+	$b->hdr->{CROTA1} = 0;
+	$b->hdr->{CROTA2} = 0;
+	$b->hdr->{DATE_OBS}= int2date('ut all',$times->at($times->nelem/2));
+#DATE_OBS is used in the inverse t_fits2helio transform, to bring the
+#derotated heliographic image back to solar-x & solar-y
+
+	$b->sethdr( fits_obs_pos($b->hdr));
+	my $b0 = pb0r($b->hdr->{DATE_OBS})->at(1);
+	print "\n\nb0: $b0\n\n";
+	$b->hdr->{HGLT_OBS} = 0;
+	$b->hdr->{HGLN_OBS} = 0;
+	$b->hdr->{CROTA1} = $b->hdr->{CROTA2} = 0;
+	
+##change this to put whatever field you want to center on. 
+##$origin_xy is exactly as you would see it by just 
+##displaying the image [using $w->fits_imag($a), not $w->imag($a)].
+
+	my $origin_lonlat = $origin_xy->apply(t_fits2helio($a));
+	print "\nAfter t_fits2helio:\norigin_xy = $origin_xy\norigin_lonlat = $origin_lonlat\n";
+#	return;
+	my $t;   
+	for($t=$times->((0)); $t<$times->((-1)); $t+=$delay*60){
+	    my $fr=which(($times >=$t-($fwhm_t*60)*1.1)&
+			 ($times <=$t+($fwhm_t*60)*1.1)
+			 );
+	    
+	    my @cube = mrfits(@fcomp[$fr->list]);
+	    my $tt = int2date('soho ut all',$t);
+	    my $frname = "$dirs[3]/".int2date('%yyyymmdd__HH:MM:ss',$t).".fits";
+	    print "frame centered on $tt\n";
+	    my $out2 = dr_mean(\@cube,$tt,$fwhm_t,{hdr=>$b->hdr,o=>$origin_lonlat,method=>'l'});
+	    next unless defined($out2);
+	    print "Writing $frname...";
+	    $out2->hdr->{COMMENT}="";
+	    wfits($out2,$frname);
+	    print "ok\n\n";
+	}
+    }
+
+############################
+##Part 5: Spatial smoothing
+
+    if (($steps==5)->any){
+	my @dr_mean_names=<$dirs[3]/*>;
+	my @smooth_names=@dr_mean_names;
+	map{s/^$dirs[3]/$dirs[4]/;}@smooth_names;
+	my $r=rvals(2*$fwhm_s+1,2*$fwhm_s+1);
+	my $kernel=exp(-4*$r*$r/($fwhm_s*$fwhm_s)*log(2));
+##it is important to have the kernel integral be unity.
+	$kernel/=$kernel->sum;
+
+	for my $j(0..scalar @dr_mean_names -1){
+	    my $in=rfits("$dr_mean_names[$j]");
+	    $in->hdrcpy(1);
+	    my $out=convolveND($in,$kernel);
+	    $out->wfits("$smooth_names[$j]");
+	}
+
+    }
+    return 1;
+}

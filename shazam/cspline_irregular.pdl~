@@ -1,0 +1,124 @@
+=sub cspline_irregular - interpolate using csplines on an irregularly sampled dataset
+
+=for usage
+
+$out = cspline_irregular($x, $data, $xloc, $c)
+
+=for signature
+
+cspline_irregular( x(n), data(n), xloc(), [o]out(), $c )
+
+=for ref
+
+1-D spline interpolation on a dataset (threaded), with boundary
+conditions.  $c is a Perl scalar containing the bouy condition as a
+single character.  It may be undefined, in which case the default
+condition is extension. Valid conditions are 'e' (extension), 't' (truncation), 
+'p' (periodic), or 'm' (mirror).
+
+Unlike cspline_interp, xloc is in "x units" (not array index units).
+The x coordinates of the source data need to be monotonically increasing.
+
+=cut
+
+sub cspline_irregular {
+    my $x = shift;
+    my $data = shift;
+    my $loc = shift;
+    my $c = pdl(shift || 0);
+    my $bound = shift || 'e';
+    
+    PDL::my_cspline_irregular($x,$data,$loc,$c,$bound);
+}
+
+no PDL::NiceSlice;
+use Inline PDLPP => <<'EOF'
+
+pp_def('my_cspline_irregular',
+	Pars=>'x(k); dat(k); xloc(); c(); [o]out();',
+	OtherPars=>'char bound',
+	Inplace=>0,
+	Code=> <<'EOC'
+	long i;
+	long dex;
+	long dexlo;
+        double xlo;
+        double xhi;
+        double x;
+	long dexhi;
+        double p[4];
+       double xp[4];
+       long n;
+
+       n = $SIZE(k);
+
+       // dex gets the index of the first location with less than or equal X to the xloc
+//       if( $xloc() <= $x(k=>0)) {
+//	   dexlo = -1;
+//	   xlo = $x(k=>0);
+//       } else if( $xloc() > $x(k=>n-1)) {
+//	   dexlo = n-1;
+//	   xlo = $x(k=>n-1);
+//       } else {
+         {
+	   // Binary search;
+	   dexlo = -1;
+	   dexhi = n-1;
+	   xlo = $x(k=>0);
+	   xhi = $x(k=>n-1);
+	   
+	   while(dexlo >= 0 && dexlo < dexhi - 1) {
+	     dex = (dexlo + dexhi)/2;
+	     x = $x(k=>dex);
+	     if(x > $xloc()) {
+	       dexhi = dex;
+	       xhi = x;
+	     } else {
+	       dexlo = dex;
+	       xlo = x;
+	     }
+	   }
+	   if(xlo >= xhi)
+	     barf("data source is non monotonic!\n");
+	 }
+       
+       // Now dexlo has the highest X value lower than the currently sought value.
+       // Perform spline interpolation on an irregular grid.
+       
+       // Assemble an array of the four points surrounding the originsl.
+       dex = dexlo - 1;
+       for(i=0; i<4; i++,dex++) {
+	   if(dex<0 || dex > n-1) {
+	       p[i]   = (dex<0) ? $dat(k=>0) : $dat(k=>n-1); 
+	       xp[i]  = (dex<0) ? ($x(k=>0) + ($x(k=>1) - $x(k=>0)) * dex)   : $x(k=>n-1) + ($x(k=>n-1) - $x(k=>n-2))*(dex - (n-1));
+	       break;
+	   } else {
+	       p[i] = $dat(k=>dex);
+	       xp[i] = $x(k=>dex);
+	   }
+       }
+
+       // do the actual calculation (see, e.g., http://en.wikipedia.org/wiki/Cspline)
+       {
+	   if(xp[3]==xp[2]) 
+	       xp[3]++;
+	   if(xp[0] == xp[1]) 
+	       xp[0]--;
+
+	   double t = ($xloc() - xlo) / (xp[2]-xlo);
+	   double t1 = 1 - t;
+	   double h00 = (1 + 2*t) * t1 * t1;
+	   double h10 = t * t1 * t1;
+	   double h01 = t * t * (3 - 2*t);
+	   double h11 = - t * t * t1;
+
+	   double m0 = (1 - $c()) * 0.5 * ( (p[2] - p[1]) / (xp[2]-xp[1]) + (p[1]-p[0]) / (xp[1]-xp[0]));
+	   double m1 = (1 - $c()) * 0.5 * ( (p[3] - p[2]) / (xp[3]-xp[2]) + (p[2]-p[1]) / (xp[1]-xp[0]));
+
+	 $out() = h00 * p[1] + h10 * m0 * (xp[2]-xlo) + h01 * p[2] + h11 * m1 * (xp[2]-xlo);
+       }
+
+
+EOC
+       );
+EOF

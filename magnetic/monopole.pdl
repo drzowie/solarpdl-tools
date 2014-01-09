@@ -1,0 +1,54 @@
+=head2 monopole
+
+=for ref 
+
+Potential field from a monopole at the given location.
+
+=for usage
+
+$field = monopole($where,$strength,$xyz);
+
+$where is the location of the monopole, as a 3-PDL.  $strength is the
+strength of the monopole, as a floating-point number.  Xyz is the
+location where you want the field.  You can thread over multiple monopoles
+in a single dimension, and the returned field is the sum of the fields from the
+monopoles.  Likewise, you can thread over locations, and you get back 
+a threaded set of field vectors.
+
+You specify the monopole strength in total flux per steradian, and you
+get back the field in flux per unit area, so (e.g.) the field strength
+at unit distance from a unit monopole is unity, not 1/4pi.
+
+=cut
+use PDL::NiceSlice;
+
+sub monopole {
+  my($where) = pdl(shift);
+  my($strength) = pdl(shift);
+  my($xyz) = pdl(shift);
+  my $xyznd = $xyz->ndims;
+
+  barf("monopole: needs a 3xn PDL for monopole location\n")
+    if($where->dim(0) != 3);
+
+  barf("monopole: needs a 3xn PDL for field location\n")
+    if($where->dim(0) != 3);
+
+
+  $where = $where->(0:2,:);  
+  
+  
+  $xyz = $xyz->(:,*1,:); # Dummy dim to thread over monopoles
+  
+  my $offsets = ($xyz - $where);  # (xyz, monopole, field-loc)
+
+  my $radii = sqrt( sumover($offsets*$offsets) ); # monopole, field-loc
+
+  my $of = $offsets->mv(0,-1);    # (monopole, field-loc, xyz);
+  $of *= $strength / ($radii*$radii*$radii);    
+
+  my $out = $of->sumover->mv(-1,0);
+  
+  return (  ($xyznd==1) ? $out->(:,(0)) : $out );
+}
+  

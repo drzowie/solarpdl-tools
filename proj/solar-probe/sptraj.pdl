@@ -1,0 +1,114 @@
+#################################################-*-perl-*-##############
+=head1 NAME
+
+sptraj -- Calculate the position of the Solar Pobe, versus time
+
+=head1 USAGE
+
+$point = sptraj(time)
+@(pvel) = sptraj(time)
+
+=head1 RETURNS
+
+The location of the probe as a (lon,lat,radius) triplet, in degrees & radii.
+
+=head1 DESCRIPTION
+
+You feed in a time, in hours from perihelion, and sptraj hands you
+back a PDL containing the location of the probe, in heliographic 
+coordinates, based on the AO.
+
+Internally, the phase vector of the S/C is represented as a 6-vector:
+(0,1,2) are position and (3,4,5) are velocity.  MKS is used throughout.
+
+This is a real crock -- it doesn't even do adaptive stepsize.  Just 
+cranks along with constant stepsize until it gets where you want to go.
+Good enough for simple visualizations; fix it before you use it for anything
+serious!
+
+=head1 HISTORY
+
+Ported from sptraj.pro, 30-Apr-2000, Craig DeForest (SWRI)
+Diked out V4 stuff, 23-Feb-2004, CED
+
+=cut
+
+use PDL::Transform;
+
+##############################
+# Some useful constants....
+BEGIN {
+   package Const;
+   *G_N = \6.6720e-11; ## Gravitational constant ( m^3 kg^-1 s^-2 ) 
+   *M_0 = \1.991e30;   ## Solar mass (kg); from CRC, 65th. ed., p. F-125
+ }
+
+sub sptraj_gravity {
+  my($xy,$y) = @_;
+  my($y2) = $y->slice('0:2');
+  my($r2) = sum($y2*$y2);
+  my($r) = sqrt($r2);
+  my($A) = - $Const::G_N * $Const::M_0 / $r2;
+  return cat($y->slice('3:5'), $A/$r * $y->slice('0:2'))->clump(-1);
+};
+
+sub sptraj {
+  my($t1,$sp_ini) = @_;
+
+  $t1 = pdl($t1) unless (ref $t eq 'PDL');
+  $t1 *= 3600;   ## Convert to seconds...
+
+  print "time is $t1"." (",$t1/3600," h)\n";
+
+  ##############################
+  # Initial position at perihelion, from original solar probe SDT (p. 27)
+  # Phase space is 6-D: 3 spatial parameters, then 3 velocity parameters.
+
+  my $r0 = 695.95e6 * 4;                 # 4 solar radii, in meters
+  print "r0 is $r0\n";
+  $sp_ini = pdl($r0,0,0,0,0,-3.09e5);
+  $sp2 = $sp_ini->copy;
+
+  my $t = 0;
+
+  my $dt = 60; # 1 minute stepsize
+
+  my $outvec = zeroes(3,$t1->nelem);
+
+  my $dydx = sub {
+    ($t,$vec) = @_;
+    $out = zeroes($vec);
+
+    # Copy velocities to position vector derivative
+    $out->(0:2) .= $vec(3:5);  
+    
+    # Figure the acceleration of gravity
+    # G M_sun / r^2
+    my $f = 6.672e-11 * 1.99e30 / (my $r2 = ($vec(0:2) * $vec(0:2))->sum);
+
+    # Gravity always points toward the origin.  negative = attractive.
+    $out->(3:5) .= - $vec->(0:2) / sqrt($r2) * $f;
+
+    $out;
+
+  };
+
+  my $i;
+
+  for $t0($t1->list) {
+    while($t >= $t0 + $dt/2) { 
+      $sp2 = rk4( $t, -$dt, $dydx, $sp2 );
+      $t -= $dt;
+    }
+
+    while($t < $t0-$dt/2 ) { 
+      $sp2 = rk4( $t, $dt, $dydx, $sp2 );
+      $t += $dt;
+    }
+
+    $outvec->(:,($i++)) .= $sp2->(0:2);
+    
+  }
+  $ov=  $outvec;
+  return $outvec->apply(t_spherical(u=>'deg'));
+}

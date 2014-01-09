@@ -1,0 +1,29 @@
+=head2 life
+
+=for ref
+
+John Conway's Game of Life, in 3 lines of PDL
+
+Really, this is a showcase for the range() operator, which allows
+you to conveniently extract neighborhoods around an arbitrary list
+of points.  
+
+Range() works very well for cellular automata because it allows you 
+to lean on threadloops to thread over all the relevant neighborhoods.
+
+Calling `life' updates the playing field by 1 time step.
+
+The first line is spent checking the inplace flag.  The second line
+generates the number of set neighbors for each element of the field.
+
+The third line updates the field.
+
+=cut
+
+sub life {  
+  my $f = $_[0]->new_or_inplace;
+  my $n = $f->range( ndcoords(3,3)-1, [$f->dims],'p' )->clump(2)->sumover - $f;
+  $f .= ($n==3) | (($n==2) & ($f));
+}
+  
+

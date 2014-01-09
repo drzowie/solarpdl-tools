@@ -1,0 +1,27 @@
+=head2 rneg - mark negative image areas in red!
+
+=for usage
+
+$rgb = rneg($im);
+$pgwindow->imag(rgb($im));
+
+=for ref
+
+This is a quick and dirty routine to highlight negative areas in a
+greyscale image.  It returns an RGB image that reproduces the
+original, but sets all negative pixels to instead be BRIGHT RED.
+
+=cut
+
+sub rneg {
+     my $im = shift;
+     my $rgb = $im->(:,:,*3)->copy;
+     my $rmax = $im->max;
+     my $z = whichND($im < 0);
+     if($z->nelem > 0) {
+	 $rgb->indexND($z)->mv(-1,0) .= pdl($rmax,0,0);
+     }
+    return $rgb;
+}
+
+    

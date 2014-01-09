@@ -1,0 +1,239 @@
+=pod
+
+=head2 subsonic
+
+=for ref
+
+Subsonically filter a x-y-t dataset.
+
+=for usage
+
+subsonic($indir,$outdir);
+
+OPTIONS
+
+=over 3
+
+=item cadence (default 60 seconds)
+
+The cadence (in seconds) of the input data cube
+
+=item bp (default -32)
+
+BITPIX paramter to pass to wfits.  -32 -->float, etc.
+
+=item ghost (default 7)
+
+Number of ghost frames over which the final image should be
+interpolated down to 0.  Similarly for the first image.
+
+=item frames (default 1)
+
+Number of frames in the dataset.
+
+=item startframe (default 0)
+
+Where to start in the file list
+
+=item zeroes (default 3)
+
+Number of zero-filled frames to insert between the Hanning apodization
+of the end of the dataset and the Hanning apodization of the beginning
+of the dataset.
+
+=item verbose (default 0)
+
+Chat.  Be aware that values >1 will cause the routine to print the
+minimum and maximum values of the arrays before and after the FFT
+operations.  This causes those piddles to be made physical, increasing
+the memory usage considerably.
+
+=back
+
+The total number of frames that the FFT will be done over is C<frames>
++ 2*C<ghost> + C<zeroes>, so try to make sure that sum has small prime
+factors.
+
+See figure 12.2.2 in Numerical Recipes for a reminder as to how the
+frequencies are packed.
+
+=begin comment
+
+N = 8; delta = 1
+  
+0 1 2 3 +/-4 -3 -2 -1
+
+For an even number of points in the ith dimension, the frequencies
+corresponding to the returned complex values are:
+
+0, 1/(NiTi), 2/(NiTi), ..., (Ni/2-1)/(NiTi), 1/(2Ti), -(Ni/2-1)/(NiTi), ..., -1/(NiTi)
+
+where 1/(2Ti) is the Nyquist critical frequency.
+
+For an odd number of points in the ith dimension, the frequencies
+corresponding to the returned complex values are:
+
+0, 1/(NiTi), 2/(NiTi), ..., (Ni/2-0.5)/(NiTi), -(Ni/2-0.5)/(NiTi), ..., -1/(NiTi)
+
+=end
+
+
+=for Author
+
+Derek Lamb, 23-July-2007
+
+=cut
+
+use strict;
+use warnings;
+use PDL;
+use PDL::Core ':Internal';
+use PDL::FFT;
+use PDL::NiceSlice;
+use constant AS2KM =>725; #convert arcseconds to kilometers (at earth)
+use constant WKNEESTART => 7; #start the rolloff at 1/(7 minutes)
+use constant WKNEESTOP => 14; #stop the rolloff at 1/(14 minutes)
+use constant SPEED => 7; #km/s
+use constant LOWFACTOR =>1.4; #start the rolloff at this factor times the speed
+use constant HIGHFACTOR =>0.7; #stop the rolloff at this factor times the speed
+use constant PI=>acos(-1);
+
+sub subsonic{
+    my $indir = shift;
+    my $outdir = shift;
+    my $opt = shift;
+$|=1; #flush stdout immediately    
+    my $dt = $opt->{'cadence'} || 60; ##seconds
+    my $bitpix = $opt->{'bp'} || -32;
+    my $ghost = defined($opt->{'ghost'})?$opt->{'ghost'}:7;
+    my $numframes = $opt->{'frames'} || 1;
+    my $zeroes = defined($opt->{'zeroes'})?$opt->{'zeroes'}:3;
+    my $startframe = defined($opt->{'startframe'})?$opt->{'startframe'}:0;
+
+    barf "Negative option defined where only nonnegative option allowed!\n" if ($zeroes<0 || $ghost<0 || $numframes<0);
+    barf "bp option must be -64,-32, 32,16,8!\n" unless any($bitpix==pdl(8,16,32,-32,-64));
+    map{s/\/$//;}($indir,$outdir);
+    my $moviedir = $outdir . '_movie';
+    my @fin = <$indir/*.fits>;
+    for (1..$startframe) {
+      shift @fin;
+    }
+    @fin = @fin[0..$numframes-1];
+    my @fout = @fin;
+    map{s/$indir/$outdir/;}@fout;
+ 
+    my @datacube = mrfits(@fin);
+ 
+    my $zero = zeroes($datacube[0]);
+    my $ghost_frames = PDL::glue(hanning_interp($datacube[-2],$datacube[-1],$zero,$zero,{num=>$ghost}),
+				 2, $zeroes?$zero->dummy(2,$zeroes):undef,
+				 hanning_interp($zero,$zero,$datacube[0],$datacube[1],{num=>$ghost}));
+
+#   my $ghost_frames = hanning_interp($datacube[-2],$datacube[-1],$datacube[0],$datacube[1],{num=>$ghost});
+
+    my $data = zeroes(float,$datacube[0]->dim(0),$datacube[0]->dim(1),$numframes+2*$ghost+$zeroes);
+
+# put in the original data
+# 0..59
+    for my $i(0..$numframes-1){
+	$data->(:,:,($i)) .= $datacube[$i];
+    }
+
+#undef the datacube because we do not need it anymore
+    undef @datacube;
+
+# add any ghost frames
+# 60..71
+    if (defined($ghost_frames)){
+	for my $i(0..$ghost_frames->dim(2)-1){
+	    $data->(:,:,($i+$numframes)) .= $ghost_frames(:,:,($i));
+	}
+    }
+#undef the ghost frames because we do not need them anymore
+    undef $ghost_frames;
+
+#    $data->where($data->abs > 1E300) .= 0;
+    my $hdr = rfits($fin[0],{data=>0});
+    my $dims = pdl($data->dims);
+    barf "Input needs three dimensions, got " . $dims->nelem ."." if $dims->nelem != 3;
+    my $idata = zeroes(float,$dims->list);
+
+    my $dx = $hdr->{CDELT1}*AS2KM; #km
+    my $dy = $hdr->{CDELT2}*AS2KM; #km
+    printf " data range is %f to %f\n",$data->min,$data->max if $opt->{'verbose'}>1;
+    printf "idata range is %f to %f\n",$idata->min,$idata->max if $opt->{'verbose'}>1;
+    print "fft-ing..." if $opt->{'verbose'};
+    fftnd($data,$idata);
+    PDL::FFT::fft_free();
+    print "done\n" if $opt->{'verbose'};
+    sleep 30;
+    printf " data range is %f to %f\n",$data->min,$data->max if $opt->{'verbose'}>1;
+    printf "idata range is %f to %f\n",$idata->min,$idata->max if $opt->{'verbose'}>1;
+#Here we choose the Nyquist frequency to be positive (for even-sized dims)
+    my $kx = float sequence($dims->at(0)/2 + 1) / $dims->at(0) / $dx; #1/km
+    my $ky = float sequence($dims->at(1)/2 + 1) / $dims->at(1) / $dy; #1/km
+    my $w  = float sequence($dims->at(2)/2 + 1) / $dims->at(2) / $dt; #1/s
+#Append the negative frequencies
+    $kx = $kx->append(-$kx($dims->at(0)%2-2:1));
+    $ky = $ky->append(-$ky($dims->at(1)%2-2:1));
+     $w = $w->append(  -$w($dims->at(2)%2-2:1));
+#And shift
+    $kx = $kx->range($kx->dim(0)/2+1,$kx->dim(0),'p');
+    $ky = $ky->range($ky->dim(0)/2+1,$ky->dim(0),'p');
+    $w =  $w->range( $w->dim(0)/ 2+1, $w->dim(0),'p');
+#    print "kx: ",$dims->at(0)*$dx*$kx,"\n";
+#    print "ky: ",$dims->at(1)*$dy*$ky,"\n";
+#    print "w: ",$dims->at(2)*$dt*$w,"\n";   
+    $ky = $ky->dummy(0);
+    $w = $w->dummy(0)->dummy(0);
+    my $k = sqrt($kx*$kx + $ky*$ky);
+    
+    my $wkneestart = 1/(WKNEESTART * 60); # 1/s
+    my $wkneestop = 1/(WKNEESTOP * 60);   # 1/s
+    
+    my $wL = 2*($wkneestop - $wkneestart);
+    my $wfilter = cos(($w->abs - $wkneestart)*PI/$wL)**2;
+    $wfilter->where($w->abs > $wkneestart).=1;
+    $wfilter->where($w->abs < $wkneestop).=0;
+#use wfilter to apodize the kfilter
+    
+#the cheesiest thing to do would be
+#    $v = $w / $k;
+#    $f = ($v > SPEED);
+#    $filter = 1 - $f*$wfilter;
+#but we're not going to do that.
+    
+    my $klowcut = $w->abs/SPEED/LOWFACTOR;
+    my $khighcut = $w->abs/SPEED/HIGHFACTOR;
+    my $kL = 2*($khighcut - $klowcut);
+    my $kfilter = cos(($k->abs - $klowcut)*PI/$kL)**2;
+    $kfilter->where($k->abs < $klowcut)  .=1;
+    $kfilter->where($k->abs > $khighcut) .=0;
+
+    my $f = 1 - $kfilter * $wfilter;
+    $f->range($dims/2 - 1 + 0.5*$dims%2,1) .= 1;
+
+#if the image has xsize 100, [0-99], [0-49,50-99]
+#positive frequencies [0-50], negative frequencies [51-99]
+    my $fs = float $f->range($dims/2 -1 +0.5*$dims%2,$dims,'p');
+    $data *= $fs;
+    $idata *= $fs;
+    printf " data range is %f to %f\n",$data->min,$data->max if $opt->{'verbose'}>1;
+    printf "idata range is %f to %f\n",$idata->min,$idata->max if $opt->{'verbose'}>1;
+    print "ifft-ing..." if $opt->{'verbose'};
+    ifftnd($data,$idata);
+    print "done\n" if $opt->{'verbose'};
+    printf " data range is %f to %f\n",$data->min,$data->max if $opt->{'verbose'}>1;
+    printf "idata range is %f to %f\n",$idata->min,$idata->max if $opt->{'verbose'}>1;
+
+    
+#write out
+    for my $i(0..$#fout){
+	my $im = $data->(:,:,($i));
+	$im->sethdr(rfitshdr($fin[$i]));
+	$im->wfits($fout[$i],$bitpix);
+#	$win = pgwin(dev=>sprintf("$moviedir/f%02d.ppm/ppm",$i),size=>10);
+#	$win->fits_imag($im,-150,150,{j=>1,title=>"i = $i"});
+#	$win->close;
+    }
+}

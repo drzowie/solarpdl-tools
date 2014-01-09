@@ -1,0 +1,104 @@
+pp_addhdr << 'EOH';
+
+EOH
+
+
+
+pp_def('my_cspline_irregular',
+	Pars=>'x(k); dat(k); xloc(); c(); [o]out();',
+	Inplace=>0,
+	Code=> <<'EOC'
+	long i;
+	long dex;
+	long dexlo;
+        double xlo;
+        double xhi;
+        double x;
+	long dexhi;
+        double p[4];
+       double xp[4];
+       long n;
+
+       n = $SIZE(k);
+
+       // dex gets the index of the first location with less than or equal X to the xloc
+       {
+	   // Binary search;
+	   dexlo = -1;
+	   dexhi = n;
+	   xlo = $x(k=>0);
+	   xhi = $x(k=>n-1);
+	   dex = 0;
+	   //	   printf("dexlo=%d\t",dexlo);
+	   while(dexlo < dexhi - 1) {
+	       dex = (dexlo + dexhi)/2;
+	       if(dex >= 0 && dex <= n-1) {
+		 x = $x(k=>dex);
+		 if(x >= $xloc()) {
+		   dexhi = dex;
+		   xhi = x;
+		 } else {
+		   dexlo = dex;
+		   xlo = x;
+		 }
+		 if(xlo > xhi)
+		   barf("data source is non monotonic!\n");
+	       } else {
+		 if(dex<0) {
+		   dexlo = -1;
+		   dexhi = 0;
+		   dex = -1;
+		 } else if(dex>n-1) {
+		   dexlo = n-1;
+		   dexhi = n;
+		   dex = n-1;
+		 }
+	       }
+	   }
+       }
+
+       // Now dexlo has the highest X value lower than the currently sought value.
+       // Perform spline interpolation on an irregular grid.
+       
+       // Assemble an array of the four points surrounding the originsl.
+
+       dex = dexlo - 1;
+       printf("val=%g, dex=%d, dexlo=%d, dexhi=%d\n",(float)($xloc()), dex,dexlo, dexhi);
+
+       for(i=0; i<4; i++,dex++) {
+	   if(dex<0 || dex > n-1) {
+	       p[i]   = (dex<0) ? $dat(k=>0) : $dat(k=>n-1); 
+	       xp[i]  = $xloc + i - 1.5;
+	   } else {
+	       p[i] =  $dat(k=>dex);
+	       xp[i] =   $x(k=>dex);
+	   }
+       }
+
+       printf("      xp: %g,%g,%g,%g; p: %g,%g,%g,%g\n",xp[0],xp[1],xp[2],xp[3],p[0],p[1],p[2],p[3]);
+       // do the actual calculation (see, e.g., http://en.wikipedia.org/wiki/Cspline)
+       if(xp[3]==xp[2]) 
+	 xp[3]++;
+       if(xp[0] == xp[1]) 
+	 xp[0]--;
+
+       {
+	   double t = ($xloc() - xp[1]) / (xp[2]-xp[1]);
+	   double t1 = 1 - t;
+	   double h00 = (1 + 2*t) * t1 * t1;
+	   double h10 = t * t1 * t1;
+	   double h01 = t * t * (3 - 2*t);
+	   double h11 = - t * t * t1;
+	   double m0 = (1 - $c()) * 0.5 * ( (p[2] - p[1]) / (xp[2]-xp[1]) + (p[1]-p[0]) / (xp[1]-xp[0]));
+	   double m1 = (1 - $c()) * 0.5 * ( (p[3] - p[2]) / (xp[3]-xp[2]) + (p[2]-p[1]) / (xp[1]-xp[0]));
+
+	   $out() = h00 * p[1] + h10 * m0 * (xp[2]-xp[1]) + h01 * p[2] + h11 * m1 * (xp[2]-xp[1]);
+       }
+       
+
+EOC
+       );
+
+
+
+pp_done();

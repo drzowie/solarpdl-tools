@@ -1,0 +1,28 @@
+sub accumulate {
+  my($a) = rfits(shift);
+  my($i) = 1;
+  my($f);
+  while($f = shift) {
+    $a += rfits($f);
+    $i++;
+  }
+
+  $a /= $i;
+  return $a;
+}
+
+sub do_it {
+  chomp(@f = `ls 2-hovered/*`);
+
+  while(@f > 10) {
+    $im = accumulate(splice(@f,0,10));
+    
+    if(!defined($m)) {
+      $m = mag_distro($im);
+    } else {
+      $m = append($m,mag_distro($im));
+    }
+    return $m;
+  }
+  return $m;
+}

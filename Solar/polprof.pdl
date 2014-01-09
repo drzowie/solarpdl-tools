@@ -1,0 +1,182 @@
+=pod
+
+=head2 polprof
+
+=for ref
+
+Generate polarimetry profiles for a given viewing geometry.
+Uses basic information about the Nickel-I 6767.77 line.
+
+=for usage
+
+polprof($gamma,$chi[,%opt]);
+
+$gamma is the field opening angle, 0 for a N field, PI/2 for transverse, PI for south. $chi is the field azimuthal angle in the image plane (0 up, PI/2 left, PI down, 3PI/2 right). Specified in radians, naturally.
+
+OPTIONS
+
+=over 3
+
+=for options
+
+=item tol (default 1E-13)
+
+Any Q, U, or V profiles that don't get above this will be zeroed out.
+
+=item pts (default 1000)
+
+Number of points to use for line drawing.
+
+=item B (default 1000)
+
+Value of the magnetic field, in Gauss.
+
+=back
+
+=for Author
+
+Derek Lamb, 16-March 2006
+
+=cut
+
+sub polprof{
+    
+    my ($gamma,$chi,$opt)=@_;
+    
+    $opt->{tol}=1E-13 unless defined $opt->{tol};
+    $opt->{pts}=1000 unless defined $opt->{pts};
+    $opt->{B}=1000 unless defined $opt->{B}; ##Gauss
+    
+    my $sepA=30.5E-6*$opt->{B}; ##separation in Angstroms
+    my $rangeA=pdl(10*$sepA,0.2)->max; ##Angstroms
+    
+    my $l0=6767.77; ##Angstroms
+    
+    my $fV=cos($gamma);
+    my $fQ=sin($gamma)*cos(2*$chi);
+    my $fU=sin($gamma)*sin(2*$chi);
+
+    my $f=pdl($fQ,$fU,$fV);
+
+    my $total = $fV*$fV + $fQ*$fQ + $fU*$fU;
+    
+    my $Sbase=stokes()->mv(-1,0); ##Sbase is (P,line)
+    
+    my $Sobs=$Sbase*$f*abs($f); ##Sobs is (P,line). 
+##Multiply it by abs($f) to get the correct amplitude ($f**2) but preserve the sign.
+
+#    $Sobs=abs($fQ)*$fQ*$Sbase((0)) + abs($fU)*$fU*$Sbase((1)) + abs($fV)*$fV*$Sbase((2));
+    
+    my ($lambda,$g0)=g($l0-$sepA,$opt->{pts},$rangeA);
+    my          $g1 =g($l0      ,$opt->{pts},$rangeA);
+    my          $g2 =g($l0+$sepA,$opt->{pts},$rangeA);
+    
+    my $gs=$g0->glue(1,$g1,$g2)->transpose;
+    
+    my $S=$gs x $Sobs;
+
+    my $Q=$S((0));
+    my $U=$S((1));
+    my $V=$S((2));
+
+    my $I=($Sobs->abs->sumover * $gs)->sumover;
+
+#    $I=abs($Sobs((0),(0)))*$g0 + abs($Sobs((0),(1)))*$g1 + abs($Sobs((0),(2)))*$g2;
+#    $Q=$Sobs((1),(0))*$g0 + $Sobs((1),(1))*$g1 + $Sobs((1),(2))*$g2;
+#    $U=$Sobs((2),(0))*$g0 + $Sobs((2),(1))*$g1 + $Sobs((2),(2))*$g2;
+#    $V=$Sobs((3),(0))*$g0 + $Sobs((3),(1))*$g1 + $Sobs((3),(2))*$g2;
+    
+    $Q=zeroes($Q) unless $Q->abs->max > $opt->{tol};
+    $U=zeroes($U) unless $U->abs->max > $opt->{tol};
+    $V=zeroes($V) unless $V->abs->max > $opt->{tol};
+    
+    my $w=pgwin(xs,size=>10,nx=>2,ny=>2); #use 'xs' to keep a persistent window, but the user can't interact with it at all.  Use 'xw' and no 'my' to allow interaction.
+    
+    $w->line($lambda*1E10-$l0,$I,{Panel=>1,title=>"I",charsize=>1.4});
+    $w->line($lambda*1E10-$l0,$Q,{Panel=>2,title=>"Q",charsize=>1.4});
+    $w->line($lambda*1E10-$l0,$U,{Panel=>3,title=>"U",charsize=>1.4});
+    $w->line($lambda*1E10-$l0,$V,{Panel=>4,title=>"V",charsize=>1.4});
+    
+    return $total; ##if this isn't 1, we've got problems.
+}
+
+=pod
+    
+=head2 stokes
+    
+=for ref
+    
+Polarization information for a Zeeman triplet. The signs might be off, but who cares?
+    
+=cut
+    
+sub stokes{
+	
+#    my $blank=pdl(0,0,0);
+
+##longitudinal case (o)
+    my $Circ=0.5*pdl(1,0,-1);
+#    my $CircSig=$Circ->abs;
+#    my $SV=$CircSig->glue(1,$blank,$blank,$Circ)->transpose;
+    
+##transverse case (+)
+    my $Plus=0.25*pdl(-1,2,-1);
+#    my $PlusSig=$Plus->abs;
+#    my $SQ=$PlusSig->glue(1,$Plus,$blank,$blank)->transpose;
+	
+##transverse case (x)
+    my $Cross=0.25*pdl(-1,2,-1);
+#    my $CrossSig=$Cross->abs;
+#    my $SU=$CrossSig->glue(1,$blank,$Cross,$blank)->transpose;
+    
+#    return $SQ->glue(2,$SU,$SV);
+
+    return $Plus->glue(1,$Cross,$Circ); ##dimensions are 3x3 (line,Pol)
+
+}
+
+
+=pod
+    
+=head2 g
+    
+=for ref
+    
+A Gaussian (Doppler) line shape profile piddle.
+    
+=for usage
+    
+([$lambda,]$profile)=g($center,$num_points,$range);
+
+=for example
+    
+A line profile extending +/- 3 Angstroms around 6767.77, represented by 101 points
+    
+($lambda,$profile)=g(6767.77,101,6);
+
+Note that the value of $lambda is always 6767.77 Angstroms +/- range/2, regardless of the value of $center.  This makes addition and subtraction of profiles easier.
+    
+The width of the line is predetermined by data from the Ni-6767.77 line and order of magnitude solar estimates.
+    
+=cut
+    
+sub g{
+
+    my ($cen,$pts,$range) = @_;
+    
+    $cen*=1E-10; ##cen is passed in angstroms, change it to meters.
+    $range*=1E-10;  ##ditto for range.  
+    
+    my $T=6000;
+    my $kb=1.38E-23;
+    my $amu=1.66E-27;
+    my $m=58*$amu;
+    my $l0=6767.77E-10;
+    my $c=3E8;
+    
+    my $lambda=sequence($pts)/($pts-1)*$range-$range/2 + $l0;
+    my $g=exp(-$m*$c*$c/(2*$kb*$T)*($cen/$lambda-1)**2);
+    
+    return 1-$g unless wantarray;
+    return($lambda,1-$g);
+}

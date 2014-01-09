@@ -1,0 +1,151 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use PDL;
+use PDL::AutoLoader;
+do $ENV{HOME}."/.perldlrc";
+
+use Getopt::Long;
+
+sub usage()
+{
+    print "Unknown option: @_\n" if ( @_ );
+    print "usage: swamis [--file <file>] [--help|-?]\n";
+    exit;
+}
+
+my $reset = 0;
+my $tmpdir;
+my $numFilesKept = 50;
+my $file;
+my $thrDetHi = 300.0;
+my $thrDetLo = 100.0;
+my $scaleMask = 0xff;
+my $minSize = 2;
+my $feaDist = 4;
+my $feaMethod = 'clump';
+my $maxEta = 60.0;
+my $timeAtMax = 2;
+my $senseGrowth = 0;
+my $thrGrowth;
+my $timeGrowth;
+my $thrFlLo;
+my $thrFlHi;
+my $minVol = 0;
+my $minLife = 4;
+my $minMaxSize = 4;
+my $nBack = 3;
+
+my $help;
+
+usage() if (! GetOptions('reset' => \$reset,
+                         'tmpdir=s' => \$tmpdir,
+                         'numFilesKept=i' => \$numFilesKept,
+                         'file|f=s' => \$file,
+                         'thrDetHi=f' => \$thrDetHi,
+                         'thrDetLo=f' => \$thrDetLo,
+                         'scaleMask=i' => \$scaleMask,
+                         'minSize=i' => \$minSize,
+                         'feaDist=i' => \$feaDist,
+                         'feaMethod=s' => \$feaMethod,
+                         'maxEta=f' => \$maxEta,
+                         'timeAtMax=i' => \$timeAtMax,
+                         'senseGrowth' => \$senseGrowth,
+                         'thrGrowth=f' => \$thrGrowth,
+                         'timeGrowth=i' => \$timeGrowth,
+                         'thrFlLo=f' => \$thrFlLo,
+                         'thrFlHi=f' => \$thrFlHi,
+                         'minVol=i' => \$minVol,
+                         'minLife=i' => \$minLife,
+                         'minMaxSize=i' => \$minMaxSize,
+                         'nBack=i' => \$nBack,
+                         'help|?' => \$help)
+            or defined $help);
+
+if (!defined $tmpdir)
+{
+    print "Must define tmpdir\n";
+    exit 1;
+}
+    
+if ($reset)
+{
+    # Create the directories
+    `rm -rf $tmpdir/00-data; mkdir $tmpdir/00-data`;
+    `rm -rf $tmpdir/01-mask; mkdir $tmpdir/01-mask`;
+    `rm -rf $tmpdir/02-id; mkdir $tmpdir/02-id`;
+    `rm -rf $tmpdir/03-assoc; mkdir $tmpdir/03-assoc`;
+    `rm -rf $tmpdir/04-tab; mkdir $tmpdir/04-tab`;
+    
+    # Delete the SQLite databases
+    `rm -f $tmpdir/swamis.sdb`;
+
+    # Initialize the DB and set up processing parameters
+    my $thresh = [$thrDetLo, $thrDetHi];
+    purge({tmpdir=>$tmpdir,
+           feaMethod=>$feaMethod,
+           scaleMask=>$scaleMask,
+           feaDist=>$feaDist,
+           maxEta=>$maxEta,
+           timeAtMax=>$timeAtMax,
+           senseGrowth=>$senseGrowth,
+           thrGrowth=>$thrGrowth,
+           timeGrowth=>$timeGrowth,
+           thrFlLo=>$thrFlLo,
+           thrFlHi=>$thrFlHi,
+           minSize=>$minSize,
+           minVol=>$minVol,
+           minLife=>$minLife,
+           minMaxSize=>$minMaxSize,
+           nBack=>$nBack});
+}
+else
+{
+    if (!defined $file)
+    {
+        print "Filename missing\n";
+        exit 1;
+    }
+
+    # Pull in the new data file
+    `cp $file $tmpdir/00-data`;
+
+    # Run the pipeline on new data
+    swamis({tmpdir=>$tmpdir});
+
+    # Purge old files that are no longer needed
+    my $dbh = DBI->connect("dbi:SQLite:dbname=$tmpdir/swamis.sdb","","");
+
+    my(@datafiles,@maskfiles,@idfiles,@assocfiles,@tabfiles);
+    my $res = $dbh->selectall_arrayref('SELECT data_path,mask_path,id_path,assoc_path,tab_path FROM files ORDER BY filename');
+    if (@$res) {
+        @datafiles = ();
+        @maskfiles = ();
+        @idfiles = ();
+        @assocfiles = ();
+        @tabfiles = ();
+        my $num_files = 0;
+        foreach (@$res) {
+            push @datafiles, @$_[0];
+            push @maskfiles, @$_[1];
+            push @idfiles, @$_[2];
+            push @assocfiles, @$_[3];
+            push @tabfiles, @$_[4];
+
+            $num_files++;
+        }
+
+        for (my $i=0; $i<($num_files-$numFilesKept); $i++)
+        {
+            my $sth = $dbh->prepare('DELETE FROM files WHERE data_path=?');
+            $sth->execute($datafiles[$i]);
+            $sth->finish;
+
+            my @del_list = ($datafiles[$i],$maskfiles[$i],$idfiles[$i],$assocfiles[$i],$tabfiles[$i]);
+            unlink @del_list;
+        }
+    }
+
+    $dbh->disconnect();
+}

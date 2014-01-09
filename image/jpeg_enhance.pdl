@@ -1,0 +1,55 @@
+=head2 jpeg_enhance
+
+=for sig
+
+  Signature: jpeg_enhance(A());
+
+=for ref
+
+Enhance a decoded JPEG image by the Nosratinia multi-jpeg method
+
+=cut
+
+sub jpeg_enhance {
+  my $im0 = float(shift);
+  my $flags = shift;
+  my $im = $im0;
+  if($im->dim(0) == 3) {
+    $im = $im->reorder(1,2,0);
+  }
+
+  print "im is ",join("x",$im->dims),"\n";
+  my $f = "/tmp/$$.jpg";
+
+  my $out = zeroes($im);
+
+  for my $i(0..7) {
+    for my $j(0..7) {
+      print "$i,$j...";
+      my $im1 = $im->range([$i,$j],[$im->dim(0),$im->dim(1)],'p');
+      if($im1->ndims == 3) {
+	print "foo\n";
+	wpic($im1->reorder(2,0,1),$f,{FLAGS=>$flags});
+	print "bar\n";
+	$im1 = rpic($f)->reorder(1,2,0);
+      } else {
+	wpic($im1,$f,{FLAGS=>$flags});
+	$im1 = float(rpic($f));
+      }
+      $out += $im1->range([-$i,-$j],[$im->dim(0),$im->dim(1)],'p');
+    }
+  }
+  
+  $omean = $out->avg;
+  $imean = $im->avg;
+  $ostdev= ($out-$omean)->abs->avg;
+  $istdev= ($im-$imean)->abs->avg;
+  
+  $out *= $istdev/$ostdev;
+  $out += $imean - $omean*($istdev/$ostdev);
+
+  return $out->reorder(2,0,1)
+    if($out->dim(2) == 3 && $im->dim(0) == 3) ;
+  return $out;
+}
+      

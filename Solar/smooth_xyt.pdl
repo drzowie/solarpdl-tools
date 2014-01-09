@@ -1,0 +1,157 @@
+=pod
+
+=head2 smooth_xyt
+
+=for ref
+
+Weighted temporal and spatial mean of images
+
+=for usage
+
+  smooth_xyt(\@list, $fwhm_t, $delay, $fwhm_s,\%options);
+
+@list is a list of filenames of FITS images containing solar data.
+$fwhm_t is the full-width at half maximum of the temporal weighting
+function (in minutes).  $delay is the cadence--the time (in minutes)
+between the centers of successive averages. $fwhm_s is the full-width
+at half maximum of the spatial Gaussian weighting function (in
+pixels)..
+
+OPTIONS HASH
+
+=over 3
+
+=item method (default 'g')
+
+Weighting function (in time) with which to average the images.  Use
+'g' or 'G' for a Gaussian function, and 'h' or 'H' for a Hanning
+function.
+
+=item outdir (default 'smooth')
+
+The directory for the averaged images.
+
+=back
+
+=for ref
+
+This (together with derot.pdl) is a sort-of clone of John Beck's
+DR_MEAN module for the MDI data pipeline.  Advantages over the MDI
+pipeline module: (1) it works in floating point rather than integer;
+and (2) it uses the PDL::Transform local-linearization resampler
+rather than direct bilinear interpolation.
+
+You feed in a list of FITS images, the FWHMs of the temporal and
+spatial weighting functions, the cadence and the weighting function.
+
+BUGS 
+
+Would like to be able to pass in $fwhm_t = 0 or $fwhm_s = 0 and have
+it skip that step, but it's neither trivial to do right now nor really
+that important.
+
+AUTHOR & HISTORY
+
+Craig DeForest, 29-Jun-2004
+Derek Lamb, 07-Mar-2005: Decoupled differential rotation and weighted averaging
+Derek Lamb, 08-Nov-2006: Added spatial smoothing.
+Derek Lamb, 29-Jun-2007: Corrected for fractional seconds.
+
+=cut
+
+use strict;
+use Time::Local;
+use PDL;
+use PDL::NiceSlice;
+use PDL::DiskCache; 
+use PDL::ImageND;
+
+sub smooth_xyt {
+    my ($list,$fwhm_t,$delay,$fwhm_s,$opt) = @_;
+    
+################
+##check the options
+    $opt = {} unless defined $opt;
+    $opt->{method}='g' unless defined($opt->{method}); #'g' is the default
+    $opt->{method}="\l$opt->{method}"; ##force to lower case
+    barf "Incorrect method ".$opt->{method}.".\n" unless ($opt->{method} eq 'g' || $opt->{method} eq 'h');
+    print "Using method: ".(($opt->{method} eq 'g')?'Gaussian':'Hanning')."\n";
+    
+    my $in = diskcache($list,{ro=>1});
+    $opt->{outdir} = 'smooth' unless defined($opt->{outdir});
+    print "Output directory: ".$opt->{outdir}."\n";
+#    my $out = (defined($opt->{out})) ? $opt->{out} : [];
+    
+    `mkdir $opt->{outdir}` unless (-e $opt->{outdir}) and (-d $opt->{outdir});
+################
+##define the spatial smoothing kernel
+    my $r=rvals(2*$fwhm_s+1,2*$fwhm_s+1);
+    my $kernel=exp(-4*$r*$r/($fwhm_s*$fwhm_s)*log(2));
+    $kernel/=$kernel->sum;
+    
+###############
+##get the image times from filenames
+    my $times=zeroes(scalar @$list);
+    my $times_index=0;
+    for my $in_name(@$list){
+	$in_name =~m/_(\d{4})-(\d{2})-(\d{2})_(\d{2}):(\d{2}):([\d\.]{2,})/ ||
+		$in_name =~m/(200[78])(\d\d)(\d\d)_(\d\d)(\d\d)(\d\d(\.\d)?)/;
+	my ($year,$month,$date,$hour,$minute,$sec) = ($1,$2,$3,$4,$5,$6);
+	print "year: $year; month:$month; date:$date; hour:$hour; min:$minute; sec:$sec\n";
+	my $frac = $sec - int($sec);
+	$times($times_index).=timegm(int($sec),$minute,$hour,$date,$month-1,$year)+$frac;
+	$times_index++;
+    }
+    my $t0=$times->at(0); ##t0 is in seconds since the epoch
+    $times=($times - $t0)/60; ##times now in minutes from the beginning (0,1,2,4,5,7,...)
+##############
+##find the frames and calculate the weights
+    my $i=0;
+    my $time_avg = zeroes($in->[0]->dims); ##get the output to be the correct size
+    my $weight_img = zeroes($time_avg->dims);
+
+    open DEBUG,">",$opt->{outdir}."/debug.txt";
+
+    for(my $t=$times->((0))->sever;$t<=$times->((-1));$t+=$delay){
+	my $fr=which(($times >= $t-$fwhm_t)&
+		     ($times <= $t+$fwhm_t)
+		     );
+	my $out_name = $opt->{outdir} .'/'.int2date('%yyyymmdd__HH:MM:SS.ff',$t*60+$t0).'.fits';
+
+	print DEBUG "output file is $out_name\n";
+	print DEBUG "Averaging over ".$fr->nelem." images. They are:\n";
+	foreach my $f(list $fr){
+	    print DEBUG int2date('cds ut',$times->at($f)*60+$t0) ."\n";
+	}
+
+	my $dt=$times($fr)-$t;
+	my $wgt;
+	if($opt->{method} eq 'g'){
+	    $wgt=exp(-4*($dt*$dt)/($fwhm_t*$fwhm_t) * log(2) );
+	}else {
+	    $wgt=cos(acos(-1)*$dt/2/$fwhm_t)**2 if($opt->{method} eq 'h');
+	}
+
+#############
+##assemble the temporal and spatial averages	
+	$time_avg *=0; #make sure it starts off filled with zeroes.
+	$weight_img *=0;
+	for my $j(0..$fr->nelem -1){
+	    my $im = $in->[$fr->at($j)];
+##assume that after derotation only BAD pixels are 0.
+	    my $frame_weight_img = ($im!=0) * $wgt->at($j);
+	    $weight_img      += $frame_weight_img;
+	    $time_avg        += $im * $frame_weight_img;
+	}
+	$time_avg /=$weight_img;
+	my $out = convolveND($time_avg,$kernel);
+	$out->sethdr($in->[0]->hdr_copy);
+	$out->hdr->{'DATE-OBS'} = int2date('si ut date',$t*60+$t0);
+	$out->hdr->{'TIME-OBS'} = int2date('si ut time',$t*60+$t0);
+	$out->wfits($out_name);
+    }
+    close DEBUG;
+    return;
+}
+
+

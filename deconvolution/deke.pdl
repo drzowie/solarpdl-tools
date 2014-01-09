@@ -1,0 +1,78 @@
+=head2 deke - deconvolve an image, using a parameterized kernel
+
+=for usage
+
+$im2 = deke($im, $epsilon, $opt);
+
+=for ref
+
+Deconvolve a source image, using inversion of either a calculated
+dual-Gaussian kernel or a user-supplied one.
+
+The im is an image to deconvolve.  The epsilon is the largest gain any
+one Fourier component may have in the deconvolution.
+
+The options hash can usefully contain:
+
+=over 3
+
+=item fwhm 
+
+The full-width at half maximum of a Gaussian kernel
+
+=item twhm
+
+The full-width at half maximum of a wide scattering tail (if not
+present, no tail is used)
+
+=item tail
+
+The proportional size (area under) a scattering tail (if not present,
+no tail is used)
+
+=item n 
+
+The size, in fwhm's, of the kernel to define
+
+=item kernel
+
+If present, this is used as a kernel against which to deconvolve, rather than 
+a freshly converted one.
+
+=back
+
+=cut
+
+sub deke {
+    my $im = shift;
+    my $epsilon = shift || 1e-2;
+    my $opt = shift || {};
+    
+    my $fwhm = $opt->{fwhm} || 1;
+    my $twhm = $opt->{tail} ? ($opt->{twhm} || $fwhm * 10) : 0;
+    
+    
+    ### Make the kernel
+    $kernel = $opt->{kernel};
+
+    unless( defined($kernel) ){
+	my $siz = $opt->{n} || (($fwhm+$twhm) * 8 + 1);
+
+	$rv = rvals($siz,$siz);
+	$kernel = exp( -$rv * $rv / ($fwhm * $fwhm / 4) * log(2));
+	$kernel /= $kernel->sum;
+
+	if($opt->{tail}) {
+	    $k2 = exp(-$rv * $rv / ($twhm * $twhm / 4) * log(2));
+	    $k2 /= $k2->sum;
+	    $k2 *= $opt->{tail};
+	    $kernel += $k2;
+	    $kernel /= $kernel->sum;
+	}
+	$zk = $kernel;
+    }
+
+    $ik = invert_kernel($kernel,$epsilon);
+    
+    $im2 = $im->convolveND($ik);
+}

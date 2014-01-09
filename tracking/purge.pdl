@@ -1,0 +1,93 @@
+=pod
+
+=head2 purge
+
+=for usage
+
+purge($options);
+
+=for ref
+
+Feature track a sequence of magnetograms.  This is a wrapper around a
+standard SWAMIS pipeline.  Options deal with the different steps.
+
+Recognized options are:
+
+=over 3
+
+=item thresh
+
+This is a list ref containing (low,high) thresholds for feature detection.
+
+=item method
+
+This is either 'downhill' or 'clump' (default is 'clump') and specifies the feature ID method.
+
+=item min_size
+
+This is the minimum allowed feature size in a given frame, in pixels; below that, the feature is 
+ignored.
+
+=item v_min
+
+This is the minimum total volume (in pixel-frames) below which a feature is ignored.
+
+=item t_min 
+
+This is the minimum lifetime (in frames) below which a feature is ignored.
+
+=item sz_min
+
+This is the smallest maximum size (in pixels) below which a feature is ignored.
+
+=item n_back
+
+How many frames to look back during detect.
+
+=back
+
+=cut
+
+use strict;
+use warnings;
+use PDL;
+use PDL::DiskCache;
+use DBI;
+
+sub purge{
+    my $opt = shift || {};
+    die "Hash ref expected as first argument of purge!\n" unless (!defined($opt)   or  ref($opt) eq 'HASH');
+
+    my $tmpdir = defined($opt->{tmpdir})   ? $opt->{tmpdir}   :  ".";
+    my $thresh = defined($opt->{thresh})   ? $opt->{thresh}   :  [28*2, 28*4];
+    my $method = defined($opt->{method})   ? $opt->{method}   :  'downhill';
+    my $min_sz = defined($opt->{min_size}) ? $opt->{min_size} :  undef;
+    my $v_min  = defined($opt->{v_min})    ? $opt->{v_min}    :  0;
+    my $t_min  = defined($opt->{t_min})    ? $opt->{t_min}    :  4;
+    my $sz_min = defined($opt->{sz_min})   ? $opt->{sz_min}   :  4;
+    my $n_back = defined($opt->{n_back})   ? $opt->{n_back}   :  3;
+    
+    my $dbh;
+    my $sth;
+    $dbh = DBI->connect("dbi:SQLite:dbname=$tmpdir/swamis.sdb","","");
+
+    $sth = $dbh->prepare('CREATE TABLE params (thresh_low int, thresh_high int, method char(64), min_size int, min_vol int, min_lifetime int, min_maxsize int, lookback_frames int, cur_max_id int, cur_num_frames int)');
+    $sth->execute();
+    $sth->finish;
+    $sth = $dbh->prepare('CREATE TABLE files (filename varchar(128) NOT NULL, data_path varchar(128), mask_path varchar(128), id_path varchar(128), assoc_path varchar(128), tab_path varchar(128), data_processed boolean, mask_processed boolean, id_processed boolean, assoc_processed boolean, tab_processed boolean, PRIMARY KEY(filename))');
+    $sth->execute();
+    $sth->finish;
+    $sth = $dbh->prepare('CREATE TABLE tabs (id int NOT NULL, frame int NOT NULL, flux double, size int, x int, y int, closeness boolean, PRIMARY KEY(id, frame))');
+    $sth->execute();
+    $sth->finish;
+    $sth = $dbh->prepare('CREATE TABLE hist (id int NOT NULL, birth_frame int, birth_method int, birth_id int, death_frame int, death_method int, death_id int, lifetime int, birth_x int, birth_y int, death_x int, death_y int, PRIMARY KEY(id))');
+    $sth->execute();
+    $sth->finish;
+
+    # Insert default params into params table
+    $sth = $dbh->prepare('INSERT INTO params VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $sth->execute(@$thresh[0], @$thresh[1], $method, $min_sz, $v_min, $t_min, $sz_min, $n_back, 0, 0);
+    $sth->finish;
+
+    $dbh->disconnect();
+}

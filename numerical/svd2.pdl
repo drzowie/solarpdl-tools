@@ -1,0 +1,48 @@
+=head2 svd2
+
+Quick-and-dirty singular-value decomposer for a 2x2 matrix
+
+This uses a semi-analytic technique that works mainly for 2-D.  It
+calculates the rotation angle of the ellipse of transformation of the
+unit circle, and uses that to calculate the major and minor axes of
+the ellipse -- those are the singular values.  The angle is used to
+guess which value goes with which vector (two/four possibilities
+depending on whether you want the sign right).  
+
+You get back four possible singular values.
+
+This was a prototype code for some PGPLOT work; but it's interesting enough
+to be kept around.
+
+=cut
+
+sub svd2 {
+	$a = shift;
+	$A = ( $a * $a * pdl(1,-1) )->sum;
+	$B = $a->prodover->sumover;
+
+	$theta = (0.5 * asin(  $B / sqrt( $A*$A / 4  +  $B*$B )  ))->at(0);
+	
+	$v1 = pdl(cos($theta),sin($theta));
+
+	$v2 = pdl(sin($theta),cos($theta));
+	$v3 = pdl(cos($theta),-sin($theta));
+
+
+	$v4 = pdl(-sin($theta),cos($theta));
+
+
+	$vv1 = $a x $v1->dummy(0,1);
+	$sv1 = sqrt( ($vv1*$vv1)->sum );
+	
+	$vv2 = $a x $v2->dummy(0,1);
+	$sv2 = sqrt( ($vv2*$vv2)->sum );
+
+	$vv3 = $a x $v3->dummy(0,1);
+	$sv3 = sqrt( ($vv3*$vv3)->sum );
+
+	$vv4 = $a x $v4->dummy(0,1);
+	$sv4 = sqrt( ($vv4*$vv4)->sum );
+
+	return $sv1,$sv2,$sv3,$sv4;
+}

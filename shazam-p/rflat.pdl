@@ -1,0 +1,19 @@
+=head2 rflat - rfits with flat fielding
+
+=for usage
+
+	$im = rflat($flat,$fname,$opt);
+
+=for ref
+	
+	You feed in an array that came out of gen_flat, and then all the parameters that would normally go into rfits().  You get out a floating-point array in flat-fielded DNs.
+
+=cut
+sub rflat {
+	my $flat = shift;
+	my @rfits_params = @_;
+	my $im = float rfits(@rfits_params);
+	my $im2 = flatten($flat,$im);
+	$im2->sethdr($im->gethdr);
+	return $im2;
+}

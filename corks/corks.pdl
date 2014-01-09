@@ -1,0 +1,930 @@
+######################################################################
+# new_field takes a single integer size and returns a hash with 
+# a simulation field in it.
+#
+# Supergranulation has been sort of grafted on to the granulation
+# stuff here.  It could be done more cleanly (by, e.g., forming
+# a nested field structure) but instead I've relied on cut-n-paste
+# to make it work.  As with the raw granulation simulation, 
+# it's more important that it work than that it work quickly -- 
+# otherwise, this'd all be in C!
+#
+# g_field is the granule-ID field
+# t_field is the time-since-granularID-changed field (useful for 
+#    small velocities).
+# v_field is the velocity field (2-vector)
+# s_field is the speed field
+# g_locs  is the list of granule locations, indexed by granule key
+# g_ages  is the list of granule ages, indexed by granule key
+# g_lastnum is the last granule number allocated.
+# f_coords is a convenient index of coordinates.
+#
+# dt is the timestep
+# dx is the lengthstep
+#
+# t is the current time (in steps)
+# g_life is the granule lifetime (in seconds)
+#
+# d0 is the V divergence in each granule in Mm^2/sec/2pi.
+# d0p is the V divergence in simulation units 
+#
+# plonkrate is the number of granules plonked into the field per frame.
+#
+# sg_d0 is the V divergence in each supergranule in Mm^2/sec/2pi.
+# sg_size is the size of supergranules
+# sg_life is the lifetime of supergeanules
+
+
+sub new_field{
+    my($size,$in) = @_;
+    my($field);
+    $field = {
+	'w' => $size,
+	'h' => $size,
+
+	'g_field' => zeroes($size,$size),   # Granular association
+	'g_locs'  => {},                    # List of active granules
+	'g_t0'  => {},
+	'v_field' => zeroes($size,$size,2), # Velocity field
+	's_field' => zeroes($size,$size),   # Speed field 
+	't_field' => zeroes($size,$size),   # update-time field
+	'g_lastnum' => 0,                   # Last granule number allocated
+	
+	'sg_field' => zeroes($size,$size),  # Supergranular association
+	'sg_locs' => {},                    # List of active supergranules
+	'sg_t0' => {},
+	'sg_v_field' => zeroes($size,$size,2), 
+	'sg_s_field' => zeroes($size,$size),
+	'sg_t_field' => zeroes($size,$size),
+	'sg_lastnum' => 0,
+	
+	'f_coords' => ( cat((sequence($size))->dummy(1,$size),
+			    (sequence($size))->dummy(0,$size))),
+	
+	'dt'         => 60,       # seconds 
+	't'          => 0,        # ongoing time (seconds)
+	'dx'         => 0.1,      # megameters per pixel
+
+	'g_life'     => 600,      # seconds (Spruit et al. 1990)
+        'g_size'     => 1,        # Megameters (used for rate of plonkage)
+	'em_rate'    => 1,        # Average micro-ephem-regions created per 
+                                  #       granule
+
+	'cork_size'  => 0.05,     # Radius of corks (Mm); used for collisions
+                                  # and for flux calculations
+
+	'cork_B' => 1000,         # magnetic feld in the corks (Gauss); used
+	                          # for magnetic field calculations and 
+	                          # cork counts in flux concentrations.
+	                          # If cork_size=0.05 and cork_B=1000 then 
+	                          # each concentration has 7e16 Mx of flux.
+
+	'p_cork_locs'  => {},
+	'n_cork_locs'  => {},
+	'g_maxarea' => {},
+	'c_lastnum' => 0,
+
+	'sg_size'     => 15,        # Megameters (Hagenaar et al. 1997)
+	'sg_life'     => 1.5*86400, # seconds (1 day = 60*60*24 s = 86400 s)
+	                                # 1.5 days: Hagenaar et al. 1997)  
+	
+    };
+
+
+
+    my $key;
+    foreach $key(keys %{$in}) {
+	$field->{$key} = $in->{$key};
+    }
+
+    $field->{'sg_stability'} = 10 unless defined($field->{'sg_stability'});
+    $field->{'sg_d0'} = ($field->{'sg_stability'} * 3.14159 * 
+			 $field->{'sg_size'} * $field->{'sg_size'}
+			 / $field->{'sg_life'}
+			 )
+      unless(defined $field->{'sg_d0'});
+
+    $field->{'d0'} = 3.14159 * ($field->{'g_size'} * $field->{'g_size'} 
+				/ $field->{'g_life'}) 
+      unless(defined $field->{'d0'});
+
+    $field->{'plonkrate'} = ($size * $size 
+			     / ($field->{'g_size'} / $field->{'dx'})
+			     / ($field->{'g_size'} / $field->{'dx'})
+			     * 4 / 3.1415926
+			     * ($field->{'dt'} / $field->{'g_life'})
+			     ) 
+      unless(defined $field->{'plonkrate'});
+
+    $field->{'sg_plonkrate'} = ($size * $size
+				/ ($field->{'sg_size'} / $field->{'dx'})
+				/ ($field->{'sg_size'}/$field->{'dx'})
+				* 4 / 3.1415926
+				* ($field->{'dt'} / $field->{'sg_life'})
+				) 
+      unless (defined $field->{'sg_plonkrate'});
+    
+    $field->{'plonktime'} = 1 
+      unless(defined $field->{'plonktime'});
+    
+    $field->{'sg_decay'} = (3 * $field->{'g_life'})
+      unless(defined$field->{'sg_decay'});
+    
+    $field->{'g_decay'} = (3 * $field->{'g_life'})
+      unless(defined $field->{'g_decay'});
+    
+    return $field;
+  }
+
+######################################################################
+# new_granule takes a field hash and a 2-PDL location vector.
+# It plonks a 3x3 granule core into the simulation field and
+# adds the granule to that field's list.
+
+sub new_granule {
+    my($f, $coords) = @_;
+    my($granule) = ++($f->{'g_lastnum'});
+    
+    my($c0,$c1) = ($coords->((0))->clip(0,$f->{'w'}-1)
+		   ,$coords->((1))->clip(0,$f->{'h'}-1)
+		   );
+    
+    $f->{'g_field'}->($c0,$c1) .= $granule;
+    $f->{'t_field'}->($c0,$c1) .= $f->{'t'};
+
+    $f->{'g_t0'}->{$granule} = $f->{'t'};
+    $f->{'g_locs'}->{$granule} = $coords;
+}
+
+sub remove_granule {
+    my ($f,$g) = @_;
+
+    my $w = whichND($f->{'g_field'} == $g);
+    if($w->nelem > 0) {
+	$f->{'v_field'}->range($w,0) .= 0;
+	$f->{'s_field'}->range($w,0) .= 0;
+	$f->{'g_field'}->range($w,0) .= 0;
+    }
+    delete($f->{'g_locs'}->{$g});
+    delete($f->{'g_t0'}->{$g});
+}
+
+######################################################################
+# new_supergranule and remove_supergranule
+# These are cut-n-pasted copies of the granule routines, slightly m
+# modified.  There's a better way to do this.
+sub new_supergranule {
+    my($f, $coords, $t) = @_;
+    $t = $f->{'t'} unless defined($t);
+    my($sg) = ++($f->{'sg_lastnum'});
+
+    my($c) = floor($coords+0.5);
+
+    print "new supergranule $sg\n";
+    my($a0,$a1,$a2,$a3) = (
+			    $c->(0)->clip(1,undef)-1
+			   ,$c->(0)->clip(undef,$f->{'w'}-2)+1
+			   ,$c->(1)->clip(1,undef)-1
+			   ,$c->(1)->clip(undef,$f->{'h'}-2)+1
+			   );
+
+    $f->{'sg_t_field'}->($a0:$a1,$a2:$a3) .= $f->{'t'};
+    $f->{'sg_t0'}->{$sg} = $t;
+    $f->{'sg_locs'}->{$sg} = $coords;
+}
+
+sub remove_supergranule {
+    my ($f,$sg) = @_;
+    my $w = whichND($f->{'sg_field'} == $sg);
+    if($w->nelem > 0) {
+	$f->{'sg_v_field'}->range($w) .= 0;
+	$f->{'sg_s_field'}->range($w) .= 0;
+	$f->{'g_field'}->range($w) .= 0;
+    }
+    delete $f->{'sg_locs'}->{$sg};
+    delete $f->{'sg_t0'}->{$sg};
+}
+
+######################################################################
+######################################################################
+
+######################################################################
+## div_flow: given a total (2-D) integrated divergence
+## at the origin, and an offset location, return the outbound
+## flow at that location.
+## There's a singularity at the origin; replace it with zero.
+## 
+## You can feed in a single 2-pdl or a 2xn-pdl for the locations.
+
+sub div_flow{
+    my($d0, $f, $loc) = @_;
+
+    my($dist2) =  ($loc * $loc * $f->{'dx'} * $f->{'dx'}) -> sumover -> clip(1e-3,undef);
+
+    return ($f->{'dx'} * $loc * (($d0 / $dist2)->dummy(0,2)) / 3.14159);
+}
+
+
+######################################################################
+#
+#
+#
+
+sub update_granules{
+    my($f) = $_[0];
+    update_g_or_sg($f,
+		   "g_locs","g_t0","g_life","d0",
+		   "g_field","v_field","s_field","g_maxarea",
+		   "remove_granule"
+		   );
+}
+
+sub update_supergranules{
+    my($f) = $_[0];
+    update_g_or_sg($f,"sg_locs","sg_t0","sg_life","sg_d0",
+		   "sg_field","sg_v_field","sg_s_field","sg_maxarea",
+		   "remove_supergranule"
+		   );
+}
+
+sub update_g_or_sg{
+  my($f,$locs,$t0,$life,$d0s,$n_field,$v_field,$s_field,$maxarea,$rm) = @_;
+  my($g);
+  my($t) = $f->{'t'};
+  my($d0) = $f->{'d0'};
+  my($wh) = pdl($f->{'w'},$f->{'h'})-1;
+  # Loop over all known granules.
+  
+  print scalar(keys %{$f->{$locs}})," granules: ";
+  my $gran_no ;
+  my $geezers = 0;
+  my $shrinkers = 0;
+  foreach $g(sort keys %{$f->{$locs}}) {
+      print "." if(++$gran_no % 100 == 0);
+      my($age) = $t - $f->{$t0}->{$g};         # Age of granule
+      my($relage) = pdl($age / $f->{$life});
+      
+      if($relage > 2) {
+	  $geezers++;
+	  my $s =  "$rm"."(\$f,\$g)";
+	  eval $s;
+	  next;
+      }
+      
+      ## d0 is the needed divergence in a (2-D) vacuum; the sin term causes 
+      ## rapid turnover during the granule's youth.
+      my($div) = 1.5 * $f->{$d0s} * (1 + 4 * sin(3.14159*(clip($relage/2,0,1))));
+      
+      #	The maximum radius is sort of a cheat -- I assume a constant expansion
+      # rate which is somewhat slower than the flow speed in the granule most
+      # of the time.  This should probably be fixed.
+      my($r) = pdl(floor(1.5 * sqrt($div/$f->{'dx'}*$age))+1);  # Max radius of granule
+      $r = pdl($r)->dummy(0,1)->at(0); # unpdlify
+      
+      next if($age<0 || $r < 1);
+      
+      # Generate an rvals overlay that's the same size as the granule,
+      # filled with velocities...
+      my($g_xy) = (cat( (xvals(2*$r+1,2*$r+1) - $r),
+			(yvals(2*$r+1,2*$r+1) - $r))) ->clump(2) -> xchg(0,1);
+      my($g_v) = div_flow($div,$f,$g_xy)->xchg(0,1)->reshape(2*$r+1,2*$r+1,2);
+      my($g_s) = sqrt(sumover(($g_v*$g_v)->xchg(0,2))->xchg(0,1));
+      my($g_ok) = (rvals(2*$r+1,2*$r+1) < $r);
+      
+      my($gloc) = floor($f->{$locs}->{$g} + 0.5);
+      
+      # Fit within the bounds of the playing field and calculate the offsets
+      # (if any) by which it must be trimmed.
+      my($c0) = cat($gloc-$r,$gloc+$r);
+      my($cl_c0) = hclip(lclip($c0,zeroes(2,2)),$wh->dummy(1,2));
+      my($f_xrange) = $cl_c0->slice('(0)');
+      my($f_yrange) = $cl_c0->slice('(1)');
+      
+      my($c0_offsets) = $cl_c0 - $c0;
+      my($lower) = $c0_offsets->slice(':,(0)');
+      ($upper) = $c0_offsets->slice(':,(1)');
+      $upper += $r*2 + 1;
+
+      my($xrange) = $c0_offsets->slice('(0)');
+      my($yrange) = $c0_offsets->slice('(1)');
+
+      # use strings -- yuck.  mslice would be better but is buggy.
+      my($g_str) = sprintf("%d:%d,%d:%d",
+			   $xrange->at(0),$xrange->at(1)-1,
+			   $yrange->at(0),$yrange->at(1)-1);
+      my($g_v0) = $g_v->slice($g_str);
+      my($g_s0) = $g_s->slice($g_str);
+      my($g_ok0) = $g_ok->slice($g_str);
+      
+      my($f_str) = sprintf("%d:%d,%d:%d",
+			   $f_xrange->at(0),$f_xrange->at(1),
+			   $f_yrange->at(0),$f_yrange->at(1));
+
+      my($g_f_sf) = $f->{$n_field}->slice($f_str);
+      my($v_f_sf) = $f->{$v_field}->slice($f_str.',:');
+      my($s_f_sf) = $f->{$s_field}->slice($f_str);
+
+      $g_ok0 = ($g_ok0 & 
+		(($s_f_sf <= $g_s0) | ($g_f_sf == $g))
+		);
+      my($area) = $g_ok0->nelem;
+      $f->{$maxarea}->{$g} = $area 
+	unless($area < $f->{$maxarea}->{$g});
+      if($area < ($f->{$maxarea}->{$g} * 0.5)) {
+	$shrinkers++;
+	  eval "$rm(\$f,\$g)";
+	  print "*";
+	  next;
+      }
+
+      $g_f_sf .= ( ( $g_f_sf * ($g_ok0 == 0) ) + 
+		   ( $g * ($g_ok0) ) );
+      $v_f_sf .= ( ( $v_f_sf * ($g_ok0 == 0) ) +
+		   ( $g_v0 * ($g_ok0) ) );
+      $s_f_sf .= ( ( $s_f_sf * ($g_ok0 == 0) ) +
+		   ( $g_s0 * ($g_ok0) ) )
+	  
+      }
+  print "\n\tgeezers=$geezers; shrinkers=$shrinkers\n";
+}
+
+
+##############################
+# plonk -- drop <n> randomly placed granules into the field.
+# Each new granule is convected to the nearest lane before it
+# gets plonked!
+sub plonk {
+    my($f,$t) = @_;
+    my($i);
+
+    ###############
+    # Handle supergranules
+    #
+    $f->{'sg_plonk_ntime'} += $t/$f->{'sg_life'}  * 
+                              $f->{w} * $f->{h} * $f->{dx} * $f->{dx} *
+			      4 / 3.14159 / $f->{sg_size} / $f->{sg_size};
+    my($nsg) = floor($f->{'sg_plonk_ntime'});
+    print "SG_PLONK_NTIME IS $f->{'sg_plonk_ntime'}\n";
+    $f->{'sg_plonk_ntime'} -= $nsg;
+    {
+      my($w,$h) = ($f->{'w'},$f->{'h'});
+      for($i=0;$i<$nsg;$i++) {
+	plonk_supergranule($f);
+      }
+    }
+
+    ###############
+    # Handle granules
+    #
+    $f->{'plonk_ntime'} += $t/$f->{'g_life'} *
+			     $f->{w} * $f->{h} * $f->{dx} * $f->{dx} *
+			     4/3.14159/$f->{g_size} / $f->{g_size};
+    my($n) = floor($f->{'plonk_ntime'});
+    print "PLONK_nTIME IS $f->{'plonk_ntime'}\n";
+    $f->{'plonk_ntime'} -= $n;
+
+    my($w,$h) = ($f->{'w'},$f->{'h'});
+    for($i=0;$i<$n;$i++) {
+      plonk_granule($f);
+      print ".";
+    }
+    print "\n";
+
+    ###############
+    # Handle stenflo emergences 
+    #
+    $f->{'plonk_nt2'} += $t / $f->{'em_rate'};
+    $n= floor($f->{'plonk_t2'});
+    $f->{'plonk_t2'} -= $n;
+
+    $f->{'emerge_ntime'} += $t * $f->{em_rate} / $f->{g_life} *
+	$f->{w}*$f->{h}*$f->{dx}*$f->{dx}*
+	4/3.14159/$f->{g_size}/$f->{g_size};
+    my $n = floor($f->{'emerge_ntime'});
+    print "emerge_ntime is $f->{emerge_ntime}\n";
+    $f->{'emerge_ntime'} -= $n;
+    emerge($f,$n);
+}
+
+##############################
+# plonk_granule
+# Drops a granule into the flow field.  The granule is 
+# convected to the nearest lane before it gets plonked!
+#
+sub plonk_granule {
+  my($f) = shift @_;
+  my($x);
+  my($y);
+  my($w) = $f->{'w'};
+  my($h) = $f->{'h'};  
+
+  do {
+    $x = pdl(floor(rand() * $w));
+    $y = pdl(floor(rand() * $h));
+    my($s,$grange,$gmax);
+    my($foo) =pdl(-1,1);
+    my($x0) = (floor($x)+$foo)->clip(0,$w-1);
+    my($y0) = (floor($y)+$foo)->clip(0,$h-1);
+
+    my($ss0) = sprintf("%d:%d,%d:%d",$x0->list,$y0->list);
+    $grange = ($gmax = $f->{'g_field'}->slice($ss)->max) - 
+      $f->{'g_field'}->slice($ss)->min;
+    my($ss1) = "($x),($y)";
+    $s = $f->{'s_field'}->slice($ss1)->clip(1e-3,undef);
+    if($grange == 0 && $s != 0) {
+      $x += $f->{'v_field'}->slice("($x),($y),(0)") / $s / 2;
+      $y += $f->{'v_field'}->slice("($x),($y),(1)") / $s / 2;
+    }
+#    print "x=$x,y=$y,s=$s, f=".$f->{'v_field'}->slice("($x),($y),(0)").",".$f->{'v_field'}->slice("($x),($y),(1)")."\n";
+  } while( $x->clip(pdl(1),pdl($w-2)) == $x  &&
+	   $y->clip(pdl(1),pdl($h-2)) == $y  &&
+	   ( ($grange == 0) && ($s != 0) ) &&
+	   $gmax != 0);
+  
+  new_granule($f,cat($x,$y));
+}
+
+##############################
+# plonk_supergranule
+# Drops a supergranule into the flow field.  The supergranule is 
+# convected to the nearest lane before it gets plonked!
+#
+sub plonk_supergranule {
+  my($f) = shift @_;
+  my($x);
+  my($y);
+  my($w) = $f->{'w'};
+  my($h) = $f->{'h'};  
+
+  do {
+    $x = pdl(floor(rand() * $w));
+    $y = pdl(floor(rand() * $h));
+    my($s,$grange,$gmax);
+    my($foo) =pdl(-1,1);
+    my($x0) = (floor($x)+$foo)->clip(0,$w-1);
+    my($y0) = (floor($y)+$foo)->clip(0,$h-1);
+
+    my($ss0) = sprintf("%d:%d,%d:%d",$x0->list,$y0->list);
+    $grange = ($gmax = $f->{'sg_field'}->slice($ss)->max) - 
+      $f->{'s_field'}->slice($ss)->min;
+    my($ss1) = "($x),($y)";
+    $s = $f->{'s_field'}->slice($ss1)->clip(1e-3,undef);
+    if($grange == 0 && $s != 0) {
+      $x += $f->{'v_field'}->slice("($x),($y),(0)") / $s / 2;
+      $y += $f->{'v_field'}->slice("($x),($y),(1)") / $s / 2;
+    }
+#    print "x=$x,y=$y,s=$s, f=".$f->{'v_field'}->slice("($x),($y),(0)").",".$f->{'v_field'}->slice("($x),($y),(1)")."\n";
+  } while( $x->clip(pdl(1),pdl($w-2)) == $x  &&
+	   $y->clip(pdl(1),pdl($h-2)) == $y  &&
+	   ( ($grange == 0) && ($s != 0) ) &&
+	   $gmax != 0);
+  
+  new_supergranule($f,cat($x,$y));
+}
+
+######################################################################
+# emerge
+sub emerge {
+    my($f,$n)=@_;
+
+    my($i);
+    my($g) = pdl(keys %{$f->{'g_locs'}});
+    my($gmax) = max($g)+1;
+    my($gmin) = min($g);
+
+    print "Emerging $n stenflos...";
+    for($i=0;$i<$n;$i++) {
+	my($gran) = floor(rand($gmax - $gmin))+$gmin;
+
+	my($cn) = ++($f->{'c_lastnum'});
+	$f->{'p_cork_locs'}->{$cn} = 
+	    (
+	     $f->{'g_locs'}->{$gran} + 
+	     pdl(rand(2),rand(2))-1
+	     );
+	$cn = ++($f->{'c_lastnum'});
+	$f->{'n_cork_locs'}->{$cn} = 
+	    (
+	     $f->{'g_locs'}->{$gran} + 
+	     pdl(rand(2),rand(2))-1
+	     );
+	print "." unless($i % 10);
+	if($f->{dump}) {
+	    printf DUMPFILE "EMERGE: P%d %.2f %.2f \t N%d %.2f %.2f\n",($cn-1),($f->{'p_cork_locs'}->{$cn-1}->list)[0..1],$cn,($f->{'n_cork_locs'}->{$cn}->list)[0..1];
+	}
+    }
+    print "\n";
+}
+
+    
+######################################################################
+# render_corks
+sub render_corks {
+    my($f) = @_;
+
+    my($pane) = zeroes($f->{'w'},$f->{'h'});
+    my($w1) = $f->{'w'}-1;
+    my($h1) = $f->{'h'}-1;
+    my($l) = $f->{'p_cork_locs'};
+    my($cork);
+    foreach $cork(keys %{$l}) {
+	$pane->slice(sprintf("(%d),(%d)",
+			     clip(floor($l->{$cork}->at(0)+0.5),0,$w1),
+			     clip(floor($l->{$cork}->at(1)+0.5),0,$h1))
+		     )++;
+    }
+
+    my($l) = $f->{'n_cork_locs'};
+    foreach $cork(keys %{$l}) {
+	$pane->slice(sprintf("(%d),(%d)",
+			     clip(floor($l->{$cork}->at(0)+0.5),0,$w1),
+			     clip(floor($l->{$cork}->at(1)+0.5),0,$h1))
+		     )--;
+    }
+
+    return $pane;
+}
+    
+######################################################################
+# advect_corks
+# advect all corks to the destination time (or t+dt).
+# Because advect_internal wants the cork locations in a 
+# pdl, we stuff them in.  This is tedious and shouldn't have
+# to be done this way, but what the hell, it works.
+# The corks only "feel" the granules and not the supergranules; 
+# this should be OK since the granules themselves get convected around, 
+# dragging their corks with them.
+
+sub advect_corks{
+    my($f,$t) = @_;
+    $t = $f->{'t'} + $f->{'dt'} unless(defined $t);
+	
+    my($clist) = zeroes( scalar(keys %{$f->{'p_cork_locs'}}) +
+			 scalar(keys %{$f->{'n_cork_locs'}}) +
+			 1);
+    my($clocs) = cat($clist,$clist)->xchg(0,1);
+    my($i)=0;
+    foreach $cork(keys %{$f->{'p_cork_locs'}}) {
+	$clist->set($i,$cork);
+	$clocs->slice(":,($i)") .= $f->{'p_cork_locs'}->{$cork};
+	$i++;
+    }
+    foreach $cork(keys %{$f->{'n_cork_locs'}}) {
+	$clist->set($i,-$cork);
+	$clocs->slice(":,($i)") .= $f->{'n_cork_locs'}->{$cork};
+	$i++;
+    }
+
+    
+    advect_internal($f,$f->{'p_cork_locs'},$t,$clist,$clocs,[$f->{'v_field'},$f->{'sg_v_field'}]);
+    advect_internal($f,$f->{'n_cork_locs'},$t,$clist,$clocs,[$f->{'v_field'},$f->{'sg_v_field'}]);
+}
+
+######################################################################
+# advect_granules
+# Advect all granules in the supergranular flow.  
+# 
+sub advect_granules{
+    my($f,$t) = @_;
+    my($i);
+    $t = $f->{'t'} + $f->{'dt'} unless defined($t);
+    
+    ($glist) = pdl(keys %{$f->{'g_locs'}})->clump(-1);
+    ($glocs) = cat($glist,$glist)->xchg(0,1);
+    for($i=0;$i<$glist->nelem;$i++) {
+	$glocs->slice(":,($i)") .= $f->{'g_locs'}->{$glist->at($i)};
+    }
+    advect_internal($f,$f->{'g_locs'},$t,$glist,$glocs,[$f->{'sg_v_field'}],1);
+}
+	
+sub advect_internal{
+    my($f,$l,$t,$clist,$clocs,$v_fields,$nocollision) = @_;
+    my($cork);
+    print "Advecting ",scalar(keys %{$l})," corks";
+    
+    my($clocs_0) = $clocs->slice('(0),:');
+    my($clocs_1) = $clocs->slice('(1),:');
+    my $corkno;
+    
+    foreach $cork(keys %{$l}) {
+	next if(!defined $l->{$cork}); # Skip cancelled elements
+	$clist_i = which(abs($clist) == $cork);
+	if($clist_i->nelem != 1) {
+	    print "WARNING - clist_i = $clist_i for cork $cork (skipping)\n";
+	    next;
+	}
+	
+	my($x0) = $l->{$cork};
+	my($x1);
+	my($dist2,$odist2);
+	
+	my($localtime);
+      timestep: for($localtime = $f->{'t'}; 
+		    $localtime < $t;
+		    ){
+	  if( ($x0 <= 0)->sum 
+	      || ($x0 >= pdl($f->{'w'}-1,$f->{'h'}-1))->sum){
+	      delete $l->{$cork};
+	      last timestep;
+	  }
+	  
+	  my($dx) = $x0 - floor($x0);
+	  my($s) = sprintf("%d:%d,%d:%d"
+			   ,floor($x0)->at(0)
+			   ,floor($x0)->at(0)+1
+			   ,floor($x0)->at(1)
+			   ,floor($x0)->at(1)+1
+			   );
+	  my($vels) = $v_fields->[0]->slice($s);
+	  if(@{$v_fields} > 1) {
+	      my($i);
+	      for($i=1;$i<@{$v_fields};$i++) {
+		  $vels += $v_fields->[$i]->slice($s);
+	      }
+	  }
+	  
+	  my($weights) = outer( pdl(1-$dx->at(0),$dx->at(0))
+				,pdl(1-$dx->at(1),$dx->at(1)));
+	  
+	  my($v) = ($vels * $weights)->clump(2)->sumover;
+	  my($s) = sqrt( ($v*$v)->sumover );
+	  
+	  if($s) {
+	      my($dt) = min(0.25 / $s,$t - $localtime);
+	      
+	      $localtime += $dt;
+	      $x1 = $x0 + $v * $dt;
+	      
+	      if($nocollision){
+		  $x0 .= $x1; 
+	      } else {
+		  ## Collision & cancellation checking
+		  my($collided);
+		  do { # Loop is for collisions!
+		      $dist2 = (( ( $clocs - $x1 ) * ($clocs - $x1 ) ) 
+				->sumover);
+		      $odist2 = (( ( $clocs - $x0 ) * ( $clocs - $x0 ) )
+				 ->sumover);
+		      $x0 .= $x1;
+		      
+		      my($w) = which( $dist2 < ($f->{'cork_size'} / $f->{'dx'}) & 
+				      $odist2 > $dist2 &
+				      abs($clist) != $cork
+				      );
+		      
+		      if($w->nelem) {
+			  print "+";
+			  my($w2) = which(($clist->index($w)->clump(-1) * 
+					   ($clist->index($clist_i)->clump(-1))) < 0);
+			  
+			  if($w2->nelem){
+			      ## The cork cancelled with something
+			      
+			      printf "C";
+			      if($f->{dump}) {
+				  printf DUMPFILE "CANCEL:\t$cork\t".$clist->index($w->at($w2->at(0)))."\n";
+			      }
+			      
+			      my($a) = $f->{'p_cork_locs'};
+			      my($b) = $f->{'n_cork_locs'};
+			      $clw = $clist->index($clist_i)->clump(-1);
+			      $clw1 = $clist->index($w->at($w2->at(0)))->clump(-1);
+			      $cl0 = $clist;
+			      delete $a->{abs($clw)->at(0)};
+			      delete $b->{abs($clw)->at(0)};
+			      delete $a->{abs($clw1)->at(0)};
+			      delete $b->{abs($clw1)->at(0)};
+			      
+			      $clocs_0->index($clist_i) .= -50;
+			      $clocs_0->index($w->at($w2->at(0))) .= -50;
+			      $clocs_1->index($clist_i) .= 0;
+			      $clocs_1->index($w->at($w2->at(0))) .= 0;
+			      undef $x1;
+			      last timestep;
+			  } else {
+			      ## The cork didn't cancel with anything; but it
+			      ## did collide.  So displace it by a small random
+			      ## amount.  This isn't perfect but works sort-of OK.
+			      ## Keep adding to the size of the circulation until
+			      ## we no longer have a collision!
+			      
+			      $collided++;
+			      my($deltax) = pdl(rand(2)-1,rand(2)-1) * 2 * $collided;
+#	              print " c=$collided; dx=$deltax; x0 was $x0 \n";
+			      $x1 = $x0 + $deltax;
+			  }
+		      } else {
+			  $collided = 0;
+		      }
+		  } while($collided);
+	      } # End of collision checking
+	  } else {
+	      # If there's no motion, stop stepping.
+	      last timestep;
+	  }
+      } # end of timestep loop
+
+	if($f->{dump} && !$nocollision) {
+	    if(defined $x1) {
+		printf DUMPFILE "MOVE: %d\t%.2f %.2f\n",$cork, $x1->list;
+	    }
+	}
+	print "." if(++$corkno % 100 == 0);
+    } # end of corks loop
+    print "\n";
+}
+
+sub render_granular_frame{
+    my($f) = @_;
+
+    my($g) = pdl(keys %{$f->{'g_locs'}});
+
+    my($imag) = $f->{'g_field'}->clip(min($g),max($g));
+    $imag -= min($imag);
+    if(max($imag)) {$imag *= (0.6 / max($imag))};
+	$image -= 0.3;
+
+    print "corks...";
+    my($i2) = clip(render_corks($f),-1,1);
+
+    print "stuffing in image...";
+    my($i2w) = which($i2->clump(2));
+#    print "i2w: "; help $i2w;
+    my($i2p) = $i2->clump(2)->index($i2w)->clump(-1);
+    
+    $imag->clump(2)->index($i2w) .= $i2p;
+    return $imag;
+}
+
+sub render_magnetogram {
+    my($f,$resolution) = @_;
+    
+    my($pane) = render_corks($f) * $f->{'cork_B'} * 3.14159 * $f->{'cork_size'} * $f->{'cork_size'} / $f->{'dx'} / $f->{'dx'};
+    print "res..";
+    my($res) = $resolution / $f->{'dx'};
+    my($krad) = floor(2*$res);
+    $krad = $krad->dummy(0,1)->at(0); # unpdlify
+
+    print "rvals & kernel generation...";
+    my($a) = rvals(2*$krad+1,2*$krad+1);
+    print "res = $res\n";
+    $a /= $res;
+    $k = exp(-($a*$a));
+    $k /= $k->sum;
+    
+    print "krad = $krad; size is ",2*$krad+1,"\n";
+    $k2 = kernctr($pane,$k);
+    fftconvolve($pane,$k2);
+    return $pane;
+}
+    
+
+sub initialize_field{
+  my($f,$size,$in) = @_;
+  imag $f->{'g_field'},{J=>1};
+  
+  print "foo...\n";
+  hold;
+  print "foo!\n";
+  
+  print "dt=$f->{'dt'}; plonkrate=$f->{'plonkrate'}\n";
+  
+#    $f->{'em_rate'} = 0;
+  
+## Seed the field without going through the time-consuming process of
+## actually evolving it.
+  
+  my($maxi) = floor(2*$f->{'g_life'}/$f->{'dt'});
+  for($i=0;$i<$maxi;$i++) {
+    print "================== prestep $i of $maxi\n";
+    plonk($f,$f->{'dt'});
+    $f->{'t'} += $f->{'dt'};
+  }
+  return $f;
+}
+
+sub test_sgs {
+  my($f) = shift;
+
+## Put in a couple of test supergranules!
+    new_supergranule($f,pdl(25,25),-10000);
+    new_supergranule($f,pdl(175,175),-20000);
+    new_supergranule($f,pdl(25,175)),-30000;
+}
+
+
+sub run_simulation {
+  my($f,$n_frames) = @_;
+  $n_frames = 500 unless( defined($n_frames) );
+  print "iterating for $n_frames frames...\n";
+  for($i=0;$i<$n_frames;$i++) {
+    if($f->{dump}) {
+	open DUMPFILE,sprintf(">cork-dump-%5.5d.txt",$f->{frameno});
+	$f->{frameno}++;
+    }	
+
+
+    print ("============== frame $i ==========\n");
+    
+    $f->{'t'} += $f->{'dt'};
+    plonk($f,$f->{'dt'});
+    print "--- Updating supergranules...";
+    update_supergranules($f);
+    imag $f->{'sg_field'};
+    print "--- Advecting granules...";
+    advect_granules($f);
+    print "--- Updating granules...";
+    update_granules($f);
+    
+    print "--- Advecting corks...";
+    advect_corks($f);
+    print "--- Rendering...";
+    $imag = render_granular_frame($f);
+    
+    ctab('fire');
+    imag $imag,-1,1,{j=>1};
+    wpic ($imag,sprintf("%4.4d.pnm",$i));
+    
+    if($f->{'mag'}) {
+      print "calling render_magnetogram...\n";
+      $mag = render_magnetogram($f,$f->{'mag'});
+      print "...ok\n";
+      $magrange = 50;
+      $bmag = floor(
+		    (clip($mag,-$magrange,$magrange)+$magrange) *
+		    (255.99/(2*$magrange))
+		    );
+      ctab('gray');
+      imag($bmag,0,255,{j=>1});
+      $bmag->slice('0:1,(0)') .= pdl(0,255);
+      wpic ($bmag,sprintf("mag-%4.4d.pnm",$i));
+      wpic ($f->{'sg_field'},sprintf("sg-%4.4d.pnm",$i));
+
+      wfits ($mag,sprintf('mag-%4.4d.fits',$i));
+    }
+  }
+    if($f->{dump}) {
+	close DUMPFILE;
+    }
+
+}
+
+######################################################################
+# gen_flux_concentration
+# adds a bunch of unbalanced corks to a region of the field.  You
+# specify the total flux, the radius, and the location (in pixels).
+#
+sub plonk_flux_concentration {
+  ($f, $flux, $radius, $location) = @_;
+  
+  ($r0) = (floor( $radius / $f->{'dx'} + 0.5 ))->clump(-1)->at(0);
+  ($r) = (2 * $r0 + 1);
+  ($conc) = rvals($r,$r);
+  ($xvals) = xvals($r,$r)->clump(-1);
+  ($yvals) = yvals($r,$r)->clump(-1);
+  ($c1) = $conc->clump(-1);
+  ($w) = which($c1 < $radius / $f->{'dx'});
+  ($n) = $w->nelem;
+  
+  my($cork_flux) = $f->{'cork_size'} * $f->{'cork_size'} * $f->{'cork_B'} * 3.14159 * 1e16;
+  my($n_corks) = floor(abs($flux) / $cork_flux + 0.5);
+  my($np) = ( ($flux>0) ? "p" : "n" );
+  print "gen_flux_concentration:  $n_corks $np corks for $flux maxwells\n";
+  
+  my($i);
+
+  for($i=0;$i<$n_corks;$i++) {
+    my($cn) = ++($f->{'c_lastnum'});
+    $xy = pdl(
+	      $xvals->at($w->at(floor(rand($n)))) + $location->at(0) - $r0 + 0.5 + rand(1),
+	      $yvals->at($w->at(floor(rand($n)))) + $location->at(1) - $r0 + 0.5 + rand(1));
+
+    if( sum( ($xy > 0) & ($xy < pdl($f->{'g_field'}->dims) - 0.5)) == 2 ) {
+      $f->{"${np}_cork_locs"}->{$cn} = $xy;
+    } else {
+      print "cork at location $xy is out of range....\n";
+    }
+
+  } 
+  
+}
+  
+
+
+sub corks{
+  my($in,$size) = @_;
+  $size = 200 unless defined($size);
+
+  $f = new_field($size,$in);
+  print "f->size=",$f->{'size'},"\n";
+  print "plonking at ".$f->{'plonkrate'}."...\n";
+  $f->{dump} = 1;
+  open DUMPFILE, ">cork-dump.txt";
+  initialize_field($f,$size,$in);
+  close DUMPFILE;
+  return $f;
+}
+1;
+
+
+
