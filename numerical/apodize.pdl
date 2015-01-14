@@ -2,7 +2,7 @@
 
 =for usage
 
-$b = $a->apodize($npix, $dims)
+$b = $a->apodize($npix, $dims, $opt)
 $b = apodize($a, $npix, $dims);
 
 =for ref
@@ -22,11 +22,24 @@ If npix isn't specified then 10% of the dimension is used.
 =cut
 *PDL::apodize = \&apodize;
 use Safe::Isa;
+use PDL::Options;
 
 sub apodize {
  my $in = shift;
  my $npix = shift;
  my $dims = shift;
+ my $u_opt = shift // {};
+
+ my $opt = {
+    parse( {
+        fade_to => 'zeroes'
+	}, 
+	$u_opt
+	)
+	};
+	
+ print "fade_to: ".$opt->{fade_to}."\n" if($opt->{fade_to} !~ m/z/i);
+
 
  my $out = $in->new_or_inplace;
 
@@ -83,11 +96,24 @@ sub apodize {
      }
  }
 
+ my @fade_to;
+ for my $ddex(0..$#$dims) {
+     if($opt->{'fade_to'} =~ m/^z/i) {
+	 $fade_to[$ddex] = zeroes($out->mv($dims->[$ddex],0)->((0)));
+     } elsif($opt->{'fade_to'} =~ m/^m/i) {
+	 $fade_to[$ddex] = ($out->mv($dims->[$ddex],0)->(0) + $out->mv($dims->[$ddex],0)->(-1)) / 2;
+     } else {
+	 die;
+     }
+ }
+
  for my $ddex(0..$#$dims) {
      my $window = 0.5 * (1 - cos ( xvals( $npix->[$ddex] ) * PI / $npix->[$ddex] ));
      my $o = $out->mv( $dims->[$ddex], 0 );
      $o->slice([0,$npix->[$ddex]-1]) *= $window;
+     $o->slice([0,$npix->[$ddex]-1]) += (1-$window) * $fade_to[$ddex];
      $o->slice([-1,-$npix->[$ddex]]) *= $window;
+     $o->slice([-1,-$npix->[$ddex]]) += (1-$window) * $fade_to[$ddex];
  }
   
  return $out;
