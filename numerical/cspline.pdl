@@ -1,0 +1,102 @@
+=sub cspline
+
+=for usage
+
+  $out = cspline($data, $loc, $bound)
+
+=for signature
+
+  cspline( data(n), loc(),  $bound, [o]out() )
+
+=for ref
+
+1-D spline interpolation on a dataset (threaded), with boundary
+conditions.  The data are considered to exist at the PDL index
+coordinates (e.g. if C<data> is a 5-PDL, then data are defined at
+locations 0, 1, 2, 3, and 4).
+
+The return value is the spline-interpolated value of the data at
+the index locations given in C<loc>, which may be floating-point
+values.
+
+C<bound> is a Perl scalar containing the boundary condition as a single
+character.  It may be undefined, in which case the default condition
+is extension. Valid conditions are the usual: 'e' (extension), 't'
+(truncation), 'p' (periodic), 'm' (mirror), or 'l' (linear
+extrapolation).  The default is 'l' (linear extrapolation).
+
+=cut
+
+sub cspline {
+    my $data = shift;
+    my $loc = shift;
+    my $bound = shift // 'l';
+    
+    PDL::my_cspline_interp($data,$loc,$c,$bound);
+}
+
+no PDL::NiceSlice;
+use Inline PDLPP => <<'EOF'
+
+pp_def('my_cspline_interp',
+	Pars=>'dat(k); index(); c(); [o]out();',
+	OtherPars=>'char bound',
+	Inplace=>0,
+	Code=> <<'EOC'
+	long i;
+	long dex;
+       double index;
+       double p[4];
+       long n;
+
+       index = $index();
+       n = $SIZE(k);
+
+       // dex gets floor(index), index gets the remainder.
+       dex = (long)(fabs(index));
+       if(index < 0) {
+	 dex *= -1;
+	 dex -= 1;
+       }
+       index -= dex; 
+
+       // Assemble an array of the (boundaried) four points surrounding the original.
+       dex -= 1;
+       for(i=0; i<4; i++,dex++) {
+	 if(dex < 0 || dex > n-1) {
+	   switch($COMP(bound)) {
+	   case 'e':  p[i] = (dex < 0) ? $dat(k=>0) : $dat(k => n-1);               break;
+	   case 't':  p[i] = 0;               	                                    break;
+	   case 'p':  {
+	     long kk = (((dex < 0) ? (dex + dex * n) : dex) % n);
+	     p[i] = $dat(k => kk); 
+	   } break;
+	   case 'l': 
+	     if(dex < 0) {
+	        p[i] = $dat(k=>0)   + ( (-dex)        * ($dat(k=>0) - $dat(k=>1)));
+	     } else {
+	        p[i] = $dat(k=>n-1) + ( (dex - (n-1)) * ($dat(k=>n-1) - $dat(k=>n-2)));
+	     }
+	     break;
+	   default:   die("my_cspline_interp: boundary violation problems\n");      break;
+	   }
+	 } else {
+	   p[i] = $dat(k => dex);
+	 }
+       }
+       
+       // do the actual calculation (see, e.g., http://en.wikipedia.org/wiki/Cspline)
+       {
+	 double index1 = 1 - index;
+	 double h00 = (1 + 2*index) * index1 * index1;
+	 double h10 = index * index1 * index1;
+	 double h01 = index * index * (3 - 2*index);
+	 double h11 = - index * index * index1;
+	 double m0 = 0.5 * (1 - $c()) * (p[2] - p[0]);
+	 double m1 = 0.5 * (1 - $c()) * (p[3] - p[1]);
+
+	 $out() = h00 * p[1] + h10 * m0 + h01 * p[2] + h11 * m1;
+       }
+EOC
+       );
+EOF
