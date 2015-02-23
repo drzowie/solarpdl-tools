@@ -1,0 +1,41 @@
+no PDL::NiceSlice;
+use Inline Pdlpp => <<'EOF';
+
+pp_def('solve_quad',
+	Pars=>'coeffs(n=3); [o]sols(s=2); [t]parts(s);',
+	GenericTypes=>[F,D],
+	Code=> <<'EOC',
+
+/* Stash the denominator and the discriminant. */
+$parts(s=>0) = 1.0 / ($coeffs(n=>2) * 2);
+$parts(s=>1) = $coeffs(n=>1) * $coeffs(n=>1) - 4 * $coeffs(n=>2) * $coeffs(n=>0);
+
+if($parts(s=>1) >= 0) {
+
+  /* One or more solutions exist.  Put them in the output. */
+  $parts(s=>1) = sqrt($parts(s=>1));
+  $sols(s=>0) = $parts(s=>0) * ( -$coeffs(n=>1) + $parts(s=>1) );
+  $sols(s=>1) = $parts(s=>0) * ( -$coeffs(n=>1) - $parts(s=>1) );
+
+} else {
+  /* no real solutions - set answer to NaN.  Notice the type selection macro! */
+
+  $sols(s=>0) = $sols(s=>1) = $TFD( union_nan_float.f, union_nan_double.d );
+
+}
+
+EOC
+	Docs => <<'EOD'
+=for ref
+
+Solves the quadratic equation ( c + b x + a x^2 = 0 ).  You feed in the coefficients
+in the order (c,b,a) and you get back the solutions.  If no real solutions exist, 
+then you get back NaN.
+
+=cut
+EOD
+);
+
+EOF
+
+*solve_quad = \&PDL::solve_quad;
