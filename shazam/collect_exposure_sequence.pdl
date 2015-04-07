@@ -26,15 +26,14 @@ v0.1 - 8-May-2009
 
 =cut
 $PDL::BIGPDL = 1;
-
 sub collect_exposure_sequence {
     my $dir = shift;
-    my $nmax = shift;
-    my $step = shift || 1;
+    my $nmax = shift // 5;
+    my $step = shift // 1;
     print ("dir=$dir, nmax=$nmax, step=$step\n");
     
     unless($dir =~ m:^[\/\.]:) {
-	$basedir = $ENV{'SHAZAM_DATA_DIR'} || "/data";
+	$basedir = $ENV{'SHAZAM_DATA_DIR'} || ".";
 	$dir = "$basedir/$dir";
     }
     print "searching $dir/...\n";
@@ -45,7 +44,7 @@ sub collect_exposure_sequence {
 		    my $bn = $hdrhash->{$b}->{EXPTIME};
 		    $an <=> $bn;
                    } 
-               <$dir/*_e*.fits>;
+               <$dir/*.fits>;
     undef $hdrhash;
     
     print "collect_exposure_sequence: found ".(@files+0)." files\n";
