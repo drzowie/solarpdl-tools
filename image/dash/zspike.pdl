@@ -1,0 +1,93 @@
+=head2 zspike
+
+=for ref
+
+Given a time sequence of images, identify "spikes" that exceed a threshold in a single frame.
+
+This is a voting algorithm based on ZSPIKE.PRO from the 1990s.
+
+You feed in either a list ref of images, or an XxYxt cube of pixels as a PDL.  You get back a 
+despiked cube and, in list context, a cube of spikes.  The output is in the same format you fed in
+to start with.
+
+The spike detection is based purely on a temporal voting scheme. 
+
+You can feed in some options:
+
+=over 3
+
+=item bad 
+
+(default is 0) - if this is set to 1, then the spikes are set to BAD
+instead of being interpolated from the surrounding values.
+
+=item nvotes
+
+(default is 3) - number of 'voting' frames on either side of the central
+frame; actual number of votes is twice this.
+
+=item nyes
+
+(default is 4) - number of 'voting' frames that must vote the central 
+value is a spike, for it to be marked as such.
+
+=item nno
+
+(default is 2) - number of 'voting' frames that must vote NO to veto
+marking the central value as a spike.
+
+=item absdiff
+
+(default is undef) - if set, this is an absolute difference, in DN,
+required for a pixel to 'vote' its central value.  If the central value
+is this much higher than a given voting value, then the central value
+is voted to be a spike.  If it's this much lower, the veto count is 
+incremented.
+
+=item sigmadiff
+
+(default is undef) - if this is set, then each pixel is treated as a
+time series and the calculated sigma (RMS variation from the mean) of 
+the timeseries is used to calculate a difference threshold at each 
+location.
+
+=back
+
+=for usage
+
+$in = [ mrfits(@files) ];
+$out = zspike( $in, \%opt );
+($out,$spikes) = zspike( $in, \%opt );
+
+$in = pdl( mrfits(@files) );
+$out = zspike( $in );
+($out,$spikes) = zspike( $in );
+
+=for author
+
+Craig DeForest (2015).  This file is released under the disjunction of the GPLv2 and the Perl Artistic license.
+
+=cut
+
+use PDL::Options;
+
+sub zspike {
+    my $images = shift;
+    my $u_opt = shift // {};
+    
+    my %opt = parse( {
+	bad       => 0,
+	nvotes    => 3,
+	nyes      => 4,
+        nno       => 2,
+        absdiff   => undef,
+        sigmadiff => undef
+    }, $u_opt);
+    my $opt = \%opt;    
+
+    ## Lame - put everything in a vast PDL for now.
+    if(ref($images) =~ m/ARRAY/) {
+	$images = pdl($images);
+    }
+    
+}
