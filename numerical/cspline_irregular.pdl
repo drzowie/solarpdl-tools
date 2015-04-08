@@ -39,8 +39,8 @@ sub cspline_irregular {
 }
 
 no PDL::NiceSlice;
-`mkdir ./_Inline`;
-use Inline (PDLPP=>Config=>DIRECTORY=>"./_Inline/");
+`mkdir /tmp/_Inline/`;
+#use Inline (PDLPP=>Config=>DIRECTORY=>"/tmp/_Inline/");
 use Inline PDLPP => <<'EOF';
 
 pp_def('my_cspline_irregular',
