@@ -1,0 +1,91 @@
+=head2 minismooth.pdl - make a smoothed image from local minima
+
+=cut
+
+no PDL::NiceSlice;
+
+*minismooth = \&PDL::minismooth;
+
+sub PDL::minismooth {
+    my $im = shift;
+    die "minismooth requires a PDL!" unless(ref($im) eq 'PDL');
+    my $size = shift // 21;
+    my $nth = shift // 1;
+    $nth = 1 if($nth<1);
+    $size=1 if($size<1);
+    my $sm = PDL->null;
+
+    print "size=$size; nth=$nth\n";
+
+    PDL::_minismooth_int($im,$sm,PDL->null,$size,$nth);
+    return $sm;
+}
+
+use Inline Pdlpp => <<'EOF';
+pp_def('minismooth',
+	Pars=>'im(n,m); [o]sm(n,m); [t]list(n);',
+	OtherPars=>'long size; long nth;',
+        PMCode => << 'EOPMC',
+       print "foo!\n";
+EOPMC
+	Code => <<'EOC',
+	{
+	  long i,j,k,l,ii,jj;
+	  long sz = ($COMP(size)-1)/2;
+	  long nn,mm;
+	  long n_kept;
+	  $GENERIC() current;
+	  for(i=0;i<$SIZE(m);i++) {
+	    for(j=0; j<$SIZE(n); j++) {
+	      n_kept = 0;
+
+	      for(k=-sz; k<=sz; k++) {
+		for(l=-sz; l<=sz; l++  ) {
+		  nn = j+l; 
+		  if(nn<0) nn=0;
+		  if(nn>=$SIZE(n)) nn=$SIZE(n)-1;
+		  mm = i+k;
+		  if(mm<0) mm=0;
+		  if(mm>=$SIZE(m)) mm=$SIZE(m)-1;
+		  current = $im(n=>nn, m=>mm);
+		  if( (n_kept < $COMP(nth)) || current < $list(n=>0) ) {
+		    // Walk through to find the first number smaller than this one
+		    for(ii=0; ii < n_kept && $list(n=>ii) >= current; ii++)
+		      ;
+		    if(n_kept < $COMP(nth)) {
+		      // push stuff on the back
+		      for(jj=n_kept; jj>ii; jj--) {
+			$list(n=>jj) = $list(n=>jj-1);
+		      }
+		      n_kept++;
+		    } else {
+		      // we're full -- drop stuff off the front
+		      ii--;
+		      for(jj=0; jj<ii; jj++) {
+			$list(n=>jj) = $list(n=>jj+1);
+		      }
+		    }
+		    $list(n=>ii) = current;
+
+		    //		    if(j==854 && i==691) {
+		    //		      printf("nn=%d; mm=%d; current: %10g;\tlist: ",nn,mm,current);
+		    //for(ii=0;ii<n_kept;ii++) {
+		    //	printf("\t%10g ",$list(n=>ii));
+		    //}
+		    //printf("\n");
+		    //}
+			     
+		  } // end of list maintenance
+		} // end of l loop
+	      } // end of k loop 
+
+	      $sm(n=>j, m=>i) = $list(n=>0);
+
+	    } // end of j loop
+	  } // end of i loop
+	}
+EOC
+	);
+EOF
+
+1;
