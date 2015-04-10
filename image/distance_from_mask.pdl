@@ -1,0 +1,32 @@
+=head2 distance_from_mask
+
+=for ref
+
+Generate an image showing the approximate distance (in pixels) from each location to the nearest true value in a mask,
+using the method of brute-force dilation from each pixel where the mask is trus.
+
+=cut
+use strict;
+
+sub distance_from_mask {
+    my $mask = shift;
+    die "distance_from_mask: need a 2D PDL" unless ( defined($mask) && UNIVERSAL::isa($mask,"PDL") && $mask->ndims==2) ;
+
+    our ($coords, $offsets, $out2, $out, $new, $out2alt, $xof, $yof, $xy);
+    $coords = whichND($mask);
+
+    $offsets = rvals($mask->dim(0)*2 + 1, $mask->dim(1)*2 + 1);
+    $out2 = zeroes($mask->dims,2) + $mask->dim(0) + $mask->dim(1);
+    $out = $out2->(:,:,(0));
+    $new = $out2->(:,:,(1));
+    $out2alt = $out2->mv(2,0);
+
+    $xof = $mask->dim(0);
+    $yof = $mask->dim(1);
+    for $xy(dog $coords) {
+	my ($x,$y) = $xy->list;
+	$new .= $offsets->slice( [ $xof - $x, $xof - $x + $xof - 1, 1 ], [ $yof - $y, $yof - $y + $yof - 1, 1] );
+	$out .= $out2alt->minimum;
+    }
+    return $out->sever;
+}
