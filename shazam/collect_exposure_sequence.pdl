@@ -12,7 +12,7 @@ variable "SHAZAM_DATA_DIR".  The output is an array ref containing two
 fields: an N-PDL containing the exposure times found, in increasing
 order; and an  NxWxH-PDL containing the exposure data.
 
-$nmax is the maximu number of images to accumulate for a given exposure 
+$nmax is the maximum number of images to accumulate for a given exposure 
 time, and $step lets you take every $n^{th}$ exposure time in the exposure
 sequence; together, they can save much time and memory.
 
@@ -82,13 +82,12 @@ sub collect_exposure_sequence {
     @nread = ();
     for $i(0..$#files) {
 	unless($slots[$i] % $step) {
-	    unless($nmax && $nread[$slots[$i]/$step] >= $nmax) {
+	    unless(($nmax) && ($nread[$slots[$i]/$step]//0) >= $nmax) {
 		$o2->(($slots[$i] / $step)) += rfits($files[$i]);
 		$nread[$slots[$i]/$step]++;
 		print "."; flush STDOUT;
 	    }
 	}
-       if($i%100==0){print "-"; flush STDOUT;}
     }
     
     print "Dividing (o2 is ",join("x",$o2->dims),"; slots is ".(0+@slots)."..."; flush STDOUT;

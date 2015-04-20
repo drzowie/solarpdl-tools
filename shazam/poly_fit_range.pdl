@@ -1,4 +1,4 @@
-=sub poly_fit_range - do a polynomial fit
+=head2 poly_fit_range - do a polynomial fit
 
 =for usage
 
@@ -21,24 +21,40 @@ Because this was hacked together fast, I cut-and-pasted the
 polynomial evaluation code in the C part of the procedure; this makes 
 the routine longer than it necessarily has to be.
 
-=cut
+The fit is done with a custom-hacked simplex.  That is slow but reliable.
 
+=cut
+use strict;
 sub poly_fit_range {
     my $x = shift;
     my $data = shift;
-    my $order = shift;
+    my $order = shift; if(UNIVERSAL::isa($order,"PDL")){$order=$order->at(0,0);}
     my $lo = shift || undef;
     my $hi = shift || undef;
-    my $out = shift || undef;
 
+    my $maxi = 250;
+    
     my $loflag = (defined $lo);
     my $hiflag = (defined $hi);
     
     if($order > 10) {
 	die "poly_fit_range: maximum polynomial order is 10 (you wanted $order)\n";
     }
- 
-    $out = PDL::my_poly_fit_range($x, $data, $lo,$hi,$loflag,$hiflag, $order);
+
+
+    my $out = zeroes($order+2,$data->dim(1),$data->dim(2));
+    print "out is ".join("x",$out->dims)."\n";
+    
+    PDL::my_poly_fit_range($x, $data, $lo, $hi, $out, $loflag, $hiflag, $maxi);
+
+    my $maxi_locs =whichND($out->(($order+1))==$maxi);
+    $out->(0:$order)->mv(0,-1)->indexND($maxi_locs) .= asin(pdl(1.1));
+
+    if(wantarray) {
+        return($out->(0:$order)->sever, $out->(($order+1))->sever);
+    } else {
+	return($out->(0:$order)->sever);
+    }
 }
 
 no PDL::NiceSlice;
@@ -46,7 +62,7 @@ use Inline PDLPP => <<'EOF'
 
 pp_def('my_poly_fit_range',
 	Pars=>'x(k); data(k); lo(); hi(); [o]out(n);',
-	OtherPars=>'char loflag; char hiflag; long order => n',
+	OtherPars=>'char loflag; char hiflag; long maxi',
 	Inplace=>0,
 	Code=> <<'EOC'
        static long foo = 0;
@@ -55,7 +71,7 @@ pp_def('my_poly_fit_range',
        double wgtS, avS;
        long order;
 
-       order = $SIZE(n);
+       order = $SIZE(n)-1;
        n = 0;
        avX = avY=0;
        $out(n=>2) = 0;
@@ -123,7 +139,7 @@ pp_def('my_poly_fit_range',
 	 double val, xpow;
 	 int err_ct;
 	 int termflag;
-
+	 long maxi = $COMP(maxi);
 
 	 /* Initialize the simplex */
 	 for(ii=0;ii<=order;ii++) {
@@ -133,7 +149,7 @@ pp_def('my_poly_fit_range',
 	   vecs[0][ii] = YI;
 	   vecs[1][ii] = avS;
 	   if(ii<order)
-	     vecs[ii][ii] += 1;
+	     vecs[ii][ii] += 0.1;
 	   
 
 	   // Calculate the RMS error over the sampled points
@@ -194,7 +210,7 @@ pp_def('my_poly_fit_range',
 	   }
 
 	   // Check for termination...
-	   if(  ( (errs[b] - errs[w]) / (errs[w])) < 1e-5  ) {
+	   if(  ( (errs[b] - errs[w]) / (errs[w])) < 1e-4  ) {
 	     // Errors look equal - test the error in the centroid too...
 	     err_acc = 0;
 	     err_ct = 0;
@@ -216,7 +232,7 @@ pp_def('my_poly_fit_range',
 	       %}
 	     err_acc /= (err_ct==0 ? 1 : err_ct);
 	     
-	     if( fabs( (errs[b] + errs[w])*0.5 - err_acc) / errs[w] < 1e-5 ) 
+	     if( fabs( (errs[b] + errs[w])*0.5 - err_acc) / errs[w] < 1e-4 ) 
 	       termflag = 1;
 	   }
 		
@@ -377,7 +393,7 @@ pp_def('my_poly_fit_range',
 
 	   ii++; 
 
-	   if(ii>=500)
+	   if(ii>=maxi) 
 	     termflag = 1;
 
 	   }	     // end of termflag check

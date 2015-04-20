@@ -26,24 +26,33 @@ Craig DeForest
 
 =cut
 
+use strict;
+use PDL::Options;
+
 sub gen_calibration {
     my $darks = shift;
     my $flats = shift;
-    my $n = shift || 10;
-    my $normalization = shift || 1;
+    my $u_opt = shift // {};
 
-    my $fl = $flats->[1]->copy;
+    my %opt;
+
+    %opt = parse( {
+    	 min => 10,
+	 max => 65000,
+	 order => 4
+    	 }, $u_opt);
+
+    my  $fl = $flats->[1]->copy;
 
     # Dark-correct the flat exposure files
     print "Dark-correcting flat exposures...\n";
-    for $i(0..$flats->[0]->nelem-1) {
-	$d = dark($darks,$flats->[0]->at($i));
+    for my $i(0..$flats->[0]->nelem-1) {
+	my $d = dark( $darks, $flats->[0]->at($i) );
 	$fl->(($i)) -= $d;
     }
 
     print "Fitting the corrected exposures...\n";
-    $out = poly_fit_domain($fl,$flats->[0],5,0,3000);
-
+    my $out = poly_fit_range($flats->[0],$fl, $opt{order}, $opt{min}, $opt{max});
     return $out;
 }
 

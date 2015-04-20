@@ -13,18 +13,19 @@ the image is returned fixed up to intensity units.
 Works by C-spline interpolation on the DN intensity axis.
 
 =cut
+use strict;
 
 sub calibrate_image {
     my $im = shift;
     my $cal = shift;
     my $dark = shift;
 
-    my $out = $im->new_or_inplace;
+    my $out = $im->copy;
     
     # Convert the image into an index into the DN tiepoint array...
-    $uncal = float($im) - $dark;
+    my $uncal = float($im) - $dark;
 
-    $terms = $uncal->(*1) ** xvals($cal->dim(0));
+    my $terms = $uncal->(*1) ** xvals($cal->dim(0));
     $out = ($terms * $cal)->sumover;
 
     return $out;

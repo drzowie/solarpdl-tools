@@ -13,16 +13,42 @@ millisecond exposures).
 
 =cut
 
+use PDL::Options;
+use PDL::NiceSlice;
+use strict;
+
 sub gen_darks {
-    $ds = $_[3];
+    my $ds = $_[3] // 0;
+    my ($u_opt, $opt, %opt);
+    if(ref($ds) eq 'HASH') {
+	$u_opt = $ds;
+	$ds = undef;
+    } else {
+	$u_opt = $_[4] // {};
+    }
+
+    %opt = parse ( {
+	min   => 10,
+	max   => 65000,
+	order => 4,
+	ds    => 0
+		   },
+		   $u_opt
+	);
+    
+    if(defined($ds) && !$opt{ds}) {
+	$opt{ds} = $ds;
+    }
+    
     print "gen_darks...\n";
-    $seq = collect_exposure_sequence(@_[0..2]);
+    my $seq = collect_exposure_sequence(@_[0..2]);
+
     if($ds) {
-    print "gen_darks: Downsampling by $ds...\n";
-      $seq->[1] = $seq->[1]->(:,0:-1:$ds,0:-1:$ds);
+	print "gen_darks: Downsampling by $ds...\n";
+	$seq->[1] = $seq->[1]->(:,0:-1:$ds,0:-1:$ds);
     }
     
     print "Fitting dark current...\n";
-    return poly_fit_range($seq->[0],$seq->[1],4,10,3500);
+    return poly_fit_range($seq->[0],$seq->[1], $opt{order}, $opt{min}, $opt{max});
 
 }
