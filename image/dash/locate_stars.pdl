@@ -1,0 +1,21 @@
+=head2 locate_stars
+
+=for ref
+
+Extracts the locations of the stars in an image.
+
+You feed in an image and some options, and you get back a 3x<n> array
+of star centroids.  The output columns contain x, y, and total stellar value.
+
+Options are:
+
+=over 3
+
+=item bkg_size (default 33)
+
+This is the size of the region from which to gather a background before doing starfield extraction.  The pixels in the bkg_size x bkg_size region around each pixel are used to calculate a background.  Should be odd.  If it's even, it gets rounded up to the next larger number.
+ 
+=item bkg_pct (default 10)
+
+This is the percentile value of the region to treat as the background.
+

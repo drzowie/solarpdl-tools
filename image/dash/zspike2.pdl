@@ -93,6 +93,8 @@ sub zspike2 {
         sigmadiff  => undef,
 	spikestash => undef,
 	alloc_frac => 0.01,
+	locs_only  => 0,
+	replace    => 0,
     }, $u_opt);
     my $opt = \%opt;    
 
@@ -127,6 +129,7 @@ sub zspike2 {
     if(!defined($opt->{absdiff}) and !defined($opt->{sigmadiff})) {
 	$opt->{sigmadiff} = 5;
     }
+
     if( defined($opt->{sigmadiff}) ) {
 	if( ref($opt->{sigmadiff}) =~ m/ARRAY/ ) {
 	    my $medians = $images->mv(2,0)->medover;
@@ -134,27 +137,63 @@ sub zspike2 {
 		qsort->( ( $opt->{sigmadiff}->[0] / 100 * ($images->dim(2)-1) ) )->sever;
 	} else {
 	    my $means = $images->mv(2,0)->average;
-	    my $sigmas = (($images - $means)**2)->mv(2,0)->average->sqrt;
-	    $diffs = $sigmas * $opt->{sigmadiff};
+	    my $s = $images - $means;
+	    $s *= $s;
+	    $diffs = $s->mv(2,0)->average->sqrt * $opt->{sigmadiff};
 	}
     }
     if( defined($opt->{absdiff}) ) {
-	$diffs = zeroes($images) + $absdiff;
+	$diffs = zeroes($images->(:,:,(0))) + $opt->{absdiff};
+	print "setting difference to $opt->{absdiff}...";
     }
 
     ##############################
     # Do the actual voting and 
     print "Voting...\n";
-    my $marks = zeroes(3, $ims->nelem * $opt->{alloc_frac});
+    my $marks = zeroes(3, $images->nelem * $opt->{alloc_frac});
     PDL::zspike_helper($images, $diffs, $marks, $opt->{nvotes}, $opt->{nyes}, $opt->{nno});
-    return $marks;
+    our $diffs2 = $diffs;
+
+    $marks = $marks->(:,1:$marks->at(0,0))->sever;
+    
+    if($opt->{locs_only}) {
+	return $marks;
+    }
+
+    my $out;
+    my $spikes;
+    
+    if(wantarray) {
+	$spikes = zeroes(byte,$images->dims);
+	$spikes->indexND($marks) .= $images->indexND($marks);
+    }
+    
+    if($images->is_inplace) {
+	$images->set_inplace(0);
+	$out = $images;
+    } else {
+	$out = $images->copy;
+    }
+    $out->badflag(1);
+    $out->indexND($marks) .= $out->badvalue();
+
+    if($opt->{replace}) {
+	$out->indexND($marks) .= $out->range($marks-1,[3,3],'e')->reorder(1,2,0)->clump(2)->average;
+    }
+
+    if(wantarray) {
+	return ($out, $spikes, $marks);
+    } else {
+	return ($out);
+    }
 }
 
 no PDL::NiceSlice;
 use Inline Pdlpp =><<'EOF';
 
 pp_def('zspike_helper',
-       Pars=>'ims(w, h, n); diffs(w, h); [o]marks( c=3, m )',
+       Pars=>'ims(w, h, n); diffs(w, h); [o]marks( c, m )',
+       GenericTypes=>['F','L'],
        OtherPars => 'int nvotes; int nyes; int nno',
        Code => <<'EOC',
    
@@ -162,6 +201,7 @@ pp_def('zspike_helper',
    long im = 1;
 
    $marks(c=>0, m=>0) = 0;
+   $marks(c=>1, m=>0) = 1; // check to make sure it works
    
    for( in=1; in < $SIZE(n); in++ ) {
    	for( iy=0; iy < $SIZE(h); iy++ ) {
@@ -177,9 +217,9 @@ pp_def('zspike_helper',
 		      iv = 0;
 		    if(iv < $SIZE(n)) {
 		       $GENERIC() v = $ims(w=>ix, h=>iy, n=>iv);
-		       if( v <= iv - $diffs(w=>ix, h=>iy) ) 
+		       if( v <= val - $diffs(w=>ix, h=>iy) ) 
 		         yes++;
-		       if( v >= iv + $diffs(w=>ix, h=>iy) )
+		       if( v >= val + $diffs(w=>ix, h=>iy) )
                          no++;
 		    } else { 
 		       iv += $COMP(nvotes) + $COMP(nvotes);
