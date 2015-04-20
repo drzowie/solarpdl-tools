@@ -1,0 +1,54 @@
+=head2 mandel
+
+=for example
+
+  $coords = ndcoords(1000,1000)/500 - 1;
+  $foo = mandel($coords, 500);
+
+=for ref
+
+C<mandel> generates mandelbrot convergence numbers up to a maximum
+number of iterations.  It is useful for visualizing the mandelbrot
+set.  
+
+More interestingly, mandel is an example of how to wrap a simple
+function in an inline PP call.  The mandelbrot algorithm itself is
+pretty simple and is implemented in C as the core of a PP function.
+When you invoke C<mandel()> from the perldl shell, this file
+(C<mandel.pdl>) gets autolaoded.  That pulls in Inline::Pdlpp to 
+generate and link the PP code JIT.  
+
+This file is copyright (C) Craig DeForest 2013, and may be copied,
+modified, or distributed under the Perl Artistic License or the GPLv2.
+
+=cut
+
+no PDL::NiceSlice;
+use Inline Pdlpp=><<'EOF';
+
+pp_def('mandel',
+	Pars=>'c(n=2);[o]o();',
+	OtherPars=>'int max_it',
+	Code=><<'EOC'
+ 	int i;
+	$GENERIC() rp0 = $c(n=>0);
+	$GENERIC() ip0 = $c(n=>1);
+	$GENERIC() rp = rp0;
+	$GENERIC() ip = ip0;
+	$GENERIC() rp2 = rp*rp;
+	$GENERIC() ip2 = ip*ip;
+	
+	for(i=$COMP(max_it); rp2 + ip2 < 4 && i; i--) {
+          ip *= 2*rp;
+	  rp = rp2 - ip2;
+	  rp += rp0;
+	  ip += ip0;
+	  rp2 = rp*rp;
+	  ip2 = ip*ip;
+   	}
+	$o() = i;
+EOC
+);
+EOF
+
+*mandel = \&PDL::mandel;

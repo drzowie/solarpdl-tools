@@ -1,0 +1,39 @@
+sub zoom {
+
+$magicno = pdl(-0.74897482830178,0.05708182195943);
+
+$stscale = pdl(sqrt(10));
+
+$nsteps = 2700;
+$mags = 13.5;
+
+
+$npix = 500;
+$condense = 3;
+$ndc = ndcoords($npix,$npix) * $condense;
+
+$cbmax = 1300;
+
+$rgb = zeroes(3,600);
+$rgb->((0))->range([-200],[401],'p') .= sin( PI/400 * xvals(401) );
+$rgb->((1))->range([   0],[401],'p') .= sin( PI/400 * xvals(401) );
+$rgb->((2))->range([ 200],[401],'p') .= sin( PI/400 * xvals(401) );
+$rgb2 = $rgb->mv(0,1);
+
+multicore([0..$nsteps],
+	  sub { $i= $nsteps - shift;
+		$scale = $stscale * 10**( - $i/$nsteps * $mags );
+		$foo = mandel2($magicno, $scale, $npix * $condense, 2500);
+		$foob = $foo->range($ndc, [$condense,$condense],'e')->mv(0,-1)->mv(0,-1)->clump(2); 
+		$foo2 = $foob->clip(0,$cbmax)/$cbmax*500;
+		$foo3 = $rgb2->index($foo2->(*1))->mv(0,-1)->medover; # mv puts rgb at the end
+		
+		$w=gpwin(pngcairo,size=>[600,600,'px'],output=>sprintf("Frame-%4.4d.png",$i));
+		$w->plot(with=>'rgbimage',$foo3->dog,
+			  {j=>1,xtics=>0,ytics=>0,
+			   title=>"Zoom: step $i of $nsteps; scale = ".sprintf("%.3g",$scale->at(0)),colorb=>0,clut=>'rainbow'});
+		$w->close;
+		print "$i ";
+	  }
+, 3);
+}
