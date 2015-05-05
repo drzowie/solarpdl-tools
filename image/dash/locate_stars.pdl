@@ -19,3 +19,57 @@ This is the size of the region from which to gather a background before doing st
 
 This is the percentile value of the region to treat as the background.
 
+=item star_thresh (default 30)
+
+This is the number of times the background value to treat as the stellar threshold.
+
+=back
+
+=cut
+
+use PDL::Options;
+use strict;
+use PDL::NiceSlice;
+sub locate_stars {
+    my $starfield = shift;
+    my $u_opt = shift // {};
+
+    my %opt = parse( {
+	bkg_size => 33,
+	bkg_pct => 10,
+	bkg_skip => 2,
+	star_thresh => 2,
+	margin => 20
+		     },
+		     $u_opt
+	);
+    print "minismooth...";
+    my $bk = minismooth($starfield, $opt{bkg_size}, int ($opt{bkg_pct}/100 * $opt{bkg_size}*$opt{bkg_size} + 0.5));
+    print "convolve...";
+    my $bkkr = rvals($opt{bkg_size}*2+1,$opt{bkg_size}*2+1);
+    my $bkk = exp(-$bkkr*$bkkr/$opt{bkg_size}/$opt{bkg_size}*4);
+    $bkk /= $bkk->sum;
+    $bk->inplace->convolveND($bkk,{bound=>'e'});
+
+    my $im = $starfield - $bk->float;
+    print "local maxima...";
+    my $sflags = $im->range(ndcoords(3,3)-1,[$im->dims],'t')->sever;
+    $sflags->((1),(1)) .= 0;
+
+    my $sfmax = $sflags->maximum->maximum;
+    my $maxmask = ($im > $sfmax);
+
+    print "whichND...";
+    my $starmask = $maxmask & 
+	($im >= ($opt{star_thresh}) * ($im->convolveND(ones($opt{bkg_size},$opt{bkg_size})/$opt{bkg_size}/$opt{bkg_size})));
+    $starmask->(0:$opt{margin}-1,:) .= 0;
+    $starmask->(-1:-$opt{margin},:) .= 0;
+    $starmask->(:,0:$opt{margin}-1) .= 0;
+    $starmask->(:,-1:-$opt{margin}) .= 0;
+    
+    my $stars = whichND($starmask);
+    print "\n";
+    return $stars;
+}
+
+

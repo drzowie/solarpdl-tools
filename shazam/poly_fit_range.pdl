@@ -41,8 +41,9 @@ sub poly_fit_range {
 	die "poly_fit_range: maximum polynomial order is 10 (you wanted $order)\n";
     }
 
-
-    my $out = zeroes($order+2,$data->dim(1),$data->dim(2));
+    # Ensure threading works right between $x and $data
+    my $thread_dummy = $x->((0))+$data->((0));
+    my $out = zeroes($order+2, $thread_dummy->dims);
     print "out is ".join("x",$out->dims)."\n";
     
     PDL::my_poly_fit_range($x, $data, $lo, $hi, $out, $loflag, $hiflag, $maxi);

@@ -16,6 +16,10 @@ fields.
 If you specify the intended exposure time then the $darks are discarded and 
 the return value gets just a single dark frame for the intended exposure time.
 
+The returned calibration PDL is a polynomial for each location in the image, relating
+value in the image (independent variable) to equivalent exposure time during
+the calibration sequence (dependent variable).
+
 =for author
 
 Craig DeForest
@@ -23,6 +27,7 @@ Craig DeForest
 =for history 
 
 0.1 9-May-2009
+0.2 21-April-2015
 
 =cut
 
@@ -52,7 +57,8 @@ sub gen_calibration {
     }
 
     print "Fitting the corrected exposures...\n";
-    my $out = poly_fit_range($flats->[0],$fl, $opt{order}, $opt{min}, $opt{max});
+    print "fl is ".join("x",$fl->dims)."\n";
+    my $out = poly_fit_range($fl, $flats->[0], $opt{order}, $opt{min}, $opt{max});
     return $out;
 }
 
