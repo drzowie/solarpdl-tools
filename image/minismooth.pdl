@@ -20,7 +20,7 @@ sub PDL::minismooth {
     die "minismooth requires a PDL!" unless(ref($im) eq 'PDL');
     my $size = shift // 21;
     my $nth = shift // 1;
-    my $skip = shift // int($size/4);
+    my $skip = shift // int($size/20);
     $nth =  1 if($nth<1);
     $size = 1 if($size<1);
     $skip = 1 if($skip<1);
