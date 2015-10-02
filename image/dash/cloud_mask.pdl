@@ -35,11 +35,16 @@ sub cloud_mask {
     my $u_opt = shift // {};
 
     my %opt = parse( {
-	minismooth => [ 55, 20 ],
+	minismooth => [ 200, 20 ],
+	bright_minismooth => [200, 10, 5],
+	bright_region_smoothing => [31,10,3],
+	imbk => 151,
 	shw => 1,
+	bright_thresh => 8, # background median units
 	star_thresh => 100,
 	dist_thresh => 100,
 	margin => 0,
+	dumphash => undef
 		     },
 		     $u_opt);
     my $opt = \%opt;
@@ -68,17 +73,19 @@ sub cloud_mask {
     my $dist_mask_edges = $dist_mask & ( $dist_mask->range(ndcoords(3,3)-1, [$dist_mask->dims], 't')->sumover->sumover < 9 );
     my $dist_mask_dist = distance_from_mask($dist_mask_edges, {max=>$opt->{dist_thresh}+1});
     my $cloud_mask = ($dist_mask | ($dist_mask_dist <= $opt->{dist_thresh}));
+    my $basic_cloud_mask = $cloud_mask->copy;
 
     ##############################
     # Now find bright areas...
     # (hardwired for now)
 
-    my $imbk = minismooth($im_in->float, 151,0.01*(151*151));
+    print "minismooth 1...\n";
+    my $imbk = minismooth($im_in->float, $opt->{bright_minismooth});
+    print "minismooth 2...\n";
+    my $bks = minismooth(($im_in - $imbk), $opt->{bright_region_smoothing});
+    print "...\n";
 
-    my $bks = minismooth(($im_in - $imbk), 21, 0.01*(21*21));
-
-
-    my $bright_mask = $bks > ($bks->abs->median * 10);
+    my $bright_mask = $bks > ($bks->abs->median * $opt->{bright_thresh});
 
     my $bright_mask_edges = $bright_mask & ($bright_mask->range(ndcoords(3,3)-1,[$bright_mask->dims],'t')->sumover->sumover < 9);
     $bright_mask = $bright_mask | (distance_from_mask($bright_mask_edges, {max=>$opt->{dist_thresh}+1}) < $opt->{dist_thresh});
@@ -91,6 +98,14 @@ sub cloud_mask {
 	$cloud_mask = ($cloud_mask | ($cloud_mask_dist <= $opt->{margin}));
     }
 
+    if( defined($opt->{dumphash}) && (ref($opt->{dumphash}) eq 'HASH')) {
+    	$opt->{dumphash}->{basic_cloud_mask} = $basic_cloud_mask;
+    	$opt->{dumphash}->{dist} = $dist;
+	$opt->{dumphash}->{dist_mask} = $dist_mask;
+    	$opt->{dumphash}->{imbk} = $imbk;
+	$opt->{dumphash}->{bks} = $bks;
+	$opt->{dumphash}->{bright_mask} = $bright_mask;
+    }
     return $cloud_mask;
 }
 
