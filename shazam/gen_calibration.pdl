@@ -16,6 +16,10 @@ fields.
 If you specify the intended exposure time then the $darks are discarded and 
 the return value gets just a single dark frame for the intended exposure time.
 
+The returned calibration PDL is a polynomial for each location in the image, relating
+value in the image (independent variable) to equivalent exposure time during
+the calibration sequence (dependent variable).
+
 =for author
 
 Craig DeForest
@@ -23,27 +27,38 @@ Craig DeForest
 =for history 
 
 0.1 9-May-2009
+0.2 21-April-2015
 
 =cut
+
+use strict;
+use PDL::Options;
 
 sub gen_calibration {
     my $darks = shift;
     my $flats = shift;
-    my $n = shift || 10;
-    my $normalization = shift || 1;
+    my $u_opt = shift // {};
 
-    my $fl = $flats->[1]->copy;
+    my %opt;
+
+    %opt = parse( {
+    	 min => 10,
+	 max => 65000,
+	 order => 4
+    	 }, $u_opt);
+
+    my  $fl = $flats->[1]->copy;
 
     # Dark-correct the flat exposure files
     print "Dark-correcting flat exposures...\n";
-    for $i(0..$flats->[0]->nelem-1) {
-	$d = dark($darks,$flats->[0]->at($i));
+    for my $i(0..$flats->[0]->nelem-1) {
+	my $d = dark( $darks, $flats->[0]->at($i) );
 	$fl->(($i)) -= $d;
     }
 
     print "Fitting the corrected exposures...\n";
-    $out = poly_fit_domain($fl,$flats->[0],5,0,3000);
-
+    print "fl is ".join("x",$fl->dims)."\n";
+    my $out = poly_fit_range($fl, $flats->[0], $opt{order}, $opt{min}, $opt{max});
     return $out;
 }
 

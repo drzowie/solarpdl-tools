@@ -1,0 +1,31 @@
+=head2 hough
+
+=for ref
+
+Perform a hough transform on an image.
+
+=cut
+
+use PDL::Transform;
+
+sub hough {
+    my $im = shift;
+    my $size = shift;
+    
+    if(defined($size)){
+	$size = pdl($size);
+    } else {
+	$size = pdl(  $im->dim(0)*2 + $im->dim(1)*2,   sqrt($im->dim(0)**2 + $im->dim(1)**2) / 2 );
+    }
+
+    my $out = zeroes($size->list);
+
+    for my $i(0..$size->at(0)-1){
+	print ".";
+	$t = t_rot( 180 * $i / $size->at(0) );
+	my $im1 = $im->map( $t, $out ,{method=>"h"} );
+	push(@demos, $im1);
+	$out->(($i)) .=  $im1->sumover;
+    }
+    return $out;
+}

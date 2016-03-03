@@ -1,0 +1,79 @@
+=head2 locate_stars
+
+=for ref
+
+Extracts the locations of the stars in an image.
+
+You feed in an image and some options, and you get back a 3x<n> array
+of star centroids.  The output columns contain x, y, and total stellar value.
+
+Options are:
+
+=over 3
+
+=item bkg_size (default 33)
+
+This is the size of the region from which to gather a background before doing starfield extraction.  The pixels in the bkg_size x bkg_size region around each pixel are used to calculate a background.  Should be odd.  If it's even, it gets rounded up to the next larger number.
+ 
+=item bkg_pct (default 10)
+
+This is the percentile value of the region to treat as the background.
+
+=item star_thresh (default 30)
+
+This is the number of times the background value to treat as the stellar threshold.
+
+=back
+
+=cut
+
+use PDL::Options;
+use strict;
+use PDL::NiceSlice;
+sub locate_stars {
+    my $starfield = shift;
+    my $u_opt = shift // {};
+
+    my %opt = parse( {
+	bkg_size => 20,
+	bkg_pct => 10,
+	bkg_skip => 2,
+	star_thresh => 75,
+	margin => 20
+		     },
+		     $u_opt
+	);
+    print "minismooth...";
+    my $bk = minismooth($starfield, $opt{bkg_size}, int ($opt{bkg_pct}/100 * $opt{bkg_size}*$opt{bkg_size}/$opt{bkg_skip}/$opt{bkg_skip} + 0.5),$opt{bkg_skip});
+    print "convolve...";
+    my $bkkr = rvals($opt{bkg_size}*2+1,$opt{bkg_size}*2+1);
+    my $bkk = exp(-$bkkr*$bkkr/$opt{bkg_size}/$opt{bkg_size}*4);
+    $bkk /= $bkk->sum;
+    $bk->inplace->convolveND($bkk,{bound=>'e'});
+
+    my $im = $starfield - $bk->float;
+    print "local maxima...";
+    my $sf_lags = $im->range(ndcoords(3,3)-1,[$im->dims],'t')->sever;
+    $sf_lags->((1),(1)) .= 0;
+
+    my $sfmax = $sf_lags->maximum->maximum;
+    my $maxmask = ($im > $sfmax);
+
+    print "normalized-thresh...";
+    my $starmask = $maxmask &
+	( $im > $opt{star_thresh} );
+    
+    #    my $starmask = $maxmask
+#	($im >= ($opt{star_thresh}) * ($im->convolveND(ones($opt{bkg_size},$opt{bkg_size})/$opt{bkg_size}/$opt{bkg_size})));
+    print "whichND...";
+    $starmask->(0:$opt{margin}-1,:) .= 0;
+    $starmask->(-1:-$opt{margin},:) .= 0;
+    $starmask->(:,0:$opt{margin}-1) .= 0;
+    $starmask->(:,-1:-$opt{margin}) .= 0;
+    
+    my $stars = whichND($starmask);
+    print "\n";
+    return $stars;
+}
+
+

@@ -89,7 +89,9 @@ sub spikejones {
     my $amr = (!$am)->range($spikes-($siz-1)/2,$siz,'e');
     my $ac = $a->indexND($spikes);
 
-    $ac .= ($ar * $amr)->mv(0,2)->sumover->sumover / $amr->mv(0,2)->sumover->sumover;
+    if($amr->nelem){
+        $ac .= ($ar * $amr)->mv(0,2)->sumover->sumover / $amr->mv(0,2)->sumover->sumover
+    }
 
     # Try to fill in non-finite values( generally clumped stuff )
     $a = $a->setbadif(!isfinite($a));

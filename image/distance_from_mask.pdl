@@ -1,0 +1,121 @@
+=head2 distance_from_mask
+
+=for ref
+
+Generate an image showing the approximate distance (in pixels) from each location to the nearest true value in a mask,
+using the method of brute-force dilation from each pixel where the mask is true.
+
+=cut
+use strict;
+use PDL::Options;
+
+sub distance_from_mask {
+    my $mask = shift;
+    my $u_opt = shift // {};
+
+    my %opt = parse({
+       maxdist => undef,
+       }
+       , $u_opt
+       	 );
+
+    my $maxdist = $opt{maxdist} // $mask->shape->max;
+    my $out = zeroes($mask) + $maxdist ;
+
+
+    my $coords = $mask->whichND;
+    print "Mask has ".$coords->dim(1)." points...\n";
+
+    my $lookup = rvals($maxdist*2+1, $maxdist*2+1)->clip(0,$maxdist);
+    PDL::dist_from_mask_helper($coords, $lookup, $out, $maxdist);
+    return $out;
+}
+
+no PDL::NiceSlice;
+use Inline Pdlpp =><<'EOF'
+pp_def('dist_from_mask_helper',
+       Pars=>'list(i=2,n); lookup(a,b); [o]dist(w,h);',
+       OtherPars=>'double maxsize',
+       GenericTypes=>['F','D','L'],
+       Code => <<'EOC',
+
+int lk_cen, in, iw, ih, ia, ib;
+int asiz, wsiz, hsiz;
+
+asiz = $SIZE(a);  // size(a) and size(b) should be the same - don't bother checking
+wsiz = $SIZE(w);
+hsiz = $SIZE(h);
+lk_cen = (asiz-1)/2;
+
+for(in=0; in<$SIZE(n); in++) {
+   for( ia=0, iw = $list(i=>0, n=>in) - lk_cen; 
+   	ia < asiz && iw < wsiz;
+	ia++, iw++
+	) {
+
+	if( iw<0 ) {
+	   ia -= iw;
+	   iw = 0;
+	} 
+	if( ia < $SIZE(a) ) {
+	
+		for( ib = 0, ih = $list(i=>1, n=>in) - lk_cen;
+		     ib < asiz && ih < hsiz;
+		     ib++, ih++
+		     ) {
+		     
+		     if( ih<0 ) {
+		     	 ib -= ih;
+			 ih = 0;
+	             }
+		     if( ib < $SIZE(b) ) {
+		     	 
+			 if( $lookup(a=>ia, b=>ib) < $dist(w=>iw, h=>ih) ) {
+			   $dist(w=>iw, h=>ih) = $lookup(a=>ia, b=>ib);
+			 }
+	             }
+                }
+        }
+  }
+}
+
+EOC
+);
+
+EOF
+
+
+
+
+
+
+
+
+
+
+__END__
+
+
+    die "distance_from_mask: need a 2D PDL" unless ( defined($mask) && UNIVERSAL::isa($mask,"PDL") && $mask->ndims==2) ;
+
+    our ($coords, $offsets, $out2, $out, $new, $out2alt, $xof, $yof, $xy);
+    $coords = whichND($mask);
+    print "Masking ".$coords->dim(1)." points";
+
+    $offsets = rvals($mask->dim(0)*2 + 1, $mask->dim(1)*2 + 1);
+    $out2 = zeroes($mask->dims,2) + $mask->dim(0) + $mask->dim(1);
+    $out = $out2->(:,:,(0));
+    $new = $out2->(:,:,(1));
+    $out2alt = $out2->mv(2,0);
+
+    $xof = $mask->dim(0);
+    $yof = $mask->dim(1);
+    for $xy(dog $coords) {
+        print ".";
+	my ($x,$y) = $xy->list;
+	$new .= $offsets->slice( [ $xof - $x, $xof - $x + $xof - 1, 1 ], [ $yof - $y, $yof - $y + $yof - 1, 1] );
+	$out .= $out2alt->minimum;
+    }
+    print "\n";
+    return $out->sever;
+}

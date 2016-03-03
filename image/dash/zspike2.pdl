@@ -1,0 +1,248 @@
+=head2 zspike2
+
+=for ref
+
+Given a time sequence of images, identify "spikes" that exceed a
+threshold in a single frame.
+
+This is a voting algorithm based on my ZSPIKE.PRO from the 1990s,
+which is available in the solarsoft distribution from Lockheed Martin.
+
+You feed in either a list ref of images, or an XxYxt cube of pixels as
+a PDL.  You get back a despiked cube and, in list context, a cube of
+spikes.  The output is in the same format you fed in to start with.
+
+The spike detection is based purely on a temporal voting scheme.
+
+You can feed in some options:
+
+=over 3
+
+=item bad 
+
+(default is 0) - if this is set to 1, then the spikes are set to BAD
+instead of being interpolated from the surrounding values.
+
+=item nvotes
+
+(default is 3) - number of 'voting' frames on either side of the
+central frame; actual number of votes is twice this.
+
+=item nyes
+
+(default is 4) - number of 'voting' frames that must vote the central 
+value is a spike, for it to be marked as such.
+
+=item nno
+
+(default is 2) - number of 'voting' frames that must vote NO to veto
+marking the central value as a spike.
+
+=item absdiff
+
+(default is undef) - if set, this is an absolute difference, in DN,
+required for a pixel to 'vote' its central value.  If the central value
+is this much higher than a given voting value, then the central value
+is voted to be a spike.  If it's this much lower, the veto count is 
+incremented.
+
+=item sigmadiff
+
+(default is undef) - if this is set, then each pixel is treated as a
+time series and the calculated sigma (RMS variation from the mean) of 
+the timeseries is used to calculate a difference threshold at each 
+location.
+
+You can also specify as a multiple of a percentile difference from the 
+median of the data, to handle very spiky distributions.  To make that
+specification, feed a list ref into sigmadiff.  The spec is [ $pct, $n ],
+so that [ 50, 6 ] sets the trigger at 6x the 50th percentile difference
+from the median.  That is useful for distirbutions whose RMS value may be
+set by frequency of large spikes.
+
+=back
+
+=for usage
+
+$in = [ mrfits(@files) ];
+$out = zspike( $in, \%opt );
+($out,$spikes) = zspike( $in, \%opt );
+
+$in = pdl( mrfits(@files) );
+$out = zspike( $in );
+($out,$spikes) = zspike( $in );
+
+=for author
+
+Craig DeForest (2015).  This file is released under the disjunction of the GPLv2 and the Perl Artistic license.
+
+=cut
+
+use PDL::Options;
+
+sub zspike2 {
+    my $images = shift;
+    my $u_opt = shift // {};
+    
+    my %opt = parse( {
+	bad        => 0,
+	nvotes     => 3,
+	nyes       => 4,
+        nno        => 2,
+        absdiff    => undef,
+        sigmadiff  => undef,
+	spikestash => undef,
+	alloc_frac => 0.01,
+	locs_only  => 0,
+	replace    => 0,
+    }, $u_opt);
+    my $opt = \%opt;    
+
+    ## Lame - put everything in a vast PDL for now.
+    die "zspike: need a PDL or an array ref of images" 
+	unless(ref($images)  and 
+	       (ref($images) =~ m/ARRAY/ || UNIVERSAL::isa($images,'PDL')));
+    $images = pdl($images) unless(UNIVERSAL::isa($images,'PDL'));
+
+    my $spikestash;
+
+    # If we want an array out, then we need to store spikes somewhere.
+    # Create the place for that, or use the supplied stash location.
+    if(wantarray) {
+	if(defined($opt->{spikestash})) {
+	    die "zspike: if spikestash is specified it must be a PDL matching the input one."
+		unless(
+		    ref($opt->{spikestash}) &&
+		    UNIVERSAL::isa($opt->{spikestash},'PDL') &&
+		    all($opt->{spikestash}->shape == $images->shape)
+		);
+	    $spikestash = $opt->{spikestash};
+	} else {
+	    $spikestash = zeroes($images);
+	}
+    }
+
+    ##############################
+    # Define the voting threshold array
+    print "Defining voting thresholds...\n";
+    my $diffs;
+    if(!defined($opt->{absdiff}) and !defined($opt->{sigmadiff})) {
+	$opt->{sigmadiff} = 5;
+    }
+
+    if( defined($opt->{sigmadiff}) ) {
+	if( ref($opt->{sigmadiff}) =~ m/ARRAY/ ) {
+	    my $medians = $images->mv(2,0)->medover;
+	    $diffs = ($images - $medians)->abs->mv(2,0)->
+		qsort->( ( $opt->{sigmadiff}->[0] / 100 * ($images->dim(2)-1) ) )->sever;
+	} else {
+	    my $means = $images->mv(2,0)->average;
+	    my $s = $images - $means;
+	    $s *= $s;
+	    $diffs = $s->mv(2,0)->average->sqrt * $opt->{sigmadiff};
+	}
+    }
+    if( defined($opt->{absdiff}) ) {
+	$diffs = zeroes($images->(:,:,(0))) + $opt->{absdiff};
+	print "setting difference to $opt->{absdiff}...";
+    }
+
+    ##############################
+    # Do the actual voting and 
+    print "Voting...\n";
+    my $marks = zeroes(3, $images->nelem * $opt->{alloc_frac});
+    PDL::zspike_helper($images, $diffs, $marks, $opt->{nvotes}, $opt->{nyes}, $opt->{nno});
+    our $diffs2 = $diffs;
+
+    $marks = $marks->(:,1:$marks->at(0,0))->sever;
+    
+    if($opt->{locs_only}) {
+	return $marks;
+    }
+
+    my $out;
+    my $spikes;
+    
+    if(wantarray) {
+	$spikes = zeroes(byte,$images->dims);
+	$spikes->indexND($marks) .= $images->indexND($marks);
+    }
+    
+    if($images->is_inplace) {
+	$images->set_inplace(0);
+	$out = $images;
+    } else {
+	$out = $images->copy;
+    }
+    $out->badflag(1);
+    $out->indexND($marks) .= $out->badvalue();
+
+    if($opt->{replace}) {
+	$out->indexND($marks) .= $out->range($marks-1,[3,3],'e')->reorder(1,2,0)->clump(2)->average;
+    }
+
+    if(wantarray) {
+	return ($out, $spikes, $marks);
+    } else {
+	return ($out);
+    }
+}
+
+no PDL::NiceSlice;
+use Inline Pdlpp =><<'EOF';
+
+pp_def('zspike_helper',
+       Pars=>'ims(w, h, n); diffs(w, h); [o]marks( c, m )',
+       GenericTypes=>['F','L'],
+       OtherPars => 'int nvotes; int nyes; int nno',
+       Code => <<'EOC',
+   
+   long ix, iy, in;
+   long im = 1;
+
+   $marks(c=>0, m=>0) = 0;
+   $marks(c=>1, m=>0) = 1; // check to make sure it works
+   
+   for( in=1; in < $SIZE(n); in++ ) {
+   	for( iy=0; iy < $SIZE(h); iy++ ) {
+	     for( ix=0; ix < $SIZE(w); ix++ ) {
+	     	  long iv;
+		  int yes=0;
+		  int no=0;
+		  $GENERIC() val = $ims(w=>ix, h=>iy, n=>in);
+		  for( iv =  in - $COMP(nvotes); 
+		       iv <= in + $COMP(nvotes);
+		       iv ++ ) {
+		    if(iv < 0) 
+		      iv = 0;
+		    if(iv < $SIZE(n)) {
+		       $GENERIC() v = $ims(w=>ix, h=>iy, n=>iv);
+		       if( v <= val - $diffs(w=>ix, h=>iy) ) 
+		         yes++;
+		       if( v >= val + $diffs(w=>ix, h=>iy) )
+                         no++;
+		    } else { 
+		       iv += $COMP(nvotes) + $COMP(nvotes);
+		    }
+		  } /* end of voting loop */
+  	     
+	          if( yes >= $COMP(nyes)  && no < $COMP(nno) ) {
+		     $marks( c=>0, m=>im ) = ix;
+		     $marks( c=>1, m=>im ) = iy;
+		     $marks( c=>2, m=>im ) = in;
+		     $marks( c=>0, m=>0 ) = im;
+		     im++;
+		     if(im >= $SIZE(m)) {
+		       goto overflow_$GENERIC();
+		     }
+		  }
+             } /* end of ix loop */
+        } /* end of iy loop */
+   } /* end of in loop */
+   overflow_$GENERIC(): {}
+EOC
+   );
+EOF
+
+
+      

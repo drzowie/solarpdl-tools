@@ -1,0 +1,114 @@
+=head2 minismooth.pdl - make a smoothed image from local minima
+
+=for usage
+
+    $smoothed = minismooth( $im, 33, 10 ); # find the 1-percentile value in each 33x33 pixel region.
+
+=for ref
+
+You feed in an image, a size, and an nth largest value in each region
+to treat as the minimum.  You get out a local-minimum smoothed image.
+
+Useful for background subtraction and such, as an alternative to unsharp
+masking.
+
+=cut
+
+
+sub PDL::minismooth {
+    my $im = shift;
+    die "minismooth requires a PDL!" unless(ref($im) eq 'PDL');
+    my $size = shift // 21;
+    my $nth = shift // 1;
+    my $skip = shift // int($size/20);
+    $nth =  1 if($nth<1);
+    $size = 1 if($size<1);
+    $skip = 1 if($skip<1);
+
+    my $sm = PDL->null;
+    PDL::_minismooth_int($im, $sm, PDL->null, $size,$nth, $skip);
+    $sm2 = $sm->copy;
+    return $sm->match([$im->dims],{method=>'l',bound=>'e'})
+}
+
+
+no PDL::NiceSlice;
+
+*minismooth = \&PDL::minismooth;
+use Inline Pdlpp => <<'EOF';
+pp_def('minismooth',
+	Pars=>'im(n,m); [o]sm(q,p); [t]list(r);',
+	OtherPars=>'long size; long nth; long skip;',
+	RedoDimsCode => << 'EORD',
+	 PDL_Indx n,m;
+	 if($PDL(im)->ndims < 2) barf("minismooth: im must have at least 2 dims");
+	 n = $PDL(im)->dims[0];
+	 m = $PDL(im)->dims[1];
+
+	 $SIZE(r) = $COMP(nth);
+	 $SIZE(q) = (n+$COMP(skip)-1) / $COMP(skip);
+	 $SIZE(p) = (m+$COMP(skip)-1) / $COMP(skip);
+
+	 if($SIZE(q)==0) $SIZE(q)++;
+	 if($SIZE(p)==0) $SIZE(p)++;
+
+EORD
+        PMCode => << 'EOPMC',
+
+EOPMC
+	Code => <<'EOC',
+	{
+	  long i,j,k,l,ii,jj,isk,jsk;
+	  long sz = ($COMP(size)-1)/2;
+	  long nn,mm;
+	  long n_kept;
+	  $GENERIC() current;
+
+	  if($COMP(skip) < 1)
+	  	  barf("minismooth: skip parameter must be positive");
+
+	  for(i=isk=0;  i<$SIZE(m); i += $COMP(skip), isk++) {
+	    for(j=jsk=0; j<$SIZE(n); j += $COMP(skip), jsk++) {
+	      n_kept = 0;
+	      for(k=-sz; k <=sz; k++) {
+		for(l=-sz; l <=sz; l++) {
+		  mm = i+k;
+		  nn = j+l;
+		  
+		  if( nn>=0 && nn < $SIZE(n) && mm >= 0 && mm < $SIZE(m)) 
+		  {
+		    current = $im(n=>nn, m=>mm);
+		    if( (n_kept < $COMP(nth)) || current < $list(r=>0) ) {
+		    // Walk through to find the first number smaller than this one
+		       for(ii=0; ii < n_kept && $list(r=>ii) >= current; ii++)
+		       ;
+		       if(n_kept < $COMP(nth)) {
+		       // push stuff on the back
+		         for(jj=n_kept; jj>ii; jj--) {
+			   $list(r=>jj) = $list(r=>jj-1);
+		         }
+		       n_kept++;
+		      } else {
+		        // we're full -- drop stuff off the front
+		        ii--;
+		        for(jj=0; jj<ii; jj++) {
+			  $list(r=>jj) = $list(r=>jj+1);
+		        }
+		      }
+		    
+		      $list(r=>ii) = current;
+		    }
+		  } // end of list maintenance
+		} // end of l loop
+	      } // end of k loop 
+	      $sm(q=>jsk, p=>isk) = $list(r=>0);
+
+	    } // end of j loop
+	  } // end of i loop
+	  
+	} // end of Code
+EOC
+	);
+EOF
+
+1;
