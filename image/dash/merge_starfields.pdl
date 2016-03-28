@@ -1,0 +1,80 @@
+=head2 merge_starfields
+
+=for ref
+
+Merge two starfields (maps of stellar location by pixel): you feed in a (2xN) list of stars
+from one image and a (2xM) list of stars from another image, and you get back a (4xP) list
+of stars that seem to correspond with each other.
+
+Each row of the output is (x1,y1,x2,y2) where (x1,y1) is in the first image and (x2,y2) is in
+the second.
+
+This is currently implemented in a really stupid way that is O(N*M).
+The vectors should be qsortvecced -- the ordering can then be used to reduce
+timing to O(N log M + M log N) .  
+
+
+=cut
+
+use strict;
+use PDL::Options;
+use PDL::NiceSlice;
+
+sub merge_starfields {
+    my $a = shift;
+    my $b = shift;
+    my $u_opt = shift // {};
+    my %opt = parse( {
+       rmax => 10,
+       }, $u_opt
+       );
+       
+    my $out = zeroes(4,pdl($a->dim(1),$b->dim(1))->max);
+    my $len = pdl(0);
+    PDL::merge_starfields_helper($a,$b,$out,$len,$opt{rmax}*$opt{rmax});
+    print "len is $len\n";
+    return $out->slice('x',[0,$len->at(0),1])->sever;
+}
+
+# Stoopid algorithm is O(n^2) but at least it is compiled.
+#
+no PDL::NiceSlice;
+use Inline Pdlpp => <<'EOF';
+pp_def('merge_starfields_helper',
+       Pars=>'a(i,n); b(i,m); [o]out(j,k); [o]len()',
+       OtherPars=>'double r2max;',
+       Code => <<'EOC',
+       {
+         long ni, mi, ki;
+	 int kflag = 0;
+	 ki = 0;
+	 $GENERIC() last_r2;
+	 $GENERIC() r2max = $COMP(r2max);
+	 for(ni=0; ni<$SIZE(n); ni++) {
+	   last_r2 = r2max + 1;
+	   for(mi=0; mi<$SIZE(m); mi++) {
+	     $GENERIC() diff0 = $a(i=>0, n=>ni)-$b(i=>0,m=>mi);
+	     $GENERIC() diff1 = $a(i=>1, n=>ni)-$b(i=>1,m=>mi);
+	     $GENERIC() r2 = diff0*diff0 + diff1*diff1;
+	     if(r2 < r2max && r2<last_r2) {
+	     	$out(j=>0,k=>ki) = $a(i=>0,n=>ni);
+		$out(j=>1,k=>ki) = $a(i=>1,n=>ni);
+		$out(j=>2,k=>ki) = $b(i=>0,m=>mi);
+		$out(j=>3,k=>ki) = $b(i=>1,m=>mi);
+		kflag = 1;
+		last_r2 = r2;
+	     }
+	   }
+	   if(kflag)
+	     ki++;
+	}
+	$len() = ki-1;
+       }
+EOC
+);
+EOF
+
+1;
+
+       
+	     
