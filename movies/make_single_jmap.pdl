@@ -1,0 +1,55 @@
+=head2 make_single_jmap
+
+=for usage
+
+$z = make_single_jmap( \@files, $start_time, $end_time, $cadence, $rows)
+
+=for ref
+
+You feed in a list of source files, a start time, an end time, and a
+cadence.  If you feed in a "rows" it should be one or more rasters to
+average together to make a horizontal sample of the movies.
+
+=cut
+
+use Date::Parse;
+use strict;
+
+sub make_single_jmap {
+    my $f = shift;
+    my $start = shift;
+    my $end = shift;
+    my $cadence = shift // 600;
+    my $rows = shift;
+
+    $f = select_movie_files($f, $start, $end, $cadence);
+
+    my $im = rfits($f->[0]);
+    my $out = zeroes($im->dim(0), 0+@$f);
+    my $last_f = $f->[0];
+
+    unless(defined($rows)) {
+	$rows = $out->dim(1)/2 + xvals(11) - 5;
+    }
+
+    $rows = pdl($rows)->flat->qsort->uniq;
+    
+    for my $i(1..$#$f){
+	if( $f->[$i] ne $last_f ) {
+	    $im = rfits($f->[$i]);
+	}
+
+	$out->(:,($i)) .= $im->mv(1,0)->($rows)->average;
+	print "$i ";
+    }
+    print "\n";
+
+    $out->sethdr($im->hdr_copy);
+    $out->hdr->{NAXIS2} = $out->dim(1);
+    $out->hdr->{CRPIX2} = 1;
+    $out->hdr->{CRVAL2} = str2time($start);
+    $out->hdr->{CDELT2} = $cadence;
+    $out->hdr->{CUNIT2} = "sec";
+    $out->hdr->{CTYPE2} = "time";
+    return $out;
+}

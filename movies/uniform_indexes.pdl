@@ -1,0 +1,26 @@
+=head2 uniform_indexes
+
+=for usage
+
+ $dexes = uniform_indexes($data, $start, $end, $step);
+
+=for ref
+
+ You feed in a set of values and a start, end, and step value you
+ want, and you get back indexes into the array of values corresponding
+ to the uniform sampling.
+
+=cut
+use strict;
+
+sub uniform_indexes {
+    my $data = shift;
+    my $start = shift // $data->((0));
+    my $end = shift // $data->((-1));
+    my $step = shift // 1;
+
+    my $vals = xvals( pdl( (($end - $start)/$step + 1) )->at(0) ) * $step + $start;
+
+    return frac_dex($data,$vals);
+}
+
