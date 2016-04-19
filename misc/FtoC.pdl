@@ -1,0 +1,42 @@
+=head2 FtoC - convert Fahrenheit to Celsius, with dataflow
+
+=for example
+
+     $F = 32;
+     $C = FtoC($F);
+     print $C;
+     $C .= 100;
+     print $F;
+     
+=for ref
+
+This is a demonstration operator that implements Fahrenheit - Celsius conversion via dataflow.
+
+=cut
+
+no PDL::NiceSlice;
+use Inline Pdlpp=><<'EOF';
+
+pp_def('FtoC',
+	DefaultFlow=>1,
+	NoPdlThread=>1,
+	P2Child=>1,
+	Reversible=>1,
+	Code=> ' $CHILD() = ($PARENT() - 32) * 5/9; ',
+	BackCode => '  $PARENT() = ($CHILD() * 9/5) + 32; ',
+	RedoDims => '
+		 long ii;
+		 $CHILD(ndims) = $PARENT(ndims);
+		 $SETNDIMS($PARENT(ndims));
+		 for(ii=0; ii<$PARENT(ndims); ii++) {
+		 	   $CHILD(dims[ii]) = $PARENT(dims[ii]);
+			   $CHILD(dimincs[ii]) = $PARENT(dimincs[ii]);
+	         }
+		 $CHILD(datatype) = $PARENT(datatype);
+	         $SETDIMS(); 
+		 ',
+	);
+EOF
+
+*FtoC = \&PDL::FtoC;
+
