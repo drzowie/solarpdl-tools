@@ -1,0 +1,260 @@
+=head2 minsmooth.pdl - improved minismooth
+
+=for usage
+
+    $smoothed = minsmooth( $im, {%options});
+
+=for ref
+
+You feed in an image and some options.  You get out a local-minimum smoothed image.
+
+There are a bunch of options you can fine-tune.
+
+The basic operation, carried out pixelwise, is, for each pixel: loop
+over surrounding neighbors and find the nth lowest value.  The output
+image has each pixel's value replaced with this computed nth lowest
+neighborhood value.
+
+By default, minsmooth considers a 33x33 pixel square neighborhood
+around each pixel.  By specifying the "siz" option, you can change the
+size of the square.  More commonly, you will specify the "r" option,
+which is the radius of a circular region to consider as a
+neighborhood.  In bizarre circumstances you may want to use the "mask"
+keyword to pass in a 2-D PDL containing mask values defining the local
+neighborhood.
+
+Since the main application is smoothing an image by finding an
+approximation to a background, it's not necessary to carry out the
+full sorting operation on every single pixel -- only on a subset that
+guarantees overlap of neighborhoods.  By default, minsmooth subsamples
+the image so there are 4x4 samples in the size of the neighborhood you
+specified.  Then the output is blurred back up to the size of the
+neighborhood, so the smoothed output image is actually smooth.
+
+Options are:
+
+=over 3
+
+=item siz
+
+This should be a single integer, which is the size of a square
+neighborhood to consider.  Default value is 33.
+
+=item r
+
+If this is specified, it is the radius of a circular neighborhood
+to consider around each pixel.  It overrides C<siz>.
+
+=item mask
+
+If this is specified, it should have a 2-D mask PDL in it, in which
+nonzero elements correspond to neighborhood points around a central
+pixel.  It overrides both C<siz> and C<r>.
+
+=item pct
+
+This is the percentile pixel value of the neighborhood to retain as
+the minsmoothed image value.  The default is 0, which retains the lowest
+value in each neighborhood. Setting it to 1 will retain the value that
+is higher than 1% of the values in each neighborhood.
+
+=item skip
+
+This defaults to 1/4 the size of the neighborhood.  It's the number of
+input pixels to skip between samples of the neighborhood minimum
+value.  Setting it to 1 forces every single pixel to be checked
+(slow).
+
+=item blur
+
+This is the blur parameter on the C<PDL::Transform::map> call that
+expands the subsampled matrix up to the size of the original input
+image.  It defaults to 4, so that with the default skip value the
+smallest spatial scale that is preserved is the scale of the
+neighborhoods themselves.  Setting it to unity prevents blur across
+neighborhood sample regions.
+
+=back
+
+AUTHOR
+
+Craig DeForest, May 2016
+
+=cut
+
+use PDL::Options;
+use PDL::Transform;
+
+sub PDL::minsmooth {
+    my $im = shift;
+    my $u_opt = shift // {};
+
+    my %opt = parse( {
+       r   => undef,     # if defined, use a circle.  Gets overridden by mask.
+       pct => 0,         # smallest value.  Otherwise, percentile value
+       siz => 33,        # gets overridden by r or mask
+       mask => undef,    # overrides everything
+       skip => undef,    # skip between minimum-finding spots
+       blur => undef ,   # blur parameter to map for reconstitution.  (1.0 for sharp division)
+       }, $u_opt);
+
+    die "minismooth requires a PDL!" unless(ref($im) eq 'PDL');
+
+    my $defaultskip_frac = 1/4;
+    unless(defined($opt{blur})) {
+    	   $opt{blur} = 1.0/$defaultskip_frac;
+    }
+    
+    unless(defined($opt{mask})) {
+	unless(defined($opt{r})) {
+	    $opt{mask} = ones($opt{siz},$opt{siz});
+
+	    unless(defined($opt{skip})) {
+		$opt{skip} = $opt{siz} * $defaultskip_frac;
+	    }
+	} else {
+	    $opt{mask} = ( rvals($opt{r}*2+1,$opt{r}*2+1) < ($opt{r}+0.5) );
+
+	    unless(defined($opt{skip})) {
+		$opt{skip} = $opt{siz} * $defaultskip_frac;
+	    }
+	}
+    } else {
+	unless(defined($opt{skip})){
+	    $opt{skip} = 1;
+	}
+    }
+
+    # Use the percentile to figure the "nth" offset...
+    my $nth = int( $opt{pct} * sum( $opt{mask} != 0 ) / 100 );
+    $nth = 1 if($nth<1);
+
+    my $sm = PDL->null;
+    PDL::_minsmooth_int($im, $opt{mask}, $sm, PDL->null, $nth, $opt{skip});
+
+    return $sm->match([$im->dims],{method=>'h',bound=>'e',blur=>$opt{blur}});
+}
+
+no PDL::NiceSlice;
+
+*minsmooth = \&PDL::minsmooth;
+use Inline Pdlpp => <<'EOF';
+
+
+$code_def = <<'EOC';
+        {
+	  PDL_Indx i,j,k,l,ik,il,ii,jj,isk,jsk;
+	  PDL_Indx sza = ($SIZE(a)+1)/2;
+ 	  PDL_Indx szb = ($SIZE(b)+1)/2;
+	  PDL_Indx nn,mm;
+	  long n_kept;
+	  $GENERIC() current;
+	  PDL_Indx n0, m0; 
+
+          // Work out starting positions in 2d
+	  if($COMP(skip) <= 0)
+	     $COMP(skip) = 1 ;
+
+	  n0 = (  $SIZE(n) - ( $SIZE(q) * $COMP(skip) - $COMP(skip) + 1 )   ) / 2;
+	  m0 = (  $SIZE(m) - ( $SIZE(p) * $COMP(skip) - $COMP(skip) + 1 )   ) / 2;
+
+	  // outer two loops cover sample points
+	  for(  i=m0, isk=0;
+	  	i<$SIZE(m);
+		i += $COMP(skip), isk++) {
+		
+	    for(  j=n0, jsk=0;
+	    	  j<$SIZE(n);
+		  j += $COMP(skip), jsk++) {
+
+	      n_kept = 0;
+
+
+	      // loop over neighborhood to view, for the current sample
+	      
+	      for( k=-sza, ik=0; ik < $SIZE(a); k++, ik++ ) {
+		for( l=-szb, il=0; il <=$SIZE(b); l++, il++ ) {
+		  mm = i+k;
+		  nn = j+l;
+
+		  // bounds-check and mask-check
+		  if( $mask(a=>ik, b=>il) &&  nn>=0 && nn < $SIZE(n) && mm >= 0 && mm < $SIZE(m)  {{BADCONDITIONAL}} ) 
+		  {
+		    current = $im(n=>nn, m=>mm);
+		    if( (n_kept < $COMP(nth)) || current < $list(r=>0) ) {
+		    // Walk through to find the first number smaller than this one
+		       for(ii=0; ii < n_kept && $list(r=>ii) >= current; ii++)
+		       ;
+		       if(n_kept < $COMP(nth)) {
+		       // push stuff on the back
+		         for(jj=n_kept; jj>ii; jj--) {
+			   $list(r=>jj) = $list(r=>jj-1);
+		         }
+		       n_kept++;
+		      } else {
+		        // we're full -- drop stuff off the front
+		        ii--;
+		        for(jj=0; jj<ii; jj++) {
+			  $list(r=>jj) = $list(r=>jj+1);
+		        }
+		      }
+		    
+		      $list(r=>ii) = current;
+		    }
+		  } // end of list maintenance
+		} // end of l loop
+	      } // end of k loop
+
+      	      if(n_kept>0) {
+	        $sm(q=>jsk, p=>isk) = $list(r=>0);
+	      } else {
+	      	{{BAD_ASSIGNMENT}}
+              }
+	      $sm(q=>jsk, p=>isk) = $list(r=>0);
+
+	    } // end of j loop
+	  } // end of i loop
+	  
+	} // end of Code
+EOC
+
+$badcode_def = $code_def;
+
+$code_def =~    s/\{\{BADCONDITIONAL\}\}//o;
+$badcode_def =~ s/\{\{BADCONDITIONAL\}\}/ \&\& \$ISGOOD(im(n=>nn,m=>mm))/o;
+
+
+$code_def =~    s/\{\{BAD_ASSIGNMENT\}\}/ \$sm(q=>jsk,p=>isk)=0;/o;
+$badcode_def =~ s/\{\{BAD_ASSIGNMENT\}\}/ \$SETBAD\(sm\(q=>jsk,p=>isk\)\);  \$PDLSTATESETBAD\(sm\);/o;
+
+
+pp_def('minsmooth',
+	Pars=>'im(n,m); mask(b,a); [o]sm(q,p); [t]list(r);',
+	OtherPars=>'long nth; long skip;',
+	RedoDimsCode => << 'EORD',
+	 PDL_Indx n,m;
+
+	 if($PDL(im)->ndims < 2) barf("minismooth: im must have at least 2 dims");
+	 n = $PDL(im)->dims[0];
+	 m = $PDL(im)->dims[1];
+
+	 $SIZE(r) = $COMP(nth);
+	 if($COMP(skip)<=0)
+		$COMP(skip) = 1;
+	 $SIZE(q) = (n+$COMP(skip)-1) / $COMP(skip);
+	 $SIZE(p) = (m+$COMP(skip)-1) / $COMP(skip);
+
+	 if($SIZE(q)==0) $SIZE(q)++;
+	 if($SIZE(p)==0) $SIZE(p)++;
+EORD
+        PMCode => << 'EOPMC',
+
+EOPMC
+        HandleBad => 1,
+	Code => $code_def,
+	BadCode => $badcode_def
+
+	);
+EOF
+
+1;

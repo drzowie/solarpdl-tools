@@ -1,4 +1,4 @@
-=head2 minismooth.pdl - make a smoothed image from local minima
+=head2 minismooth - DEPRECATED (make a smoothed image from local minima)
 
 =for usage
 
@@ -6,11 +6,19 @@
 
 =for ref
 
+WARNING: minismooth is kept for legacy applications.  Use C<minsmooth> instead, it's much better!
+
 You feed in an image, a size, and an nth largest value in each region
 to treat as the minimum.  You get out a local-minimum smoothed image.
 
 Useful for background subtraction and such, as an alternative to unsharp
 masking.
+
+The algorithm is pretty brain-dead: it accumulates the local <n> minimum values
+for each pixel and sticks the nth in there.
+
+minismooth handles bad values.  If more than 1/3 of the sample values near a particular
+location are bad, then the pixel is set to bad.
 
 =cut
 
@@ -27,8 +35,10 @@ sub PDL::minismooth {
 
     my $sm = PDL->null;
     PDL::_minismooth_int($im, $sm, PDL->null, $size,$nth, $skip);
-    $sm2 = $sm->copy;
-    return $sm->match([$im->dims],{method=>'l',bound=>'e'})
+    if($skip != 1) {
+        $sm = $sm->match([$im->dims],{method=>'j',bound=>'e'})
+    }
+    return $sm;
 }
 
 
