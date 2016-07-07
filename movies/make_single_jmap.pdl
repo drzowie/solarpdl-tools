@@ -39,7 +39,7 @@ sub make_single_jmap {
 	    $im = rfits($f->[$i]);
 	}
 
-	$out->(:,($i)) .= $im->mv(1,0)->($rows)->average;
+	$out->(:,($i)) .= $im->mv(1,0)->($rows)->medover;
 	print "$i ";
     }
     print "\n";
