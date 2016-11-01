@@ -41,7 +41,7 @@ use PDL::Options;
 
 # cube arrives as (x,y,t).
 
-sub speed_filter {
+sub simple_speed_filter {
     my $cube = shift;
     my $u_opt = shift;
 

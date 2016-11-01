@@ -23,7 +23,7 @@ $rgb2 = $rgb->mv(0,1);
 multicore([0..$nsteps],
 	  sub { $i= $nsteps - shift;
 		$scale = $stscale * 10**( - $i/$nsteps * $mags );
-		$foo = mandel2($magicno, $scale, $npix * $condense, 2500);
+		$foo = mandel($magicno, $scale, $npix * $condense, 2500);
 		$foob = $foo->range($ndc, [$condense,$condense],'e')->mv(0,-1)->mv(0,-1)->clump(2); 
 		$foo2 = $foob->clip(0,$cbmax)/$cbmax*500;
 		$foo3 = $rgb2->index($foo2->(*1))->mv(0,-1)->medover; # mv puts rgb at the end
