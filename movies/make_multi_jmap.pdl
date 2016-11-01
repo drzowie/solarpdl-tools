@@ -1,0 +1,102 @@
+=head2 make_multi_jmap
+
+=for usage
+
+$z = make_multi_jmap( \@files, $start_time, $end_time, $cadence, $rows)
+
+=for ref
+
+You feed in a list of source files, a start time, an end time, and a
+cadence.  If you feed in a "rows" it should be one or more rasters to
+average together to make a horizontal sample of the movies.
+
+=cut
+
+use Date::Parse;
+use PDL::Options;
+use strict;
+
+sub make_multi_jmap {
+    my $ff = shift;
+    my $start = shift;
+    my $end = shift;
+    my $cadence = shift // 600;
+    my $u_opt = shift // {};
+
+    my %opt = parse( {
+	MULT=>[1,0.1],
+	MATCH => {
+	    SIMPLE => "T",
+	    NAXIS=>2,
+	    CRPIX1 => 1,
+	    NAXIS1 => 1500,
+	    CDELT1 => 90/1500,
+	    CRVAL1 => -90,
+	    NAXIS2 => 30,
+	    CDELT2 => 0.1,
+	    CRVAL2 => 0,
+	    CRPIX2 => 15,
+	    CROTA  => 0,
+	    CTYPE1 => "HPLN-AZP",
+	    CUNIT1 => "deg",
+	    CTYPE2 => "HPLT-AZP",
+	    CUNIT2 => "deg"
+	},
+	ROWS => undef
+		     }, 
+		     $u_opt
+	);
+
+    our %oopt = %opt;
+    my @flists = ();
+
+    for my $flist(@$ff){
+        $flist = select_movie_files($flist, $start, $end, $cadence);
+	push(@flists, $flist);
+    }
+
+
+    my $out = zeroes( $opt{MATCH}->{NAXIS1}, 0+@{$flists[0]} );
+
+    for my $j(0..$#flists) {
+	my $f = $flists[$j];
+
+	my $last_f = "Nope";
+	my $im;
+	my $im1;
+	my $row;
+
+	for my $i(0..$#$f){
+	    if($f->[$i] ne $last_f) {
+		$im = rfits($f->[$i]);
+		$last_f = $f->[$i];
+		$im1 = $im->match($opt{MATCH},{method=>'h'});
+		print "im1 is ".join("x",$im1->dims)."\n";
+		$row = $im1->mv(1,0)->medover;
+		if(ref($opt{MULT}) eq 'ARRAY') {
+		    $row *= $opt{MULT}->[$j]
+		}
+	    }
+
+	    my $dex = which($row >= $out->(:,($i)));
+	    $out->($dex,($i)) .= $row->($dex);
+	    print "$j-$i ";
+	}
+    }
+    print "\n";
+    $out->fhdr->{COMMENT} = "JMAP";
+    $out->fhdr->{NAXIS} = 2;
+    $out->fhdr->{NAXIS1} = $opt{MATCH}->{NAXIS1};
+    $out->fhdr->{CRPIX1} = $opt{MATCH}->{CRPIX1};
+    $out->fhdr->{CDELT1} = $opt{MATCH}->{CDELT1};
+    $out->fhdr->{CRVAL1} = $opt{MATCH}->{CRVAL1};
+    $out->fhdr->{CTYPE1} = $opt{MATCH}->{CTYPE1};
+    $out->fhdr->{CUNIT1} = $opt{MATCH}->{CUNIT1};
+    $out->fhdr->{NAXIS2} = $out->dim(1);
+    $out->fhdr->{CRPIX2} = 1;
+    $out->fhdr->{CRVAL2} = str2time($start);
+    $out->fhdr->{CDELT2} = $cadence;
+    $out->fhdr->{CUNIT2} = "sec";
+    $out->fhdr->{CTYPE2} = "time";
+    return $out;
+}

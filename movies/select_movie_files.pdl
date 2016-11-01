@@ -30,14 +30,18 @@ sub select_movie_files {
     my $cadence = shift // 600;
 
     
-    my $start = str2time($start_time);
-    my $end = str2time($end_time);
+    my $start = str2time($start_time,"UTC");
+    my $end = str2time($end_time,"UTC");
     my $len = $end - $start;
     my $ct = $len / $cadence + 1;
     
     print "Length is $len seconds long in (about) $ct frames\n";
 
     my $tt = times_from_filenames($files);
+
+    our $ttt = $tt;
+    our $tstart = $start;
+    our $tend = $end;
 
     die "All files happen after your movie interval\n" if($tt->min > $end);
     die "All files happen before your movie interval\n" if($tt->max < $start);
