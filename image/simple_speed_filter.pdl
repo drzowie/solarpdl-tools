@@ -64,7 +64,8 @@ sub simple_speed_filter {
     $ndc = ndcoords($cube->dim(0),$cube->dim(1));
     $ndc -= $cube->shape->(0:1) * ($ndc > $cube->shape->(0:1)/2);
     $ndr = ($ndc*$ndc)->sumover->sqrt;
-
+    print "speed is $opt{speed}...\n";
+    
     for $i(0..$cube->dim(2)-1){
 	if($i>$cube->dim(2)/2){
 	    $i = $cube->dim(2) - $i;

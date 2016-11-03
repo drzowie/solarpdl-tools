@@ -132,7 +132,13 @@ sub PDL::minsmooth {
     my $sm = PDL->null;
     PDL::_minsmooth_int($im, $opt{mask}, $sm, PDL->null, $nth, $opt{skip});
 
-    return $sm->match([$im->dims],{method=>'h',bound=>'e',blur=>$opt{blur}});
+    my $out= $sm->match([$im->dims],{method=>'h',bound=>'e',blur=>$opt{blur}});
+    if($im->hdrcpy()) {
+        $out->sethdr($im->hdr_copy);
+    } else {
+	$out->sethdr(undef);
+    }
+    return $out;
 }
 
 no PDL::NiceSlice;
