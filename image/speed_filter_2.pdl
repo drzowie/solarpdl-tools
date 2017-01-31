@@ -1,0 +1,54 @@
+=head2 speed_filter_2
+
+=for ref
+
+Simple two-threshold bandpass speed filter
+
+=cut
+
+
+
+
+use PDL::FFTW3;
+use PDL::NiceSlice;
+
+sub speed_filter_2 {
+    my $in = shift;              # ir, y, t
+    my $lospeed  = shift;        # pixels per frame
+    my $hispeed = shift;         # pixels per frame
+    my $blur = shift // 0.33;
+    
+    # Impose a radial motion filter
+    for $i(1..$in->dim(2)/2) {
+	print "i=$i ";
+	##  rspeed is in pixels per frame; units are inverse pixels (x,y) per inverse frame (z)
+	my $rolls = ones($in->dim(1)/2);
+
+
+	if( $hispeed ) {
+	    my $thresh = $i / $hispeed;
+	    my $min = $thresh * (1.0 - ($blur/2));
+	    my $max = $thresh * (1.0 + ($blur/2));
+	    my $roll_param = (xvals( $in->dim(1)/2 )->clip($min,$max) - $min) * (PI/2 / ($max-$min));
+	    $rolls *= sin($roll_param) * sin($roll_param);
+	}
+
+	if( $lospeed ) {
+	    my $thresh = $i / $lospeed;
+	    my $min = $thresh * (1.0 - ($blur/2));
+	    my $max = $thresh * (1.0 + ($blur/2));
+	    my $roll_param = (xvals( $in->dim(1)/2 )->clip($min,$max) - $min) * (PI/2 / ($max-$min));
+	    $rolls *= cos($roll_param) * cos($roll_param);
+	}
+	
+	$in->(:,  1: $in->dim(0)/2 , ( $i) ) *= $rolls->(*1);
+	$in->(:, -1:-$in->dim(0)/2 , ( $i) ) *= $rolls->(*1);
+	$in->(:,  1: $in->dim(0)/2 , (-$i) ) *= $rolls->(*1);
+	$in->(:, -1:-$in->dim(0)/2 , (-$i) ) *= $rolls->(*1);
+    }
+
+    if($lospeed > 0) {
+	$in->(:,(0)) .= 0;
+    }
+}
+

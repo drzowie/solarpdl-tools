@@ -1,0 +1,85 @@
+=head2 noise_gate_batch
+
+=for ref
+
+Method of cleaning a movie "cube" via noise gating.  First, accumulate amplitude thresholds
+from the data themselves.  Then discard Fourier components whose amplitude does not exceed 
+the threshold by a set proportion.
+
+Processing happens in "cubies" -- subcubes of a size that is passed in, in the options hash.
+Cubies are merged back into the output cube, with Hanning windows applied.
+
+=cut
+
+use PDL::Options;
+use PDL::Constants;
+use PDL::NiceSlice;
+use PDL::FFTW3;
+
+sub noise_gate_batch {
+    my $cube = shift;
+    my $u_opt = shift // {};
+
+    my %opt = parse( {
+	nsub => 128,         # pixels for a subregion
+	pct => 0,
+	factor => 2,
+	r_samples => 30,
+		     },
+		     $u_opt
+	);
+
+    my $out = $cube->new_or_inplace;
+
+    
+    # Cut up the cube
+    $ndc_dims = (($cube->shape - $opt{nsub}+1)/($opt{nsub}/2))->ceil;
+
+    unless(all($ndc_dims > 0)) { die "Error: cut dims came out to $ndc_dims...\n"; }
+    $corners =  ndcoords( $ndc_dims->list ) * $opt{nsub}/2 ;               # make lower left early corners
+    $corners += ($cube->shape - $opt{nsub} - $corners->(:,-1,-1,-1))/2;  # center the pattern
+    $corners->inplace->floor;
+    $corners = $corners->clump(1,2,3)->sever;
+
+    # make an array of cubies that is nsub x nsub x nsub x N, and disconnected from the original.
+    print "Cutting...";
+    $cubies = $out->range($corners,[$opt{nsub},$opt{nsub},$opt{nsub}],'f')->mv(0,-1)->sever;
+    print "cubies is ".join("x",$cubies->dims)."...";
+
+    # Hanning-windify the cubies...
+    print "Windowing...";
+    $hanning = sin( (  xvals( $opt{nsub} ) + 0.5) * PI / $opt{nsub} ) ** 2;
+    $cubies *= $hanning;
+    $cubies *= $hanning->(*1);
+    $cubies *= $hanning->(*1,*1);
+
+    print "Transforming...";
+    $ricubies = pdl($cubies,0)->mv(-1,0);  # (ri) x nsub x nsub x nsub x N
+    $fricubies = fft3($ricubies);
+
+    print "Mag...";
+    $fmcubies = ($fricubies*$fricubies)->sumover->sqrt; # nsub x nsub x nsub x N
+    
+    $c_n = floor( $opt{pct}/100  * $fmcubies->dim(3) ) ;
+    print "select percentile (n=$c_n)...";
+    $fmcubies /= sqrt($fmcubies->(0,0,0));
+    $mincubie = $fmcubies->mv(3,0)->qsort->(($c_n))->sever;
+    
+    print "Thresholding...";
+    $mincubie *= $opt{factor};
+    $fmcubies->range([-1,-1,-1],[3,3,3],'p').= 1e15;
+    $fricubies->mv(0,-1)->indexND(0+whichND($fmcubies < $mincubie)) .= 0;
+    
+    print "Inverse transforming...";
+    $rcubies = ifft3($fricubies)->((0))->sever;
+    $out .= 0;
+
+    print "Merging...\n";
+    for $i(0..$corners->dim(1)-1){
+	$out->range($corners->(:,($i)),[$opt{nsub},$opt{nsub},$opt{nsub}],'f') += $rcubies->(:,:,:,($i));
+    }
+
+    return $out;
+}
+
+    
