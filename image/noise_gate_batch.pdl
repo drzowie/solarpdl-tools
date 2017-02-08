@@ -1,13 +1,61 @@
+use strict;
 =head2 noise_gate_batch
+
+=for usage
+
+    $output_cube = noise_gate_batch($input_cube, \%options);
 
 =for ref
 
-Method of cleaning a movie "cube" via noise gating.  First, accumulate amplitude thresholds
-from the data themselves.  Then discard Fourier components whose amplitude does not exceed 
-the threshold by a set proportion.
+Method of cleaning a movie "cube" via noise gating.  First, accumulate
+amplitude thresholds from the data themselves.  Then discard Fourier
+components whose amplitude does not exceed the threshold by a set
+proportion.
 
-Processing happens in "cubies" -- subcubes of a size that is passed in, in the options hash.
-Cubies are merged back into the output cube, with Hanning windows applied.
+Processing happens in "cubies" -- subcubes of a size that is passed
+in, in the options hash.  Cubies are merged back into the output cube,
+with Hanning windows applied.
+
+The data cube is notionally formatted as (x,y,t).  Three dimensions are required.
+
+Options are:
+
+=over 3
+
+=item nsub (default 8)
+
+This is the size of the pixel/voxel subregions into which the input
+cube will be chopped for processing.
+
+=item mode (default 'shot')
+
+This can be either "shot" or "fixed" and determines the type of
+thresholding to be applied.  Use "shot" for simple images whose
+additive noise spectrum is dominated by shot noise (e.g., EUV solar
+images), use "fixed" for processed images where the additive noise
+floor is roughly constant (e.g., magnetograms).
+
+=item pct (default 50)
+
+This is the percentile value of the local spectra, taken across the
+population of sub-image segments, to consider the magnitude of the
+noise.
+
+=item method (default "gate")
+
+This can be either "gate" or "wiener".  In the gate case, Fourier
+components less than the noise value, times the 'factor' parameter,
+are simply removed.  In the wiener case, each segment has the
+on-the-fly Wiener filter applied.  Each Fourier component is
+attenuated by the computed value SNR/(SNR+1), where SNR is the value
+of the magnitude in the local segment's spectrum, divided by the
+"noise" spectrum and the "factor" parameter.
+
+=item window (default "front")
+
+This adjusts the Hanning windowing.  Current options are "front" or "split".
+
+=back
 
 =cut
 
@@ -21,61 +69,120 @@ sub noise_gate_batch {
     my $u_opt = shift // {};
 
     my %opt = parse( {
-	nsub => 128,         # pixels for a subregion
-	pct => 0,
-	factor => 2,
-	r_samples => 30,
+	nsub => 8,         # pixels for a subregion
+	pct => 50,
+	factor => 3,
+	mode => 'shot',
+	method => 'gate',
+	window => 'front',
 		     },
 		     $u_opt
 	);
+
+    unless($opt{method} =~ m/^[gw]/i) {
+	die "noise_gate_batch: method must be 'gate' or 'wiener' (value '$opt{method}')";
+    }
+
+    unless($opt{window} =~ m/^[fsq]/i) {
+	die "noise_gat_batch: windowing method must be 'front' or 'split' or 'quad' (value '$opt{window}')";
+    }
 
     my $out = $cube->new_or_inplace;
 
     
     # Cut up the cube
-    $ndc_dims = (($cube->shape - $opt{nsub}+1)/($opt{nsub}/2))->ceil;
+    my $nsub_cut = 2;
+    if($opt{window} =~ m/^q/i) {
+	$nsub_cut = 4;
+    }
+
+    my $ndc_dims = (($cube->shape - $opt{nsub}+1)/($opt{nsub}/$nsub_cut))->ceil;
 
     unless(all($ndc_dims > 0)) { die "Error: cut dims came out to $ndc_dims...\n"; }
-    $corners =  ndcoords( $ndc_dims->list ) * $opt{nsub}/2 ;               # make lower left early corners
+    my $corners =  ndcoords( $ndc_dims->list ) * $opt{nsub}/$nsub_cut ;               # make lower left early corners
     $corners += ($cube->shape - $opt{nsub} - $corners->(:,-1,-1,-1))/2;  # center the pattern
     $corners->inplace->floor;
     $corners = $corners->clump(1,2,3)->sever;
 
     # make an array of cubies that is nsub x nsub x nsub x N, and disconnected from the original.
     print "Cutting...";
-    $cubies = $out->range($corners,[$opt{nsub},$opt{nsub},$opt{nsub}],'f')->mv(0,-1)->sever;
+    my $cubies = $out->range($corners,[$opt{nsub},$opt{nsub},$opt{nsub}],'f')->mv(0,-1)->sever;
     print "cubies is ".join("x",$cubies->dims)."...";
 
     # Hanning-windify the cubies...
-    print "Windowing...";
-    $hanning = sin( (  xvals( $opt{nsub} ) + 0.5) * PI / $opt{nsub} ) ** 2;
+    my $hanning;
+    if($opt{window} =~ m/^[fq]/i) {
+	print "Windowing...";
+	$hanning = sin( (  xvals( $opt{nsub} ) + 0.5) * PI / $opt{nsub} ) ** 2;
+    } elsif($opt{window} =~ m/^s/i) {
+	print "Half-windowing...\n";
+	$hanning = sin( (  xvals( $opt{nsub} ) + 0.5) * PI / $opt{nsub} );
+    }
     $cubies *= $hanning;
     $cubies *= $hanning->(*1);
     $cubies *= $hanning->(*1,*1);
 
+    my $sumsqrt;
+    if($opt{mode} =~ m/^s/i) { # shot noise - calculate sum-of-sqrt before ditching ricubies
+	$sumsqrt = $cubies->sqrt->sumover->sumover->sumover->(*1,*1,*1);
+    }
+
     print "Transforming...";
-    $ricubies = pdl($cubies,0)->mv(-1,0);  # (ri) x nsub x nsub x nsub x N
-    $fricubies = fft3($ricubies);
+    my $ricubies = pdl($cubies,0)->mv(-1,0);  # (ri) x nsub x nsub x nsub x N
+    my $fricubies = fft3($ricubies->inplace);
+    undef $ricubies;
 
     print "Mag...";
-    $fmcubies = ($fricubies*$fricubies)->sumover->sqrt; # nsub x nsub x nsub x N
+    my $fmcubies = ($fricubies*$fricubies)->sumover->sqrt; # nsub x nsub x nsub x N
     
-    $c_n = floor( $opt{pct}/100  * $fmcubies->dim(3) ) ;
+    # Convert percentile into an index for future converted cubies
+    my $c_n = floor( $opt{pct}/100  * $fmcubies->dim(3) ) ;
     print "select percentile (n=$c_n)...";
-    $fmcubies /= sqrt($fmcubies->(0,0,0));
-    $mincubie = $fmcubies->mv(3,0)->qsort->(($c_n))->sever;
+
+    if($opt{mode} =~ m/^s/i) {  # shot noise
+	print "shot noise: scaling by sum(sqrt)...";
+	$fmcubies /= $sumsqrt;
+    } elsif( $opt{mode} =~ m/^f/i) { # fixed noise
+        print "Finding fixed noise floor...";
+    }
+
+    my $mincubie = $fmcubies->mv(3,0)->qsort->(($c_n))->sever;
     
-    print "Thresholding...";
-    $mincubie *= $opt{factor};
-    $fmcubies->range([-1,-1,-1],[3,3,3],'p').= 1e15;
-    $fricubies->mv(0,-1)->indexND(0+whichND($fmcubies < $mincubie)) .= 0;
-    
+    my $filter;
+    if($opt{method} =~ m/^g/i) {
+	print "Computing threshold filters...\n";
+	$mincubie *= $opt{factor};
+	$fmcubies->range([-1,-1,-1],[3,3,3],'p').= 1e15;
+	$filter = ($fmcubies >= $mincubie);
+    } elsif($opt{method} =~ m/^w/i) {
+	print "Computing Wiener filters...\n";
+	# Wiener filter is (SNR/SNR+1).  Calculate SNR, adjusted for the optional factor.
+	$filter = $fmcubies / ($mincubie * ($opt{factor} || 1));
+	$filter->range([-1,-1,-1],[3,3,3],'p') .= 1e9;  # assume infinite SNR in 0 band
+	$filter /= ($filter + 1);
+    }
+
+    print "Applying filters...\n";
+    $fricubies->((0)) *= $filter;
+    $fricubies->((1)) *= $filter;
+
+
     print "Inverse transforming...";
-    $rcubies = ifft3($fricubies)->((0))->sever;
+    my $rcubies = ifft3($fricubies->inplace)->((0))->sever;
     $out .= 0;
 
+    if($opt{window} =~ m/^[sq]/i) {
+	print "finishing windowing...";
+	$rcubies *= $hanning;
+	$rcubies *= $hanning->(*1);
+	$rcubies *= $hanning->(*1,*1);
+    }
+    if($opt{window} =~ m/^q/i) {
+	$rcubies /= 1.5*1.5*1.5;
+    }
+
     print "Merging...\n";
-    for $i(0..$corners->dim(1)-1){
+    for my $i(0..$corners->dim(1)-1){
 	$out->range($corners->(:,($i)),[$opt{nsub},$opt{nsub},$opt{nsub}],'f') += $rcubies->(:,:,:,($i));
     }
 
