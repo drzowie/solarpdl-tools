@@ -53,7 +53,28 @@ of the magnitude in the local segment's spectrum, divided by the
 
 =item window (default "front")
 
-This adjusts the Hanning windowing.  Current options are "front" or "split".
+This adjusts the windowing function that is used for apodization.  
+Current options are:
+
+=over 3
+
+=item "front" -- do Hanning windowing up front.  
+
+Basic, brutal.
+
+=item "split" -- do split Hanning windowing.
+
+This applies sin(x) up front, another sin(x) in back.  Not guaranteed to work.  
+
+=item "quad" -- use octature windowing
+
+This option does Hanning windowing up front and in back for sin**4
+windowing overall.  This is coupled with 4x-per-segment sampling
+(instead of 2x-per-segment with normal windowing), so it costs a factor
+of 8 in CPU time and memory compared to regular Hanning windows.  But 
+the results are very smooth.
+
+=back
 
 =back
 
