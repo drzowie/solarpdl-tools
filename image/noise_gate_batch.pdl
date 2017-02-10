@@ -145,7 +145,7 @@ sub noise_gate_batch {
 
     my $sumsqrt;
     if($opt{mode} =~ m/^s/i) { # shot noise - calculate sum-of-sqrt before ditching ricubies
-	$sumsqrt = $cubies->sqrt->sumover->sumover->sumover->(*1,*1,*1);
+	$sumsqrt = $cubies->clip(0)->sqrt->sumover->sumover->sumover->(*1,*1,*1);
     }
 
     print "Transforming...";
@@ -178,7 +178,7 @@ sub noise_gate_batch {
     } elsif($opt{method} =~ m/^w/i) {
 	print "Computing Wiener filters...\n";
 	# Wiener filter is (SNR/SNR+1).  Calculate SNR, adjusted for the optional factor.
-	$filter = $fmcubies / ($mincubie * ($opt{factor} || 1));
+	$filter = $fmcubies / (1e-9 + $mincubie * ($opt{factor} || 1));
 	$filter->range([-1,-1,-1],[3,3,3],'p') .= 1e9;  # assume infinite SNR in 0 band
 	$filter /= ($filter + 1);
     }
