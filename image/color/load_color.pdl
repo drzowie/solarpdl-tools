@@ -1,0 +1,538 @@
+=head2 load_color
+
+=for ref
+
+Loads a prototype module, PDL::Transform::Color, that exports a suite
+of conversion routines.
+
+=head1 NAME
+
+PDL::Transform::Color - Useful color system conversions
+
+=head1 SYNOPSIS
+
+    Some stuff goes here.
+
+=head1 DESCRIPTION
+
+PDL::Transform::Color includes a variety of useful color conversion
+transformations.
+
+Transformations can be used for converting between proper color
+systems, for gamma-converting pixel values, or for generating (or
+interpreting) pseudocolor from one or two input parameters.
+
+The transformation generators in this module all convert FROM
+normalized RGB (nRGB), TO some other system -- unless they
+include the string "2rgb" in the header.   Pseudocolor transformations,
+in particular, convert a data vector to normalized rgb.  Export to
+RGB byte value ("bRGB") is via "t_brgb".
+
+=head1 STANDARD OPTIONS
+
+=over 3
+
+=item gamma
+
+If you specify a gamma correction, it is applied to the normalized RGB
+values BEFORE transformation, i.e to take the square root of the normalized
+RGB values before converting to byte values, use C<gamma=>1/2>.
+
+=back
+
+=head1 AUTHOR
+
+Copyright 2017, Craig DeForest (deforest@boulder.swri.edu)(.  This
+module may be modified and distributed under the same terms as PDL
+itself.  The module comes with NO WARRANTY.
+
+=head1 FUNCTIONS
+
+=cut
+
+use PDL::Transform;
+
+package PDL::Transform::Color;
+
+use PDL::Core ':Internal';  # load "topdl" (internal routine)
+
+@ISA = ( 'Exporter', 'PDL::Transform' );
+our $VERSION = "0.1";
+$VERSION = eval $VERSION;
+
+BEGIN {
+      use Exporter ();
+      @EXPORT_OK = qw(t_brgb t_hsi t_cmyk);
+      @EXPORT = @EXPORT_OK;
+      %EXPORT_TAGS = (Func=>[@EXPORT_OK]);
+}
+
+# This is a hokey way to force an export call with the autoloading --
+# delete for actual module use.
+PDL::Transform::Color->export_to_level(1,@EXPORT);
+
+use strict;
+use PDL;
+use PDL::Transform;
+use PDL::MatrixOps;
+use PDL::NiceSlice;
+use PDL::Options;
+
+use Carp;
+
+our $PI = $PDL::Transform::PI;
+our $DEG2RAD = $PDL::Transform::DEG2RAD;
+our $RAD2DEG = $PDL::Transform::RAD2DEG;
+
+sub _strval {
+    my($me) = shift;
+    $me->stringify();
+}
+
+sub _new { new('PDL::Transform::Color',@_) }
+
+sub new {
+    my($class) = shift;
+    my($parse) = pop;
+    my($name) = pop;
+    my($me) = PDL::Transform::new($class);
+    $me->{name} = $name;
+    $me->{u_opt} = {@_};
+    $me->{idim} = 3;
+    $me->{odim} = 3;
+
+    if( 0+@_ ){
+	my %opt = parse($parse, $me->{u_opt});
+	$me->{params} = \%opt;
+    }
+    
+    return $me;
+}
+
+
+## Compose with gamma correction if necessary
+sub gammify {
+    my $me = shift;
+
+    if( exists($me->{params}->{gamma}) && 
+	defined($me->{params}->{gamma}) && 
+	$me->{params}->{gamma} != 1 ) {
+
+	return ( $me x t_gamma($me->{params}->{gamma}) );
+ 
+   } else {
+
+	return $me;
+
+    }
+}
+
+
+
+##############################
+
+=head2 PDL::Transform::Color::t_gamma 
+
+=for usage
+
+    $t = PDL::Transform::Color::t_gamma($gamma);
+
+=for ref
+
+This is an internal generator that is used to implement the standard
+C<gamma> parameter for all color transforms.
+
+In the forward direction, C<t_gamma> applies the gamma correction
+indicated -- e.g. if the C<$gamma> parameter at generation time is 2,
+then the forward direction squares its input, and in reverse direciton
+takes the square root.
+
+Gamma correction is implemented using a sign-tolerant approach: 
+negative-going values get the same power-law curve applied, but in the 
+negative direction.
+
+=cut
+
+sub t_gamma {
+    my $gamma = shift;
+    my ($me) = _new("gamma",{});
+
+    $me->{params} = {gamma=>$gamma};
+    $me->{name} .= sprintf("=%g",$gamma);
+    $me->{idim} = 3;
+    $me->{odim} = 3;
+
+    $me->{func} = sub {
+	my ($in, $opt) = @_;
+	my $out = $in->new_or_inplace;
+	if($opt->{gamma} != 1) {
+	    $out *= ($in->abs + ($in==0)) ** ($opt->{gamma}-1);
+	}
+	$out;
+    };
+
+    $me->{inv} = sub {
+	my ($in, $opt) = @_;
+	my $out = $in->new_or_inplace;
+	if($opt->{gamma} != 1) {
+	    $out *= ($in->abs + ($in==0)) ** (1.0/$opt->{gamma} - 1);
+	}
+    };
+	
+    $me;
+}
+
+##############################
+
+=head2 t_brgb
+
+=for usage
+
+    $t = t_brgb();
+
+=for ref
+
+(Color) Convert normalized RGB (closed domain: 0 to 1) to byte-scaled
+RGB (semi-open domain: 0 inclusive to 256 exclusive, floating point).
+
+t_brgb accepts the following options:
+
+=over 3
+
+=item clip (default 1)
+
+If set, the output is clipped to [0,256) in the forward direction and 
+to [0,1] in the reverse direction.
+
+=item byte (default 0)
+
+If set, the output is converted to byte type in the forward direction.
+(the output is always converted to a floating-point format in the
+reverse direction).
+
+=back
+
+=cut
+;
+
+sub t_brgb {
+    my($me) = _new(@_,'nRGB->bRGB',
+		   {clip=>1,
+		    byte=>0,
+		    gamma=>1,
+		   }
+	);
+
+    $me->{func} = sub {
+	my($in, $opt) = @_;
+	my $out = $in->new_or_inplace;
+
+	$out *= 256;
+
+	if($opt->{clip}) {
+	    $out->inplace->clip(0,255.99999);
+	}
+	if($opt->{byte}) {
+	    $out = byte $out;
+	}
+	$out;
+    };
+
+    $me->{inv} = sub {
+	my($in,$opt) = @_;
+	my $out = $in->new_or_inplace;
+	$out = $in / 256.0;
+	if($opt->{clip}) {
+	    $out->inplace->clip(0,1);
+	}
+	$out;
+    };
+    
+    return gammify($me);
+}
+
+
+
+
+################################################################################
+# the HS<foo> routines
+
+# return some useful intermediate quantities for HSL, HSV, HSI conversions
+
+sub _hs_hex_helper {
+    my $in = shift;
+
+    die "hexagonal projection not yet implemented";
+    my $dexes = $in->qsorti;
+    my $dx0 = $dexes->(2);
+    my $M = $in->index1d( $dx0        )->((0))->sever;
+    my $m = $in->index1d( $dexes->(0) )->((0))->sever;
+    my $C = $M-$m;
+    
+    my $dx1 = ($dexes->(2)+1) % 3;
+    my $dx2 = ($dexes->(2)+2) % 3;
+    my $H =    ( ( (  ( $in->index1d( $dx1 )  -  $in->index1d( $dx2 ) )->((0)) / $C  ) +  (2 * $dx0->((0)))  )/6 ) % 1;
+    $H->where(!isfinite($H)) .= 0;
+
+    return ($M, $m, $C, $H);
+}
+
+sub _hs_circ_helper {
+    my $in = shift;
+
+    my $dexes = $in->qsorti;
+    my $M = $in->index1d($dexes->(2))->((0))->sever;
+    my $m = $in->index1d($dexes->(0))->((0))->sever;
+
+    my $alpha = 0.5 * (2*$in->((0)) - $in->((1)) - $in->((2)));
+    my $beta  = sqrt(3)/2 * ($in->((1)) - $in->((2)));
+    my $H = (atan2($beta,$alpha) / 2 / $PI) % 1;
+    my $C = sqrt($alpha*$alpha + $beta*$beta);
+    return ($M, $m, $C, $H);
+}
+
+
+=head2 t_hsi
+
+=for ref
+
+HSI is the Hue, Saturation, Intensity system.  It uses a simple hue/saturation
+projection with hue on [0,1), passing through all six primary colors in the
+order red, yellow, green, cyan, blue, magenta, red.  Intensity is the simple
+average of all the RGB components.
+
+By default the hue correction uses a circular projection through the
+space.  This treats the RGB cube as a cone.
+
+Options are:
+
+=over 3 
+
+=item gamma (default 1)
+
+Standard gamma correction from nRGB
+
+=item hexagon (default 1)
+
+If set, use a hexagonal projection of the RGB cube (setting PI=3).
+If clear (the default), use a circular projection for the RGB cube.
+
+=back
+
+=cut
+
+
+
+sub t_hsi {
+    my($me) = _new(@_, 'HSI',
+		   {gamma=>1,
+		    hexagon=>0,
+		   }
+	);
+
+    my $helper;
+    my $inv_helper;
+    
+    if($me->{params}->{hexagon}) {
+	$me->{name} .= "[hex]";
+	$helper = \&_hs_hex_helper;
+	$inv_helper = \&_hs_hex_inv_helper;
+    } else {
+	$me->{name} .= "[circ]";
+	$helper = \&_hs_circ_helper;
+	$inv_helper = \&_hs_circ_inv_helper;
+    }
+
+    # Follows the HSI description in Wikipedia
+    $me->{func} = sub {
+	my ($in, $opt) = @_;
+	my $out = $in->new_or_inplace;
+
+	my($M, $m, $C, $H) = &$helper($in);
+	my $I = $in->sumover / 3;
+	$out->((0)) .= $H;
+	$out->((1)) .= $C/$I;
+	$out->((1))->where(!isfinite($out->((1)))) .= 0;
+	$out->((2)) .= $I;
+	return $out;
+    };
+
+    $me->{inv} = sub {
+	my($in, $opt) = @_;
+	my $out = $in->new_or_inplace;
+	my ($H,$S,$I) = $in->using(0,1,2);
+
+	if($opt->{hexagon}) {
+	    die "Hexagonal projection is not yet implemented";
+	} else {
+	    ## circular case
+
+	    ## Construct basis vectors
+	    my $diag_hat = pdl(1,1,1)/sqrt(3);
+	    my $r_hat = pdl(1,0,0);
+	    my $beta_hat = crossp($diag_hat, $r_hat);
+	    $beta_hat /= sqrt(sumover $beta_hat*$beta_hat);
+	    my $alpha_hat = crossp($beta_hat, $diag_hat);
+	    print "diag_hat=$diag_hat\nalpha_hat=$alpha_hat\nbeta_hat=$beta_hat\n";
+
+	    ## C calculation:  m is the smallest component; C = sqrt(M^2+N^2) for the other two components.
+	    my $C = ($S*$I*sqrt(3)/2)->(*1);
+	    
+	    my $diag = ($diag_hat * sqrt(3)) * $I->(*1);
+	    my $theta = $H->(*1) * 2 * $PI;
+	    $out .= $diag  +  $C * (cos($theta) * $alpha_hat  +  sin($theta) * $beta_hat);
+	}
+
+	return $out;
+	
+    };
+
+    return gammify($me);
+}
+
+
+
+######################################################################
+
+=head2 t_cmyk
+
+converts rgb to cmyk in the usual way (by subtracting RGB values from 
+unity).  There is an output conversion step that can either take the
+logarithm of the output (for full-wash pigment processes), or perform 
+a gamma transform on it (for halftone processes).
+
+CMYK and other process spaces are very complicated; this transform
+presents only a relatively simple conversion that does not take into 
+account ink gamut variation or many other effects.  
+
+There *is* a provision for halftone gamma correction: "htgamma", which
+works exactly like the rgb gamma correction but is applied to the CMYK output.
+
+Options:
+
+=over 3
+
+=item gamma (default 1)
+
+The standard gamma affecting the RGB cube
+
+=item htgamma (default 1)
+
+A "halftone gamma" that is suitable for non-wash output processes
+such as halftoning. it acts on the CMYK values themselves.
+
+=item byte (default 0)
+
+If present, the CMYK side is scaled to 0-255 and converted to a byte type.
+
+=back
+
+=cut
+;
+sub t_cmyk {
+    my($me) = _new(@_, "CMYK",
+		   {gamma=>1,
+		    pigment=>0,
+		    density=>2,
+		    htgamma=>1,
+		    clip=>0,
+		    byte=>0
+		   }
+	);
+    $me->{idim} = 3;
+    $me->{odim} = 4;
+
+    $me->{func} = sub {
+	my($in,$opt) = @_;
+	my $out = zeroes( 4, $in->((0))->dims );
+	
+	my $Kp = $in->maximum->(*1);
+	(my $K = $out->(3)) .= 1 - $Kp;
+	$out->(0:2) .= ($Kp - $in->(0:2)) / $Kp;
+	$out->((3))->where($Kp==0) .= 1;
+	$out->(0:2)->mv(0,-1)->where($Kp==0) .= 0;
+
+	if(defined($opt->{htgamma}) && $opt->{htgamma} != 1) {
+	    $out *= ($out->abs) ** ($opt->{htgamma} - 1);
+	}
+
+	if($opt->{clip}) {
+	    $out->inplace->clip(0,1);
+	}
+
+	if($opt->{byte}) {
+	    $out = (256*$out)->clip(0,255.99999);
+	}
+	return $out;
+    };
+
+    $me->{inv} = sub {
+	my($in,$opt) = @_;
+	my $out = zeroes( 3, $in->((0))->dims );
+
+	$in = $in->new_or_inplace;
+	
+	if($opt->{byte}) {
+	    $in /= 256; # makes copy
+	}
+
+	if(defined($opt->{htgamma}) && $opt->{htgamma} != 1) {
+	    $in *= ($in->abs) ** (1.0/$opt->{htgamma} - 1);
+	}
+	my $Kp = 1.0 - $in->(3);
+	$out .= $Kp * ( $Kp - $in->(0:2) );
+	return $out;
+    };
+
+    return gammify($me);
+
+}
+
+1;
+
+
+package main;
+
+sub load_color {
+    my $param = shift;
+    if($param =~ m/t/) {
+	# test suite
+	require Test::More;
+#	eval q/use Test::More tests => 9;/;
+
+	ok( $PDL::Transform::Color::VERSION, "looks like there's a version in the module" );
+	use PDL::Transform;
+
+	## test t_gamma
+	my $t;
+	eval {$t = PDL::Transform::Color::t_gamma(2);};
+	ok(!$@, "t_gamma constructor executed OK");
+	
+	my $itriplet = pdl(0.5,0,1.0);
+	my $otriplet;
+	eval {$otriplet = $itriplet->apply($t);};
+	ok(!$@, "t_gamma transform applied OK");
+	ok(all(($otriplet * 10000)->rint == ($itriplet**2 * 10000)->rint), "gamma=2 squares the output");
+	eval {$otriplet = $itriplet->invert($t);};
+	ok(!$@, "t_gamma transform inverse applied OK");
+	ok(all(($otriplet * 10000)->rint == ($itriplet**0.5 * 10000)->rint), "gamma=2 inverse square-roots the output");
+
+	$itriplet *= pdl(-1,1,1);
+	eval {$otriplet = $itriplet->apply($t);};
+	ok(!$@, "t_gamma transform with negative values works OK");
+	ok(all(($otriplet * 10000)->abs->rint == (($itriplet->abs)**2 * 10000)->rint), "gamma=2 gives correct magnitude with negative input values");
+	ok($otriplet->((0))<0, "gamma=2 preserves sign");
+	eval {$otriplet = $itriplet->invert($t);};
+	ok(!$@, "t_gamma transformm inverts OK on negative values");
+	ok(all(($otriplet * 10000)->abs->rint == (($itriplet->abs)**0.5 * 10000)->rint), "gamma=2 inverse gives correct magnitude with negative input values");
+	ok($otriplet->((0))<0, "gamma=2 inverse preserves sign");
+	
+	
+	      
+	
+	    
+	done_testing(12);
+	
+    }
+    print "(re)-loaded PDL::Transform::Color\n";
+}

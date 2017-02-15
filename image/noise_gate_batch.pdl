@@ -35,6 +35,12 @@ additive noise spectrum is dominated by shot noise (e.g., EUV solar
 images), use "fixed" for processed images where the additive noise
 floor is roughly constant (e.g., magnetograms).
 
+=item reference (default undef)
+
+If present, this is a separate reference image dataset that can be used
+for calculating shot noise &c.  It should either be a single image that exactly
+matches the original in size, or an image set that exactly matches the original cube.
+
 =item pct (default 50)
 
 This is the percentile value of the local spectra, taken across the
@@ -95,6 +101,7 @@ sub noise_gate_batch {
 	factor => 3,
 	mode => 'shot',
 	method => 'gate',
+	reference => undef,
 	window => 'front',
 		     },
 		     $u_opt
@@ -125,12 +132,7 @@ sub noise_gate_batch {
     $corners->inplace->floor;
     $corners = $corners->clump(1,2,3)->sever;
 
-    # make an array of cubies that is nsub x nsub x nsub x N, and disconnected from the original.
-    print "Cutting...";
-    my $cubies = $out->range($corners,[$opt{nsub},$opt{nsub},$opt{nsub}],'f')->mv(0,-1)->sever;
-    print "cubies is ".join("x",$cubies->dims)."...";
-
-    # Hanning-windify the cubies...
+    ## Prepare a window function (hanning windows by default, hence the name)
     my $hanning;
     if($opt{window} =~ m/^[fq]/i) {
 	print "Windowing...";
@@ -139,22 +141,51 @@ sub noise_gate_batch {
 	print "Half-windowing...\n";
 	$hanning = sin( (  xvals( $opt{nsub} ) + 0.5) * PI / $opt{nsub} );
     }
+
+    # If a reference image stack was supplied, find brightness values for each cubie (next block) in the
+    # reference stack.  Do this first so we can free the refcubies variable before allocating the main cubies.
+    my $ref_sumsqrt;
+    if(defined($opt{reference})) {
+	print "Storing reference brightnesses...";
+	# To save time, just store the sum of each reference cubie, if reference values are supplied.
+	if($opt{reference}->ndims==2){
+	    $opt{reference} = $opt{reference}->(:,:,*($cube->dim(2)));
+	}
+	my $refcubies = $opt{reference}->range($corners,[$opt{nsub},$opt{nsub},$opt{nsub}],'f')->mv(0,-1)->sever;
+	$refcubies *= $hanning;
+	$refcubies *= $hanning->(*1);
+	$refcubies *= $hanning->(*1,*1);
+	$ref_sumsqrt = $refcubies->clip(0)->sqrt->sumover->sumover->sumover->(*1,*1,*1);
+    }
+
+    # make an array of cubies that is nsub x nsub x nsub x N, and disconnected from the original.
+    print "Cutting...";
+    our $cubies = $out->range($corners,[$opt{nsub},$opt{nsub},$opt{nsub}],'f')->mv(0,-1)->sever;
+    print "cubies is ".join("x",$cubies->dims)."...";
+
     $cubies *= $hanning;
     $cubies *= $hanning->(*1);
     $cubies *= $hanning->(*1,*1);
 
     my $sumsqrt;
     if($opt{mode} =~ m/^s/i) { # shot noise - calculate sum-of-sqrt before ditching ricubies
-	$sumsqrt = $cubies->clip(0)->sqrt->sumover->sumover->sumover->(*1,*1,*1);
+	print "Calculating brigtnesses for shot noise...";
+	if(defined($ref_sumsqrt)) {
+	    $sumsqrt = $ref_sumsqrt;
+	} else {
+	    $sumsqrt = $cubies->clip(0)->sqrt->sumover->sumover->sumover->(*1,*1,*1);
+	}
     }
 
     print "Transforming...";
-    my $ricubies = pdl($cubies,0)->mv(-1,0);  # (ri) x nsub x nsub x nsub x N
-    my $fricubies = fft3($ricubies->inplace);
-    undef $ricubies;
+    #    my $ricubies = pdl($cubies,0)->mv(-1,0);  # (ri) x nsub x nsub x nsub x N
+    #    my $fricubies = fft3($ricubies->inplace);
+    our $fricubies = rfft3($cubies); # 2 x nsub/2 x nsub/2 x nsub/2 x N
+#    undef $cubies;
 
     print "Mag...";
-    my $fmcubies = ($fricubies*$fricubies)->sumover->sqrt; # nsub x nsub x nsub x N
+    #  my $fmcubies = ($fricubies*$fricubies)->sumover->sqrt; # nsub x nsub x nsub x N
+    our $fmcubies = ($fricubies * $fricubies)->sumover->sqrt; # nsub/2 x nsub/2 x nsub/2 x N
     
     # Convert percentile into an index for future converted cubies
     my $c_n = floor( $opt{pct}/100  * $fmcubies->dim(3) ) ;
@@ -162,12 +193,12 @@ sub noise_gate_batch {
 
     if($opt{mode} =~ m/^s/i) {  # shot noise
 	print "shot noise: scaling by sum(sqrt)...";
-	$fmcubies /= $sumsqrt;
+	$fmcubies /= $sumsqrt + 1e-20 * ($sumsqrt==0);
     } elsif( $opt{mode} =~ m/^f/i) { # fixed noise
         print "Finding fixed noise floor...";
     }
 
-    my $mincubie = $fmcubies->mv(3,0)->qsort->(($c_n))->sever;
+    our $mincubie = $fmcubies->mv(3,0)->qsort->(($c_n))->sever;
     
     my $filter;
     if($opt{method} =~ m/^g/i) {
@@ -189,7 +220,8 @@ sub noise_gate_batch {
 
 
     print "Inverse transforming...";
-    my $rcubies = ifft3($fricubies->inplace)->((0))->sever;
+    #   my $rcubies = ifft3($fricubies->inplace)->((0))->sever;
+    my $rcubies = irfft3($fricubies);
     $out .= 0;
 
     if($opt{window} =~ m/^[sq]/i) {
