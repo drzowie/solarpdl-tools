@@ -1120,15 +1120,6 @@ sub t_shift_rgb {
 }		    
 
 
-##############################
-
-=head2 t_ciergb
-
-=for ref
-
-Converts lsRGB to the CIE RGB basis.  
-
-=cut
 
 ##############################
 
