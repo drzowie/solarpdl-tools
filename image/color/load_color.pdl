@@ -182,7 +182,7 @@ with C<t_brgb> and its C<display_gamma> option.
 
 =head1 AUTHOR
 
-Copyright 2017, Craig DeForest (deforest@boulder.swri.edu)(.  This
+Copyright 2017, Craig DeForest (deforest@boulder.swri.edu).  This
 module may be modified and distributed under the same terms as PDL
 itself.  The module comes with NO WARRANTY.
 
@@ -217,7 +217,6 @@ use PDL;
 use PDL::Transform;
 use PDL::MatrixOps;
 use PDL::Options;
-use PDL::MatrixOps;
 use PDL::NiceSlice;
 
 use Carp;
@@ -444,15 +443,10 @@ sub t_brgb {
 
 =for ref
 
-Converts to sRGB - the typical RGB encoding used by most computing
-devices.  This involves a (minor) linear transformation for the
-different primary colors used by CIE RGB and sRGB, and also a gamma
-correction to the SRGB output.
-
-Since most computer terminals use sRGB, converting from CIE RGB with
-t_srgb will yield an output image whose physical brightness is
-linearly dependent on the original brightness value in the original
-data.
+Converts linearized sRGB (the internal base representation) to sRGB -
+the typical RGB encoding used by most computing devices.  Since most
+computer terminals use sRGB, the representation's gamut is well matched
+to most computer monitors.
 
 sRGB is a spliced standard, rather having a direct gamma correction.
 Hence there is no way to adjust the output gamma.  If you want to do 
