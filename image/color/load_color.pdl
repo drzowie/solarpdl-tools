@@ -202,7 +202,7 @@ $VERSION = eval $VERSION;
 
 BEGIN {
       use Exporter ();
-      @EXPORT_OK = qw/ t_gamma t_brgb t_srgb t_shift_illuminant t_shift_rgb t_cmyk t_rgi t_cieXYZ t_xyz t_xyY t_xyy /;
+      @EXPORT_OK = qw/ t_gamma t_brgb t_srgb t_shift_illuminant t_shift_rgb t_cmyk t_rgi t_cieXYZ t_xyz t_xyY t_xyy t_lab t_xyz2lab t_hsl t_hsv /;
       @EXPORT = @EXPORT_OK;
       %EXPORT_TAGS = (Func=>[@EXPORT_OK]);
 }
@@ -351,14 +351,14 @@ sub t_gamma {
 
 =for ref
 
-(Color) Convert normalized RGB (closed domain: 0 to 1) to byte-scaled
-RGB (semi-open domain: 0 inclusive to 256 exclusive, floating point).
-By default, C<t_brgb> prepares byte values tuned for a display gamma
-of 2.2, which approximates sRGB (the standard output color coding for
+Convert normalized sRGB (closed domain: 0 to 1) to byte-scaled RGB
+(semi-open domain: 0 inclusive to 256 exclusive, floating point).  By
+default, C<t_brgb> prepares byte values tuned for a display gamma of
+2.2, which approximates sRGB (the standard output color coding for
 most computer displays).  The difference between C<t_brgb> and
-C<t_srgb> is that C<t_srgb> uses the actual spliced-curve approximation
-specified in the sRGB standard, while C<t_brgb> uses a simple gamma
-law for export.
+C<t_srgb> is that C<t_srgb> uses the actual spliced-curve
+approximation specified in the sRGB standard, while C<t_brgb> uses a
+simple gamma law for export.
 
 C<t_brgb> accepts the following options, all of which may be abbreviated:
 
@@ -1468,8 +1468,299 @@ sub t_cmyk {
 
 }
 
+=head2 t_cielab or t_lab
+
+=for usage
+
+    $t = t_cielab();
+
+=for ref
+
+Convert RGB to CIE Lab colors.  C<Lab> stands for Lightness, 
+"a", and "b", representing the overall luminance detection and 
+two opponent systems (a: red/green, and b:yellow/blue) in the human 
+eye.  Lab colors are approximately perceptually uniform:  they're
+mapped using a nonlinear transformation involving cube roots.  Lab 
+has the property that Euclidean distances of equal size in the space
+yield approximately equal perceptual shifts in the represented color.
+
+Lightness runs 0-100, and the a and b opponent systems run -100 to +100.
+
+The Lab space includes the entire CIE XYZ gamut and many "impossible colors".
+that cannot be represented directly with physical light.  Many of these 
+"impossible colors" (also "chimeric colors") can be experienced directly
+using visual fatigue effects, and can be classified using Lab.
+
+Lab is easiest to convert directly from XYZ space, so the C<t_lab> constructor
+returns a compound transform of C<t_xyz2lab> and C<t_xyz>.
+
+=cut
+
+sub f_lab {
+    my $in = shift;
+    my $delta = 6/29;
+    my $delta3 = $delta * $delta * $delta;
+    return ( 
+	($in >  $delta3) * ( $in * (($in->abs+($in==0)) ** (0.333-1)) ) +
+	($in <= $delta3) * ( $in / (3 * $delta * $delta) + 4/29 )
+	);
+}
 
 
+sub f_lab_inv {
+    my $in = shift;
+    my $delta = 6/29;
+
+    return (
+	($in >  $delta) * ($in*$in*$in) +
+	($in <= $delta) * (3 * $delta * $delta * ($in - 4/29))
+	);
+}
+
+=head2 t_xyz2lab
+
+=for usage
+
+    $t = t_xyz2lab();
+
+=for ref
+
+Converts CIE XYZ to CIE Lab.
+
+=cut
+    
+sub t_xyz2lab {
+	
+    my ($me) = _new(@_,'XYZ->Lab',
+		    {
+			white=>"D65",
+		    }
+	);
+
+    # get and store illuminant XYZ
+    my $wp_xyy = xyy_from_illuminant($me->{params}->{white});
+    $me->{params}->{wp_xyz} = $wp_xyy->copy;
+    $me->{params}->{wp_xyz}->(2) .= 1 - $wp_xyy->(0) - $wp_xyy->(1);
+    $me->{params}->{wp_xyz} *= $wp_xyy->(2);
+    
+
+    # input is XYZ by the time it gets here
+    $me->{func} = sub {
+	my($in,$opt) = @_;
+	my($out) = zeroes($in);
+
+	my $wp = $opt->{wp_xyz} + ($opt->{wp_xyz}==0);
+	
+	my $FYp = f_lab(  $in->((1)) / $wp->((1))  );
+	    
+	$out->((0)) .= 116 * $FYp - 16;
+	$out->((1)) .= 500 * ( f_lab( $in->((0)) / $wp->((0)) ) - $FYp   );
+	$out->((2)) .= 200 * ( $FYp - f_lab( $in->((2)) / $wp->((2)) ) );
+
+	if($in->is_inplace) {
+	    $in .= $out;
+	    $out = $in;
+	}
+	return $out;
+    };
+
+    $me->{inv} = sub {
+	my($in,$opt) = @_;
+	my($out) = zeroes($in);
+
+	my $Lterm = ($in->((0))+16)/116;
+	
+	$out->((0)) .= $opt->{wp_xyz}->((0)) * f_lab_inv( $Lterm + $in->((1))/500 );
+	$out->((1)) .= $opt->{wp_xyz}->((1)) * f_lab_inv( $Lterm );
+	$out->((2)) .= $opt->{wp_xyz}->((2)) * f_lab_inv( $Lterm - $in->((2))/200 );
+
+	if($in->is_inplace) {
+	    $in .= $out;
+	    $out = $in;
+	}
+	return $out;
+    };
+    
+    return $me;
+}
+
+
+sub t_lab {
+    my ($me) = _new(@_, 'Lab',
+		    {
+			gamma => 1.0,
+			white=>'D65',
+		    }
+	);
+    return ( 
+	t_xyz2lab(white=>$me->{params}->{white} )  x
+	t_xyz( gamma=>$me->{params}->{gamma})
+	);
+}
+
+
+=head2 t_hsl and t_hsv
+
+=for usage
+
+    $rgb = $hsl->invert($t_hsl());
+
+=for ref
+
+HSL stands for Hue, Saturation, Lightness.  It's not an absolute
+color space, simply derived from each RGB (by default, linearized
+sRGB).  it has the same gamut as the host RGB system.  The coordinates
+are hexagonal and follow the nearest face of the cube.
+
+HSL is a double-cone system, so iso-L surfaces are close to the plane
+perpendicular to the double-diagonal white/illuminant line R=G=B.
+This has the effect of reducing saturation at high lightness levels,
+but maintains luminosity independent of saturation.  Maximum
+saturation occurs when S=1 and L=0.5; at higher values of L, colors
+grow less saturated and more pastel, so that L follows total
+luminosity of the output.
+
+HSV is a stacked sinfle-cone system: iso-V surfaces are parallel to
+the bright faces of the RGB cube, so maximal bright saturation occurs
+when S=1 and V=1.  This means that output luminosity drops with
+saturation, but due to the Helmholtz-Kolrausch effect (linking
+saturation to apparent brightness) the *perceived* brightness is less
+S-dependent: V follows total *apparent brightness* of the output,
+though output luminosity drops with S.
+
+You can represent out-of-gamut values in either system, by using
+saturations greater than unity.
+
+Hue, Saturation, and (Lightness or Value) each run from 0 to 1.  
+
+You can encode the Lightness or Value with a gamma value ("lgamma") if 
+desired.
+
+Options:
+
+=over 3
+
+=item gamma (default 1)
+
+Treat the base RGB as gamma-encoded (default 1 is linear)
+
+=item lgamma (default 1)
+
+Treat the L coordinate as gamma-encoded (default 1 is linear).
+
+=item hsv (default 0 if called as "t_hsl", 1 if called as "t_hsv")
+
+Sets which of the HSL/HSV transform is to be used.
+
+=back
+
+=cut
+
+sub t_hsl {
+    my($me) = _new(@_,"HSL",
+		   {gamma=>1,
+		    lgamma=>1,
+		    hsv=>0
+		   }
+	);
+
+    $me->{name} = "HSV" if($me->{params}->{hsv});
+    
+    $me->{func} = sub {
+	my($in, $opt) = @_;
+	my $out = zeroes($in);
+	
+	my $Cmax = $in->maximum;
+	my $Cmin = $in->minimum;
+	my $maxdex = $in->qsorti->((2))->sever;
+	my $Delta = ( $Cmax - $Cmin + ($Cmax==$Cmin) );
+
+	my $dexes = ($maxdex->(*1) + pdl(0,1,2)) % 3;
+
+	my $H = $out->((0));
+	$H .= (  ($in->index1d($dexes->(1)) - $in->index1d($dexes->(2)))->((0))/$Delta + 2 * $dexes->((0))  )  /  6;
+	$H += ($H<0);
+
+	#Lightness
+	my $L = $out->((2));
+	if($opt->{hsv}) {
+	    $L .= $Cmax;
+	    $out->((1)) .= $Delta / ($L + ($L==0));
+	} else {
+	    $L .= ($Cmax + $Cmin)/2;
+	    $out->((1)) .= $Delta / (1 - (2*$L-1)->abs + ($L==0 | $L==1));
+	}
+	
+	#Saturation
+	if( $opt->{lgamma} != 1 ){
+	    $L .= $L * (($L->abs + ($L==0)) ** (1.0/$opt->{lgamma} - 1));
+	}
+
+	if($in->is_inplace) {
+	    $in .= $out;
+	    $out = $in;
+	}
+	return $out;
+    };
+
+    $me->{inv} = sub {
+	my($in,$opt) = @_;
+
+	my $H = $in->((0))*6;
+	my $S = $in->((1));
+	my $L = $in->((2));
+
+	if($opt->{lgamma} != 1) {
+	    $L = $L * (($L->abs + ($L==0)) ** ($opt->{lgamma}-1));
+	}
+	
+	my $ZCX = zeroes($in);
+	my $C = $ZCX->((1));
+	my $m;
+	if($opt->{hsv}) {
+	    $C .= $L * $S;
+	    $m = $L - $C;
+	} else {
+	    $C .= (1 - (2*$L - 1)->abs) * $S;
+	    $m = $L - $C/2;
+	}
+
+	$ZCX->((2)) .= $C * (1 - ($H % 2 - 1)->abs);
+
+	my $dexes = pdl( [1,2,0], [2,1,0], [0,1,2], [0,2,1], [2,0,1], [1,0,2] )->mv(1,0)->sever;
+	my $dex = $dexes->index1d($H->floor->(*1,*1))->((0))->sever; # 3x(threads)
+	my $out = $ZCX->index1d($dex)->sever + $m->(*1);
+
+	if($in->is_inplace) {
+	    $in .= $out;
+	    $out = $in;
+	}
+
+	return $out;
+    };
+
+    return gammify($me);
+}
+
+=head2 t_hsv
+
+=for ref
+
+Implements the HSV transfromation, which is similar to HSL except that it fades
+to light instead of to grey.  See the documentation for C<t_hsl> for details.
+
+=cut
+
+sub t_hsv {
+        my($me) = _new(@_,"HSL",
+		   {gamma=>1,
+		    lgamma=>1,
+		    hsv=>1
+		   }
+	);
+	return t_hsl(%{$me->{params}});
+}
+		    
 
 
 1;
@@ -1613,6 +1904,10 @@ sub load_color {
 	    );
 	ok( all( ($test*10000)->rint == ($ocolors*10000)->rint ), "t_rgi passees 8-color test");
 
+	##########
+	# test t_hsl
+	
+	
 	
     } else {
 
@@ -1620,6 +1915,5 @@ sub load_color {
     }
 
 }
-
 
 print "(re)-loaded PDL::Transform::Color\n";
