@@ -27,6 +27,7 @@ sub noise_gate_cube {
 	method => 'gate',
 	reference => undef,
 	window => 'quad',
+	noise_spectrum=>undef
 		    },
 		    $u_opt
 	);
@@ -39,16 +40,30 @@ sub noise_gate_cube {
     my ($ii, $n);
     my $N = pdl(($cube->dim(2)-$opt{nsub})/$step)->floor;
 
+    ##############################
+    # Make a minimum from three time slices, unless one gets passed in.
+    print "Making minimum values...\n";
+    unless(defined($opt{noise_spectrum})) {
+	my @mins;
+        $opt{noise_spectrum} = "measure";
+	print "SLICE 1...\n";
+	push(@mins, noise_gate_batch($cube->(:,:,0:$opt{nsub}-1),\%opt));
+	print "SLICE 2...\n";
+	push(@mins, noise_gate_batch($cube->(:,:,($cube->dim(2)/2-$opt{nsub}/2):(($cube->dim(2)/2-$opt{nsub}/2)+$opt{nsub}-1)), \%opt));
+	print "SLICE 3...\n";
+	push(@mins, noise_gate_batch($cube->(:,:,-$opt{nsub}:-1),\%opt));
+	$opt{noise_spectrum} = pdl(@mins)->mv(-1,0)->medover;
+    }
+
+    ##############################
+    # Process the cube using the prefrobnicated noise spectrum
     for( $ii=$n=0; $ii < $cube->dim(2)-$opt{nsub}; $ii += $step ) {
 	print "== Slice $n of $N "." (layer $ii)\n";
-	my $pcube = noise_gate_batch($cube->(:,:,$ii:$ii+$opt{nsub}-1));
+	my $pcube = noise_gate_batch($cube->(:,:,$ii:$ii+$opt{nsub}-1),\%opt);
 	$ocube->(:,:,$ii:$ii+$opt{nsub}-1) += $pcube;
 	$n++;
     }
 
-    if($opt{window}=~m/^q/i) {
-	$ocube /= 1.5;
-    }
     return $ocube;
 }
 

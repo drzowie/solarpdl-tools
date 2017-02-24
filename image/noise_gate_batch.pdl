@@ -14,9 +14,20 @@ proportion.
 
 Processing happens in "cubies" -- subcubes of a size that is passed
 in, in the options hash.  Cubies are merged back into the output cube,
-with Hanning windows applied.
+with Hanning windows applied.  The edge condition is whatever rolloff
+the windowing function applies.
 
-The data cube is notionally formatted as (x,y,t).  Three dimensions are required.
+The data cube is notionally formatted as (x,y,t).  Three dimensions
+are required.
+
+By default, noise_gate_batch uses statistics of the input cube itself
+to determine a noise spectrum.  An option (C<noise_spectrum=>'measure'>) allows you
+to accumulate a noise spectrum and return it.  You can then feed that
+spectrum into further calls to C<noise_gate_batch> for consistency
+and/or speed.  That is useful for wrappers like C<noise_gate_cube>,
+which use C<noise_gate_batch> as an engine to step through a large
+data set.
+
 
 Options are:
 
@@ -37,15 +48,25 @@ floor is roughly constant (e.g., magnetograms).
 
 =item reference (default undef)
 
-If present, this is a separate reference image dataset that can be used
-for calculating shot noise &c.  It should either be a single image that exactly
-matches the original in size, or an image set that exactly matches the original cube.
+If present, this is a separate reference image dataset that can be
+used for calculating shot noise.  It should either be a single image
+that exactly matches the original in size, or an image set that
+exactly matches the original cube.  The shot noise is scaled from the
+reference image, rather than from the data.
 
 =item pct (default 50)
 
 This is the percentile value of the local spectra, taken across the
 population of sub-image segments, to consider the magnitude of the
 noise.
+
+=item noise_spectrum (default undef)
+
+This allows you to feed in a noise spectrum measured in an earlier
+call to C<noise_gate_batch>.  If you feed in the string "measure",
+then the cube is not processed -- only measured.  The noise spectrum
+is measured and returned.  You can then feed that noise spectrum
+into subsequent calls, and skip measurement.
 
 =item method (default "gate")
 
@@ -102,7 +123,8 @@ sub noise_gate_batch {
 	mode => 'shot',
 	method => 'gate',
 	reference => undef,
-	window => 'front',
+	window => 'quad',
+	noise_spectrum => undef
 		     },
 		     $u_opt
 	);
@@ -198,7 +220,29 @@ sub noise_gate_batch {
         print "Finding fixed noise floor...";
     }
 
-    our $mincubie = $fmcubies->mv(3,0)->qsort->(($c_n))->sever;
+    # Calculate thresholds.  Do this from the statistics of the fmcubies, or use a passed-in mincube.
+    my $mincubie;
+    if(defined($opt{noise_spectrum}) && UNIVERSAL::isa($opt{noise_spectrum},'PDL')) {
+	if($opt{noise_spectrum}->ndims == 3  and  all($opt{noise_spectrum}->shape == $fmcubies->(:,:,:,(0))->shape)) {
+	    $mincubie = $opt{noise_spectrum}->copy;
+	} else {
+	    die "Passed-in noise spectrum has the wrong shape!";
+	}
+    } elsif(!$opt{noise_spectrum} or  $opt{noise_spectrum} =~ m/^m/i) {
+	## Default path here:  calculate the mincubie (threshold) from the fmcubies
+	
+	$mincubie = $fmcubies->mv(3,0)->qsort->(($c_n))->sever;
+
+	## If we are just measuring, then return that and be done.
+	if($opt{noise_spectrum} =~ m/^m/i) {
+	    print "\n";
+	    return $mincubie;
+	}
+    } else {
+	## We got a noise_spectrum option and it isn't "measure" and it isn't a PDL.  WTF?
+	die "unknown noise_spectrum option '$opt{noise_spectrum}'";
+    }
+
     
     my $filter;
     if($opt{method} =~ m/^g/i) {
