@@ -1,0 +1,54 @@
+use strict;
+=head2 noise_gate_cube
+
+=for usage
+
+    $output_cube = noise_gate_cube( $input_cube, \%options );
+
+=for ref
+
+This implements a streamed version of C<noise_gate_batch()>.  For NxNxN cubes, it processes
+4*N images at a time, sending the output into a copy of the input cube.
+
+=cut
+
+use PDL::Options;
+use PDL::Constants;
+use PDL::NiceSlice;
+
+sub noise_gate_cube {
+    my $cube = shift;
+    my $u_opt = shift // {};
+    my %opt = parse({
+	nsub => 8,
+	pct  => 50,
+	factor => 3,
+	mode => 'shot',
+	method => 'gate',
+	reference => undef,
+	window => 'quad',
+		    },
+		    $u_opt
+	);
+
+    # Figure out how may images per step
+    my $divisor = ( ($opt{window} =~ m/^q/i) ? 4 : 2 );
+    my $ocube = zeroes($cube);
+
+    my $step = $opt{nsub}/$divisor;
+    my ($ii, $n);
+    my $N = pdl(($cube->dim(2)-$opt{nsub})/$step)->floor;
+
+    for( $ii=$n=0; $ii < $cube->dim(2)-$opt{nsub}; $ii += $step ) {
+	print "== Slice $n of $N "." (layer $ii)\n";
+	my $pcube = noise_gate_batch($cube->(:,:,$ii:$ii+$opt{nsub}-1));
+	$ocube->(:,:,$ii:$ii+$opt{nsub}-1) += $pcube;
+	$n++;
+    }
+
+    if($opt{window}=~m/^q/i) {
+	$ocube /= 1.5;
+    }
+    return $ocube;
+}
+
