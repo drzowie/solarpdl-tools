@@ -1,0 +1,40 @@
+use strict;
+=head2 noise_gate_parallel
+
+=for usage
+
+    noise_gate_parallel( $outdir, \@input_files, $n_cpu, \%options );
+
+=for ref
+
+This runs noise_gate_sequence in batches to process a large array of input files in parallel.
+
+Parameters are passed-through to noise_gate_sequence, except for $CPUs.
+
+Don't set keep_time_margin unless you want random dark boundaries in the output files.
+
+=cut
+
+sub noise_gate_parallel {
+    my $outdir = shift;
+    my $files = shift;
+    my $CPUs = shift;
+    my $opt = shift // {};
+
+    multicore([0..$CPUs-1], 
+	      sub {
+		  my $i=shift;
+		  my $N = $#$files+1;
+		  my $step = int($N / $CPUs);
+		  my $lo = $i * $step;
+		  my $hi = ($i+1) * ($step+1) + ($opt->{nsub} // 12);
+		  $hi = $#$files if ($hi>$#$files);
+		  print "lo=$lo; hi=$hi\n";
+		  noise_gate_sequence($outdir, [@{$files}[$lo..$hi]], $opt);
+	      }, 
+	      $CPUs
+	);
+}
+
+    
+    

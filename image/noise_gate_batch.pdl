@@ -101,6 +101,17 @@ windowing overall.  This is coupled with 4x-per-segment sampling
 of 8 in CPU time and memory compared to regular Hanning windows.  But 
 the results are very smooth.
 
+=item "verbose" -- be chatty
+
+If set to 1, this prints some status messages as the calculation is happening.
+
+=item "noise_spectrum" -- provide pre-processed noise spectrum
+
+If this is provided, it must either be the string "measure", in which
+case the code measures the noise spectrum and returns it instead
+of a processed cube, or else a PDL containing a noise spectrum returned
+by an earlier call.  
+
 =back
 
 =back
@@ -124,6 +135,7 @@ sub noise_gate_batch {
 	method => 'gate',
 	reference => undef,
 	window => 'quad',
+	verbose=>0,
 	noise_spectrum => undef
 		     },
 		     $u_opt
@@ -157,10 +169,10 @@ sub noise_gate_batch {
     ## Prepare a window function (hanning windows by default, hence the name)
     my $hanning;
     if($opt{window} =~ m/^[fq]/i) {
-	print "Windowing...";
+	print "Windowing..." if $opt{verbose};
 	$hanning = sin( (  xvals( $opt{nsub} ) + 0.5) * PI / $opt{nsub} ) ** 2;
     } elsif($opt{window} =~ m/^s/i) {
-	print "Half-windowing...\n";
+	print "Half-windowing...\n" if $opt{verbose};
 	$hanning = sin( (  xvals( $opt{nsub} ) + 0.5) * PI / $opt{nsub} );
     }
 
@@ -168,7 +180,7 @@ sub noise_gate_batch {
     # reference stack.  Do this first so we can free the refcubies variable before allocating the main cubies.
     my $ref_sumsqrt;
     if(defined($opt{reference})) {
-	print "Storing reference brightnesses...";
+	print "Storing reference brightnesses..." if ($opt{verbose});
 	# To save time, just store the sum of each reference cubie, if reference values are supplied.
 	if($opt{reference}->ndims==2){
 	    $opt{reference} = $opt{reference}->(:,:,*($cube->dim(2)));
@@ -181,9 +193,9 @@ sub noise_gate_batch {
     }
 
     # make an array of cubies that is nsub x nsub x nsub x N, and disconnected from the original.
-    print "Cutting...";
+    print "Cutting..." if ($opt{verbose});
     our $cubies = $out->range($corners,[$opt{nsub},$opt{nsub},$opt{nsub}],'f')->mv(0,-1)->sever;
-    print "cubies is ".join("x",$cubies->dims)."...";
+    print "cubies is ".join("x",$cubies->dims)."..." if ($opt{verbose});
 
     $cubies *= $hanning;
     $cubies *= $hanning->(*1);
@@ -191,7 +203,7 @@ sub noise_gate_batch {
 
     my $sumsqrt;
     if($opt{mode} =~ m/^s/i) { # shot noise - calculate sum-of-sqrt before ditching ricubies
-	print "Calculating brigtnesses for shot noise...";
+	print "Calculating brigtnesses for shot noise..." if ($opt{verbose});
 	if(defined($ref_sumsqrt)) {
 	    $sumsqrt = $ref_sumsqrt;
 	} else {
@@ -199,25 +211,25 @@ sub noise_gate_batch {
 	}
     }
 
-    print "Transforming...";
+    print "Transforming..." if ($opt{verbose});
     #    my $ricubies = pdl($cubies,0)->mv(-1,0);  # (ri) x nsub x nsub x nsub x N
     #    my $fricubies = fft3($ricubies->inplace);
     our $fricubies = rfft3($cubies); # 2 x nsub/2 x nsub/2 x nsub/2 x N
 #    undef $cubies;
 
-    print "Mag...";
+    print "Mag..." if ($opt{verbose});
     #  my $fmcubies = ($fricubies*$fricubies)->sumover->sqrt; # nsub x nsub x nsub x N
     our $fmcubies = ($fricubies * $fricubies)->sumover->sqrt; # nsub/2 x nsub/2 x nsub/2 x N
     
     # Convert percentile into an index for future converted cubies
     my $c_n = floor( $opt{pct}/100  * $fmcubies->dim(3) ) ;
-    print "select percentile (n=$c_n)...";
+    print "select percentile (n=$c_n)..." if ($opt{verbose});
 
     if($opt{mode} =~ m/^s/i) {  # shot noise
-	print "shot noise: scaling by sum(sqrt)...";
+	print "shot noise: scaling by sum(sqrt)..." if ($opt{verbose});
 	$fmcubies /= $sumsqrt + 1e-20 * ($sumsqrt==0);
     } elsif( $opt{mode} =~ m/^f/i) { # fixed noise
-        print "Finding fixed noise floor...";
+        print "Finding fixed noise floor..." if ($opt{verbose});
     }
 
     # Calculate thresholds.  Do this from the statistics of the fmcubies, or use a passed-in mincube.
@@ -235,7 +247,7 @@ sub noise_gate_batch {
 
 	## If we are just measuring, then return that and be done.
 	if($opt{noise_spectrum} =~ m/^m/i) {
-	    print "\n";
+	    print "\n" if ($opt{verbose});
 	    return $mincubie;
 	}
     } else {
@@ -246,30 +258,30 @@ sub noise_gate_batch {
     
     my $filter;
     if($opt{method} =~ m/^g/i) {
-	print "Computing threshold filters...\n";
+	print "Computing threshold filters...\n" if ($opt{verbose});
 	$mincubie *= $opt{factor};
 	$fmcubies->range([-1,-1,-1],[3,3,3],'p').= 1e15;
 	$filter = ($fmcubies >= $mincubie);
     } elsif($opt{method} =~ m/^w/i) {
-	print "Computing Wiener filters...\n";
+	print "Computing Wiener filters...\n" if ($opt{verbose});
 	# Wiener filter is (SNR/SNR+1).  Calculate SNR, adjusted for the optional factor.
 	$filter = $fmcubies / (1e-9 + $mincubie * ($opt{factor} || 1));
 	$filter->range([-1,-1,-1],[3,3,3],'p') .= 1e9;  # assume infinite SNR in 0 band
 	$filter /= ($filter + 1);
     }
 
-    print "Applying filters...\n";
+    print "Applying filters...\n" if ($opt{verbose});
     $fricubies->((0)) *= $filter;
     $fricubies->((1)) *= $filter;
 
 
-    print "Inverse transforming...";
+    print "Inverse transforming..." if ($opt{verbose});
     #   my $rcubies = ifft3($fricubies->inplace)->((0))->sever;
     my $rcubies = irfft3($fricubies);
     $out .= 0;
 
     if($opt{window} =~ m/^[sq]/i) {
-	print "finishing windowing...";
+	print "finishing windowing..." if ($opt{verbose});
 	$rcubies *= $hanning;
 	$rcubies *= $hanning->(*1);
 	$rcubies *= $hanning->(*1,*1);
@@ -278,7 +290,7 @@ sub noise_gate_batch {
 	$rcubies /= 1.5*1.5*1.5;
     }
 
-    print "Merging...\n";
+    print "Merging...\n" if ($opt{verbose});
     for my $i(0..$corners->dim(1)-1){
 	$out->range($corners->(:,($i)),[$opt{nsub},$opt{nsub},$opt{nsub}],'f') += $rcubies->(:,:,:,($i));
     }
