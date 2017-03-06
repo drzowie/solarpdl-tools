@@ -14,20 +14,36 @@ Parameters are passed-through to noise_gate_sequence, except for $CPUs.
 Don't set keep_time_margin unless you want random dark boundaries in the output files.
 
 =cut
+use PDL::Options;
 
 sub noise_gate_parallel {
     my $outdir = shift;
     my $files = shift;
     my $CPUs = shift;
-    my $opt = shift // {};
+    my $u_opt = shift // {};
 
+    my %opt = parse({
+	nsub   => 12,
+	pct    => 50,
+	factor => 3,
+	mode   => 'shot',
+	method => 'gate',
+	reference => undef,
+	window => 'quad',
+
+	noise_spectrum=>undef
+		    }, $u_opt
+	);
+    my $opt = \%opt;
+
+    
     multicore([0..$CPUs-1], 
 	      sub {
 		  my $i=shift;
 		  my $N = $#$files+1;
 		  my $step = int($N / $CPUs);
 		  my $lo = $i * $step;
-		  my $hi = ($i+1) * ($step+1) + ($opt->{nsub} // 12);
+		  my $hi = ($i+1) * ($step+1) + 2*($opt->{nsub} // 12);
 		  $hi = $#$files if ($hi>$#$files);
 		  print "lo=$lo; hi=$hi\n";
 		  noise_gate_sequence($outdir, [@{$files}[$lo..$hi]], $opt);
