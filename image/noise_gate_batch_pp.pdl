@@ -1,11 +1,13 @@
 use strict;
-=head2 noise_gate_batch
+=head2 noise_gate_batch_pp
 
 =for usage
 
-    $output_cube = noise_gate_batch($input_cube, \%options);
+    $output_cube = noise_gate_batch_pp($input_cube, \%options);
 
 =for ref
+
+Updated, fully compiled version of noise_gate_batch...
 
 Method of cleaning a movie "cube" via noise gating.  First, accumulate
 amplitude thresholds from the data themselves.  Then discard Fourier
@@ -122,6 +124,20 @@ use PDL::Options;
 use PDL::Constants;
 use PDL::NiceSlice;
 use PDL::FFTW3;
+
+no PDL::NiceSlice;
+*noise_gate_batch_pp = \&PDL::noise_gate_batch_pp;
+use Inline Pdlpp => <<'EOF';
+
+pp_def('measure_noise_spectrum',
+	Pars=>'cube(x,y,z);[o]spectrum(x,y,a=12);',
+	OtherPars=>'int nsub, int mode, int pct
+
+EOF
+
+
+__END__
+
 
 sub noise_gate_batch {
     my $cube = shift;

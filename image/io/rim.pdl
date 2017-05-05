@@ -1,0 +1,102 @@
+=head2 rim
+
+=for usage
+
+  $a = rim($file);
+  rim($a,$file);
+
+=for ref
+
+Read images in most formats, with improved RGB handling.
+
+You specify a filename and get back a PDL with the image data in it.
+Any PNM handled format or FITS will work. In the second form, $a is an 
+existing PDL that gets loaded with the image data.  
+
+If the image is in one of the standard RGB formats, then you get back
+data in (<X>,<Y>,<RGB-index>) format -- that is to say, the third dim 
+contains the color information.  That allows you to do simple indexing
+into the image without knowing whether it is color or not -- if present,
+the RGB information is silently threaded over.  (Contrast L<rpic>, which
+munges the information by putting the RGB index in the 0th dim, screwing
+up subsequent threading operations).
+
+If the image is in FITS format, then you get the data back in exactly
+the same order as in the file itself.
+
+Images with a ".Z" or ".gz" extension are assumed to be compressed with
+UNIX L<"compress"|compress> or L<"gzip"|gzip>, respecetively, and are 
+automatically uncompressed before reading.
+
+OPTIONS
+
+The same as L<rpic>, which is used as an engine:
+
+=over 3
+
+=item FORMAT
+
+If you don't specify this then formats are autodetected.  If you do specify
+it then only the specified interpreter is tried.  For example,
+
+  $a = rim("foo.gif",{FORMAT=>"JPEG"}) 
+
+forces JPEG interpretation.
+
+=item XTRAFLAGS
+
+Contains extra command line flags for the pnm interpreter.  For example,
+
+  $a = rim("foo.jpg",{XTRAFLAGS=>"-nolut"}) 
+
+prevents use of a lookup table in JPEG images.
+
+=back
+
+BUGS
+
+rim is just a front-end for rpic, which was poorly designed (RGB
+handling isn't so great) but is now ubiquitous.  Ultimately, rim
+should be the engine and rpic should be a wrapper for backwards
+compatibility.
+
+AUTHOR
+
+Craig DeForest (SwRI) 2003; distributable under the same terms as PDL.
+
+=cut
+
+use PDL::IO::Pic;
+
+sub rim {
+  my(@args) = @_;
+
+  if(@args == 2) {
+    my($dest) = $args[0];
+    if($dest->dim(0) == 3) {
+      $args[0] = $dest->reorder(1,2,0);
+    }
+    return rpic(@args);
+  } 
+
+  my $out = rpic(@args);
+
+  #
+  # Check for RGB and reorder dims if necessary.  The SIMPLE test is to check
+  # if the image has a FITS header.
+  #
+  # (What a kludge -- but rpic is historical and has to be kept at this point)
+  #
+  if($out->ndims == 3 && $out->dim(0) == 3 && 
+     !( defined($out->gethdr) && $out->gethdr->{SIMPLE} )
+     ) {
+    return $out->reorder(1,2,0);
+  } 
+  
+  $out;
+}
+  
+  
+
+
+

@@ -1,0 +1,275 @@
+=pod
+
+=head2 zspike - Identify and/or remove spikes from an image sequence.
+
+=for usage
+  
+  @cube = mrfits(@files);
+  @mask = zspike(\@cube, { <options> });
+
+=for ref
+
+C<zspike> is a modified second-time-derivative spike finding algorithm that
+ignores spatial information: each pixel is treated as an individual 
+time series.  
+
+C<zspike> is largely immune to step functions in brightness of a
+particular pixel, so you can use it on high contrast scenes such as
+solar magnetograms or C IV images of the solar chromosphere.  The
+default values work pretty well for image sequences from SOHO/MDI
+(where cosmic rays can be either positive-going or negative-going, and
+generally don't saturate the detector as they do with other
+instruments), and for TRACE chromospheric sequences; both of these types
+of data are considered to be challenging for normal spatial 
+despiking algorithms.
+
+By default, C<zspike> accepts a list of images and returns a list
+of boolean masks indicating which pixels are likely bad.  
+In list context it returns the masks as a list; in scalar context it
+returns a list ref.  You can feed in a predefined list ref to use for the
+output masks, so you can use (e.g.) a L<DiskCache|DiskCache> object instead
+of a normal array.
+
+If you set the "clean" option, C<zspike> will clean the data either
+in-place or in the returned list of images, and return the cleaned
+data instead of a mask list.  Cleaning is accomplished by averaging 
+over each spike's nearest-neighbor data values on the time axis.  That
+method is somewhat simpleminded, and assumes that spikes are rare enough
+that a particular pixel is extremely unlikely to have a spike in two
+adjacent frames of data.
+
+
+METHOD
+
+The time-domain neighbors of each pixel 'vote' to determine whether
+the pixel is too high, too low, or OK with respect to the time average
+over the nearby frames.  If enough neighbors indicate that it is too
+high, then the pixel is marked bad.  It is possible for a minority of
+neighbors to "veto" an otherwise positive vote, so to be marked bad a
+pixel must BOTH (A) be significantly higher in value than a majority
+of its neighbors, and (B) not be significantly lower in value than a
+significant minority of its neighbors.  The value of "significant" is
+adjustable.
+
+INPUT
+
+A list of like-sized images to despike.  There should be enough time
+resolution that the scene does not completely change between most
+pairs of frames, though the algorithm is fairly robust against
+isolated jumps on the time axis.
+
+OPTIONS
+
+=over 3
+
+=item c, cl, clean, Clean (default = 0)
+
+If this option is set to 1, then zspike 'fixes' the spikes and returns the
+fixed images rather than a mask sequence.  Each spike pixel is replaced by
+the average of its two nearest neighbors on the time axis.
+
+=item i, inplace, InPlace (default = 0)
+
+This option indicates whether to fix images in-place or allocate new ones.
+If you set the Clean option, then setting InPlace to 1 causes the original
+images to be fixed in place.  (This is present because of the awkwardness
+of setting the inplace flag on each element of a large array).
+
+If you set InPlace to 1, then Clean defaults to 1. 
+
+=item nfr, n, nFrames, N_Frames (default 2)
+
+The number of frames to examine on either side of the frame being
+marked up.  Each frame is despiked using a total of 2n neighbors: n on
+each side.
+
+=item max_t, tmax, TMax, T_Max (default undef)
+
+The maximum number of seconds beyond which images should not be
+considered at all in the voting, using FITS headers embedded in the
+individual image piddles.  This prevents finding lots of extra spikes
+in especially gappy data.  If this is undefined, no such checking is done.
+
+=item th, thresh, threshold, Thresh, Threshold (default undef)
+
+Either a single keyed threshold value for differences from the nearest
+neighbor, or an array indicating the threshold of difference from each
+of the neighbors, indexed by distance (eg [20,30,40] means that the
+nearest neighbor need only differ by 20 but the 2nd neighbor must
+differ by 30).  (No default; see NSigma below).
+
+=item ns, nsigma, nSigma, NSigma, N_Sigma (default 6)
+
+If Thresh is not specified and nsigam is, then thresh(0) is automagically set
+to the appropriate number of standard deviations from the frame-to-frame RMS
+pixel delta, averaged over the whole image. The frame-to-frame RMS pixel 
+delta is calculated for each image pair in the sequence, rather than globally
+over the whole time sequence.
+
+=item v, votes, Votes (default undef)
+
+(specify like C<thresh>) - the relative weight
+that each neighbor has in deciding whether the pixel is bad or not.
+This is useful for marginal situations where the scene changes
+significantly over only a few timesteps: you can reduce the threshold of
+the outlying frames.  If this is undefined, then all the neighbors get
+exactly one vote.  You specify it as a list ref from closest to farthest.
+
+=item vth, vthresh, vThresh, VThresh, V_Thresh (default [2.9,0.9])
+
+The threshold needed to mark a point bad.  It is treated as a two-element
+array.  Element 0 gives the total voting weight required in the
+forward direction; element 1 gives the voting weight in the opposite direction
+required for a veto.  Element 1 defaults to half of element 0, unless
+you specify both.  Together with the default vote values of [1,1], the
+default setting indicates that a point is bad if three of its four neighbors
+think that it is bad, all in the same direction -- but any one neighbor can
+veto by voting the opposite direction.
+
+=item m, masks, Masks (default undef)
+
+If you pass in an array ref here, then that array ref gets populated
+with the mask values (otherwise you get a fresh autocreated list of
+masks).  That allows you to pass in a pre-allocated
+L<PDL::DiskCache|PDL::DiskCache> object instead of holding all the
+results in memory.
+
+=back
+
+AUTHOR
+
+Copyright 26-March-2003, Craig DeForest.  Distributable and modifiable
+under the same terms as PDL itself.  
+
+Modified 9-Oct-2003 to include the Clean and InPlace options
+
+Modified 10-Jun-2004: fixed Clean option
+
+=cut
+
+
+sub zspike {
+  my $opt;
+
+  if(ref $_[-1] eq 'HASH' and !UNIVERSAL::isa($_[-1],'PDL')) {
+    $opt = pop;
+  } elsif(ref $_[0] eq 'HASH' and !UNIVERSAL::isa($_[-1],'PDL')) {
+    $opt = shift;
+  } else {
+    $opt = {};
+  }
+
+  my $cube;
+  if(@_ == 1  and  ref $_[0] eq 'ARRAY') {
+    $cube = shift;
+  } else {
+    $cube = \@_;
+  }
+
+  my $nfr  = _opt($opt,['nfr','n','nFrames','N_Frames'],2);
+  my $tmax = _opt($opt,['max_t','tmax','TMax','T_Max'],undef);
+  my $th   = _opt($opt,['th','thresh','threshold','Thresh','Threshold'],undef);
+  my $nsig = _opt($opt,['ns','nsigma','nSigma','NSigma','N_Sigma'],8);
+  my $v    = _opt($opt,['v','votes','Votes'],[1,1]);
+    $v = [$v,$v/2] unless ref($v);
+  print "v=[",join(",",@$v),"]\n" if($verbose);
+  my $vth  = _opt($opt,['vth','vthresh','vThresh','V_Thresh'],[2.9,0.9]);
+    $vth = [$vth,$vth/2] unless ref($vth);
+  my $in_place = _opt($opt,['i','ip','inplace','InPlace'],0);
+  my $fix = _opt($opt,['c','cl','clean','Clean'],$in_place);
+
+  my $masks = $in_place ? $cube : _opt($opt,['m','masks','Masks'],[]);
+
+  my $start = _opt($opt,['start'],0);
+
+  my ($i,$j);
+
+  print "Found ",scalar(@$cube)," images...\n" if($verbose);
+
+
+  ## Main loop
+  my $pvotes = zeroes($cube->[0]);
+  my $nvotes = zeroes($cube->[0]);
+
+  for $i($start..$#$cube) {
+    print "i=$i..." if($verbose);
+
+    if($i < $nfr || $i > $#$cube-$nfr) {
+      print "cube[i]==".$cube->[$i]."\n" if($verbose);
+
+      unless($fix && $in_place) {
+	print "fix is $fix... cube->[i] is $cube->[$i]\n";
+	$masks->[$i] = 
+	  $fix ? $cube->[$i]->copy : zeroes(defined $cube->[$i] ? $cube->[$i] : 1);
+	$masks->[$i]->sethdr($cube->[$i]->hdr) if defined($cube->[$i]);
+      }
+
+      next;
+    }
+
+    my $im = $cube->[$i];
+    $pvotes .= 0;
+    $nvotes .= 0;
+
+    for $j(1..$nfr) {
+
+      print "i:$i; j:$j" if($verbose);
+      my $diff;
+      my $thr;      
+      my $vv = $v-> [    ($j-1 <= $#$v)   ?   ($j-1)   :   -1    ];
+
+      print " vv=$vv " if($verbose);
+      # Look-ahead voting... 
+      $diff = $im - $cube->[$i+$j];
+      $thr = (defined $th) ? ($th) : abs($diff)->sum / $diff->nelem * $nsig;
+      printf "thr=%6.2e ",$thr if($verbose);
+
+      $pvotes += $vv * ( ($diff > $thr)  );
+      $nvotes += $vv * ( ($diff < -$thr) );
+      print "pv: ", $pvotes->sum, "; nv: ", $nvotes->sum;
+
+      # Look-behind voting...
+      $diff = $im - $cube->[$i-$j];
+      $thr = (defined $th) ? ($th) : abs($diff)->sum / $diff->nelem * $nsig;
+      printf "thr=%6.2e ",$thr if($verbose);
+
+      $pvotes += $vv * ( ($diff > $thr) );
+      $nvotes += $vv * ( ($diff < -$thr) );
+    }
+    
+    # Generate mask...
+    my $m = 
+      (  ( ($pvotes > $vth->[0]) & ($nvotes < $vth->[1]) ) -
+	 ( ($nvotes > $vth->[0]) & ($pvotes < $vth->[1]) )
+	 );
+    print "vth=",join(",",@$vth)," ";
+    my $ww = whichND($m);
+    if($fix) {
+      my $fixed = $in_place ? $cube->[$i] : $cube->[$i]->copy;
+      $fixed->sethdr($cube->[$i]->gethdr);
+
+      $fixed->indexND($ww) .= ( $cube->[$i-1]->indexND($ww) +
+				$cube->[$i+1]->indexND($ww) ) / 2;
+      $masks->[$i] = $fixed;
+    } else {
+      $masks->[$i] = $m;
+    }
+
+    print "frame $i: ",($ww->dim(1))," bad points found.\n" if($verbose);
+
+  }
+
+  $masks = $cube if($in_place);
+  
+  return wantarray ? @$masks : $masks;
+}
+  
+  
+
+    
+
+    
+
+
+
+

@@ -1,0 +1,62 @@
+=head2 cards
+
+=for usage
+
+  print cards($pdl->hdr)
+
+=for ref
+
+Print out the cards in a FITS header hash ref
+
+If you print an L<"Astro::FITS::Header"|Astro::FITS::Header> object, you
+get an exact list of the FITS header cards in the object -- but PDL headers
+are stored as hash refs, so it's a pain to get out the actual image/value
+pairs.  Normally, you'd have to say  
+
+  print (tied %{$pdl->hdr})
+
+to print the FITS header, and that wouldn't work on a system without 
+Astro::FITS::Header installed.  C<cards> prints the keyword/value pairs
+for any FITS header stored as a hash ref.
+
+As a side effect, it prints the key/value pairs for any hash ref at all --
+though they might not look as pretty as the FITS output.
+
+AUTHOR
+
+Craig DeForest (SwRI), 2002.  Distributable under the same terms as PDL.
+
+=cut
+use strict;
+
+sub cards {
+    my($a) = shift;
+    my($out);
+
+    $a = $a->gethdr() 
+      if(UNIVERSAL::isa($a,'PDL'));
+
+    return undef 
+      unless defined($a);
+
+    return "$a" if((ref $a) eq 'Astro::FITS::Header');
+
+    barf("cards: Got something that's not a hash ref")
+      unless((ref $a) eq 'HASH' || ( (eval '$a->{foo} || 1') and !$@) );
+
+    return join("\n",(tied %{$a}))
+      if( tied %{$a} and ref (tied %{$a}) eq 'Astro::FITS::Header');
+
+    my $key;
+
+    my $len = 0;
+    foreach $key(keys %{$a}) {
+      $len = length($key) unless(length($key)<=$len);
+    }
+
+    foreach $key( sort keys %{$a} ) {
+      $out .= sprintf("%${len}s= %20s\n",$key,$a->{$key});
+    }
+
+    $out;
+}

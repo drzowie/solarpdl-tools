@@ -1,4 +1,4 @@
-=head2 jpeg_enhance
+=head2 jpeg_enhance - Enhance a JPEG image by the Nosratinia method
 
 =for sig
 
@@ -6,7 +6,18 @@
 
 =for ref
 
-Enhance a decoded JPEG image by the Nosratinia multi-jpeg method
+Nosratinia noticed that JPEG encoding is itself a type of spatial
+filtering, and can be used to eliminate 8x8 pixel-box artifacts within
+JPEG images.  C<jpeg_enhance> re-encodes an image 32 times with a
+checkerboard array of phases relative to the original pixel grid, and 
+decodes all 32 images.  The average of the 32 decoded images (averaged with 
+the correct phase) is returned.
+
+This is basically an expensive way of spatially filtering the data, but
+it is surprisingly sophisticated at removing "ringing" artifacts:  the phase
+of the ringing varies across the samples and so ringing artifacts tend
+to cancel themselves out.  The result is significantly better than 
+a simple spatial filter.
 
 =cut
 
@@ -25,12 +36,12 @@ sub jpeg_enhance {
 
   for my $i(0..7) {
     for my $j(0..7) {
-      print "$i,$j...";
+
       my $im1 = $im->range([$i,$j],[$im->dim(0),$im->dim(1)],'p');
       if($im1->ndims == 3) {
-	print "foo\n";
+
 	wpic($im1->reorder(2,0,1),$f,{FLAGS=>$flags});
-	print "bar\n";
+
 	$im1 = rpic($f)->reorder(1,2,0);
       } else {
 	wpic($im1,$f,{FLAGS=>$flags});

@@ -1,0 +1,34 @@
+=head2 guess_instrument - Guess the instrument a FITS file came from
+
+=for usage
+
+   $im = rfits('foo.fits');
+   $inst = guess_instrument( $im );
+
+=for ref
+
+If only everyone used the INSTRUME keyword in FITS files, then this 
+routine would be unnecessary.  But many files exist that do NOT use the 
+INSTRUME tag.  C<guess_instrument> overcomes that by making educated guesses
+if INSTRUME is missing.  Add clauses as necessary.  
+
+AUTHOR
+
+Craig DeForest, cerca 2002
+
+=cut
+
+sub guess_instrument {
+  my($hdr) = shift;
+  
+  return undef unless ref $hdr eq 'HASH';
+  
+  return $hdr->{INSTRUME} if defined $hdr->{INSTRUME};
+  
+  # Michelson Doppler Imager often puts a "DPC_STR" in the output
+  return 'MDI' if( defined($hdr->{DPC_STR}) );
+  return 'MDI' if( $hdr->{ORIGIN} =~ m/SOI SDS/s);
+
+  # All out of guesses.
+  return undef;
+}

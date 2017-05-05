@@ -1,0 +1,67 @@
+=head2 hdrunit
+
+=for usage
+
+  hdrunit($a,'meter',1);  # Convert 1 axis to meters
+  hdrunit($a,'meter');    # Convert all axes to meters
+
+=for ref
+
+Convert FITS header fields to a particular unit.
+
+You feed in a PDL or FITS header and a unit to which you want the
+header converted.  If the input is a PDL with the inplace flag set,
+then it is changed, well, in place.  You always get back a ref to the
+modified header (either copied or still in the original PDL).
+If the mod was unsuccessful, you get back undef.
+
+=cut
+use strict;
+sub hdrunit {
+  my $a = shift;
+  my $unit = shift;
+  my @axes = @_;
+
+  if( UNIVERSAL::isa($a,'PDL') ) {  ## PDL case: get the header.
+    my $z = ($a->is_inplace) ? $a->fhdr() : $a->hdr_copy;
+    $a->set_inplace(0);
+    $a = $z;
+  } elsif (ref $a eq 'HASH') {      ## hash case: it is the header; copy it.
+    my %a = %$a;
+    $a = \%a;
+  } else {                          ## Unknown -- give up.
+    print STDERR "hdrunit: got a ".((ref $a)||"scalar")." (need a hash ref or PDL). Returning undef.\n" if($PDL::verbose || $PDL::debug);
+    return undef;             
+  }
+
+  @axes = (1..$a->{NAXIS}) unless(@axes);
+
+  my $good;
+  my $axis;
+  for $axis(@axes) {
+    my $s;
+    $s = "CUNIT$axis";
+    $s = "CTYPE$axis" unless($a->{$s}=~ m/[^\s]/);
+    next unless($a->{$s}=~m/[^\s]/);
+
+    # Kludge for SOLAR-X and SOLAR-Y.
+    if($a->{$s} =~ m/solar[\s-_]?[xy]/i) {
+      $s = "CUNIT$axis";
+      $a->{$s}="arcsec";
+    }
+
+    my $conv = units($a->{$s},$unit);
+    next unless defined $conv;
+    
+    $good = 1;
+
+    $a->{$s} = $unit;
+    $a->{"CDELT$axis"} *= $conv;
+    $a->{"CRVAL$axis"} *= $conv;
+  }
+
+  return undef unless $good;
+  return $a;
+}
+
+  
