@@ -31,6 +31,7 @@ sub noise_gate_sequence {
 	);
 
     my %opt = parse({
+	verbose=>0,
 	nsub => 12,
 	pct  => 50,
 	factor => 3,
@@ -44,6 +45,8 @@ sub noise_gate_sequence {
 		    },
 		    $u_opt
 	);
+
+    print "options...\n";
 
     # Prepare options for passthrough
     my %o2 = %opt;
@@ -63,7 +66,7 @@ sub noise_gate_sequence {
     $opt{noise_spectrum} = 3 unless(defined($opt{noise_spectrum}));
     unless(UNIVERSAL::isa($opt{noise_spectrum},'PDL')) {
 	my @mins;
-
+	print "Making minimum...\n";
 	my $n = ($#$files+1) - $opt{nsub};
 	my $npersamp = $n / $opt{noise_spectrum};
 
@@ -73,23 +76,24 @@ sub noise_gate_sequence {
 
 	    my $minicube = pdl(mrfits(@{$files}[$i..$i+$opt{nsub}-1]));
 	    $o2{noise_spectrum} = "measure";
+	    print "Calling noise_gate_batch (i=$i)...\n";
 	    push(@mins, noise_gate_batch($minicube,\%o2));
 	}
 	$o2{noise_spectrum} = pdl(@mins)->mv(-1,0)->medover;
     }
     
     use PDL::DiskCache;
-    my $inputs = diskcache($files, {ro=>1,rw=>0});
+    my $inputs = diskcache($files, {ro=>1,rw=>0,mem=>$opt{nsub}+2});
 
     `mkdir $outdir`;
 
     ##############################
     # Step through and process the files using the pre-existing noise spectrum.
-    my $ocube = zeroes($inputs->[0]->dims,$opt{nsub});
-
+    my $ocube = zeroes(float, $inputs->[0]->dims,$opt{nsub});
+    print "Defined ocube...\n";
     for( $ii = $n = 0; $ii < $#$files-$opt{nsub}; $ii += $step ) {
 	print "Slice $n of $N "." (layer $ii) \n" if $opt{verbose};
-	my $cube = pdl(@{$inputs}[$ii..$ii+$opt{nsub}-1]);
+	my $cube = float pdl(@{$inputs}[$ii..$ii+$opt{nsub}-1]);
 
 	$ocube += noise_gate_batch($cube,\%o2);
 
