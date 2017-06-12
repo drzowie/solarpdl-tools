@@ -36,7 +36,8 @@ Options are:
 =item nsub (default 8)
 
 This is the size of the pixel/voxel subregions into which the input
-cube will be chopped for processing.
+cube will be chopped for processing.  If you feed in an array ref, 
+you can get a different nsub for each dimension.
 
 =item mode (default 'shot')
 
@@ -141,6 +142,11 @@ sub noise_gate_batch {
 		     $u_opt
 	);
 
+    unless(ref($opt{nsub})) {
+	$opt{nsub} = [$opt{nsub},$opt{nsub},$opt{nsub}];
+    }
+    $opt{nsub} = pdl($opt{nsub});
+
     print "nsub=$opt{nsub}, factor=$opt{factor}, window=>$opt{window}\n";
 	
     unless($opt{method} =~ m/^[gw]/i) {
@@ -172,10 +178,10 @@ sub noise_gate_batch {
     my $hanning;
     if($opt{window} =~ m/^[fq]/i) {
 	print "Windowing..." if $opt{verbose};
-	$hanning = sin( (  xvals( $opt{nsub} ) + 0.5) * PI / $opt{nsub} ) ** 2;
+	$hanning = ( sin( (  ndcoords( $opt{nsub}->list ) + 0.5 ) * PI / $opt{nsub} ) ** 2 )->prodover;
     } elsif($opt{window} =~ m/^s/i) {
 	print "Half-windowing...\n" if $opt{verbose};
-	$hanning = sin( (  xvals( $opt{nsub} ) + 0.5) * PI / $opt{nsub} );
+	$hanning = ( sin( (  ndcoords( $opt{nsub}->list ) + 0.5 ) * PI / $opt{nsub} )      )->prodover;
     }
 
     # If a reference image stack was supplied, find brightness values for each cubie (next block) in the
@@ -187,21 +193,17 @@ sub noise_gate_batch {
 	if($opt{reference}->ndims==2){
 	    $opt{reference} = $opt{reference}->(:,:,*($cube->dim(2)));
 	}
-	my $refcubies = $opt{reference}->range($corners,[$opt{nsub},$opt{nsub},$opt{nsub}],'f')->mv(0,-1)->sever;
+	my $refcubies = $opt{reference}->range($corners,$opt{nsub},'f')->mv(0,-1)->sever;
 	$refcubies *= $hanning;
-	$refcubies *= $hanning->(*1);
-	$refcubies *= $hanning->(*1,*1);
 	$ref_sumsqrt = $refcubies->clip(0)->sqrt->sumover->sumover->sumover->(*1,*1,*1);
     }
 
     # make an array of cubies that is nsub x nsub x nsub x N, and disconnected from the original.
     print "Cutting..." if ($opt{verbose});
-    our $cubies = $out->range($corners,[$opt{nsub},$opt{nsub},$opt{nsub}],'f')->mv(0,-1)->sever;
+    our $cubies = $out->range($corners,$opt{nsub},'f')->mv(0,-1)->sever;
     print "cubies is ".join("x",$cubies->dims)."..." if ($opt{verbose});
 
     $cubies *= $hanning;
-    $cubies *= $hanning->(*1);
-    $cubies *= $hanning->(*1,*1);
 
     my $sumsqrt;
     if($opt{mode} =~ m/^s/i) { # shot noise - calculate sum-of-sqrt before ditching ricubies
@@ -216,12 +218,12 @@ sub noise_gate_batch {
     print "Transforming..." if ($opt{verbose});
     #    my $ricubies = pdl($cubies,0)->mv(-1,0);  # (ri) x nsub x nsub x nsub x N
     #    my $fricubies = fft3($ricubies->inplace);
-    our $fricubies = rfft3($cubies); # 2 x nsub/2 x nsub/2 x nsub/2 x N
+    our $fricubies = rfft3($cubies); # 2 x nsub/2 x nsub x nsub x N
 #    undef $cubies;
 
     print "Mag..." if ($opt{verbose});
     #  my $fmcubies = ($fricubies*$fricubies)->sumover->sqrt; # nsub x nsub x nsub x N
-    our $fmcubies = ($fricubies * $fricubies)->sumover->sqrt; # nsub/2 x nsub/2 x nsub/2 x N
+    our $fmcubies = ($fricubies * $fricubies)->sumover->sqrt; # nsub/2 x nsub x nsub x N
     
     # Convert percentile into an index for future converted cubies
     my $c_n = floor( $opt{pct}/100  * $fmcubies->dim(3) ) ;
@@ -286,8 +288,6 @@ sub noise_gate_batch {
     if($opt{window} =~ m/^[sq]/i) {
 	print "finishing windowing..." if ($opt{verbose});
 	$rcubies *= $hanning;
-	$rcubies *= $hanning->(*1);
-	$rcubies *= $hanning->(*1,*1);
     }
     if($opt{window} =~ m/^q/i) {
 	$rcubies /= 1.5*1.5*1.5;
@@ -295,7 +295,7 @@ sub noise_gate_batch {
 
     print "Merging...\n" if ($opt{verbose});
     for my $i(0..$corners->dim(1)-1){
-	$out->range($corners->(:,($i)),[$opt{nsub},$opt{nsub},$opt{nsub}],'f') += $rcubies->(:,:,:,($i));
+	$out->range($corners->(:,($i)),$opt{nsub},'f') += $rcubies->(:,:,:,($i));
     }
 
     return $out;
