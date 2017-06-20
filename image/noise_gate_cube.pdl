@@ -8,7 +8,7 @@ use strict;
 =for ref
 
 This implements a streamed version of C<noise_gate_batch()>.  For NxNxN cubes, it processes
-4*N images at a time, sending the output into a copy of the input cube.
+a few images at a time, sending the output into a copy of the input cube.
 
 =cut
 
@@ -20,13 +20,13 @@ sub noise_gate_cube {
     my $cube = shift;
     my $u_opt = shift // {};
     my %opt = parse({
-	nsub => 8,
+	nsub => 12,
 	pct  => 50,
 	factor => 3,
 	mode => 'shot',
 	method => 'gate',
 	reference => undef,
-	window => 'quad',
+	window => '3',
 	noise_spectrum=>undef
 		    },
 		    $u_opt
@@ -49,7 +49,7 @@ sub noise_gate_cube {
 	print "SLICE 1...\n";
 	push(@mins, noise_gate_batch($cube->(:,:,0:$opt{nsub}-1),\%opt));
 	print "SLICE 2...\n";
-	push(@mins, noise_gate_batch($cube->(:,:,($cube->dim(2)/2-$opt{nsub}/2):(($cube->dim(2)/2-$opt{nsub}/2)+$opt{nsub}-1)), \%opt));
+	push(@mins, ngb2($cube->(:,:,($cube->dim(2)/2-$opt{nsub}/2):(($cube->dim(2)/2-$opt{nsub}/2)+$opt{nsub}-1)), \%opt));
 	print "SLICE 3...\n";
 	push(@mins, noise_gate_batch($cube->(:,:,-$opt{nsub}:-1),\%opt));
 	$opt{noise_spectrum} = pdl(@mins)->mv(-1,0)->medover;

@@ -1,0 +1,138 @@
+=head2 cubify3d - cut up a 3D PDL into cubies, and apodize if necessary
+
+=for ref
+
+A lot of operations (notably noise gating) require parallel operations
+on each neighborhood of an image sequence.  Using range() to separate
+neighborhoods is OK but slow.  This goes faster.
+
+The "samp" and "apod" options let you control oversampling ratio and 
+apodization.  For convenience, if "samp" is 1, no apodization is done by
+default.  If "samp" is 2, simple Hanning-window apodization is done by 
+default on entrance (but not on exit).  If "samp" is 3 or 4, you get dual-Hanning
+apodization:  hanning windows are applied both on entrance and on exit with
+uncubify3d.  If you don't want apodization at all, pass in "apod=>0" in the 
+options.
+
+
+=cut
+
+use PDL::Options;
+use PDL::Constants;
+use strict;
+
+sub cubify3d {
+    my $cube = shift;
+    my $u_opt = shift // {};
+    my $us = "cubify3d";
+
+    my %opt = parse( {
+	nsub  => undef,
+	samp  => undef,  # Number of samples per cubie-size (typ. 1, 2, or 4)
+	subsamp => undef, # if present, skip this many cubies in each dimension
+	apod  => undef, 
+	verbose=>0
+		     },
+		     $u_opt
+	);
+
+    die "$us: must specify nsub!" unless(defined($opt{nsub}));
+    die "$us: must specify samp!" unless(defined($opt{samp}));
+    die "$us: samp must be nonzero!" unless($opt{samp});
+    $opt{nsub} = [$opt{nsub}->list] if( UNIVERSAL::isa($opt{nsub},'PDL') );
+    $opt{nsub} = [$opt{nsub},$opt{nsub},$opt{nsub}] unless(ref($opt{nsub}) =~ m/ARRAY/);
+
+    #npersub is the steps per subsample of the cubie
+    my $npersub = [ map { $opt{nsub}->[$_]/$opt{samp} * ($opt{subsamp}//1) } (0,1,2) ];
+
+    unless( $opt{subsamp} > 1 or (
+		$npersub->[0] * $opt{samp} == $opt{nsub}->[0] and
+		$npersub->[1] * $opt{samp} == $opt{nsub}->[1] and
+		$npersub->[2] * $opt{samp} == $opt{nsub}->[2]
+	    )
+    ) {
+	die "$us: Sample rate must be a divisor of nsub!";
+    }
+	    
+    print "$us: nsub is [".join(",",@{$opt{nsub}})."]\n" if($opt{verbose}>1);
+    print "$us: npersub is [".join(",",@{$npersub})."]\n" if($opt{verbose});
+    
+    our $n_cubies = int( 1 + ($cube->dim(0) - $opt{nsub}->[0]) / $npersub->[0]  ) *
+                    int( 1 + ($cube->dim(1) - $opt{nsub}->[1]) / $npersub->[1]  ) *
+	            int( 1 + ($cube->dim(2) - $opt{nsub}->[2]) / $npersub->[2]  );
+
+    if($n_cubies==0) {
+	die "$us: No samples possible with this dataset";
+    }
+    print "$us: cutting up: n_cubies=$n_cubies\n" if($opt{verbose});
+    
+    my $cubies = PDL->new_from_specification($cube->type, @{$opt{nsub}}, $n_cubies);
+
+    print "$us: cubies is ".join('x',$cubies->dims)."\n" if($opt{verbose}>1);
+    
+    unless(defined($opt{apod})) {
+	my $apod_defaults = [0,0,'h','h2','h2'];
+	$opt{apod} = $apod_defaults->[$opt{samp}];
+	unless(defined($opt{apod})){
+	    print "WARNING: $us: subsampling is $opt{samp} and no apodization selected.  Not apodizing.\n";
+	    $opt{apod} =0;
+	}
+    }
+    
+    my $hanning = ones(@{$opt{nsub}});
+    if($opt{apod} =~ m/^h/i) {
+	$hanning           *= ( sin( (xvals($opt{nsub}->[0]) + 0.5) * PI/$opt{nsub}->[0]) )**2;
+	$hanning->mv(1,0)  *= ( sin( (xvals($opt{nsub}->[1]) + 0.5) * PI/$opt{nsub}->[1]) )**2;
+	$hanning->mv(2,0)  *= ( sin( (xvals($opt{nsub}->[2]) + 0.5) * PI/$opt{nsub}->[2]) )**2;
+    }
+
+    PDL::cubify3d_helper($cube,$cubies,$hanning,@$npersub);
+
+    $cubies->sethdr( {
+	made_by_cubify3d=>1,
+	orig_type => $cube->type,
+	orig_dims => [$cube->dims],
+	nsub      => $opt{nsub},
+	samp      => $opt{samp},
+	subsamp   => $opt{subsamp},
+	apod      => $opt{apod},
+	npersub   => $npersub
+		     });
+
+    return $cubies;
+}
+
+no PDL::NiceSlice;
+use Inline Pdlpp => <<'EOF';
+
+pp_def('cubify3d_helper',
+    Pars=>'cube(x,y,z);[o]out(a,b,c,n);hanning(a,b,c)',
+    OtherPars=>'long npsa; long npsb; long npsc',
+    Code => <<'EOC',
+      PDL_Indx xof,yof,zof;
+      PDL_Indx ix,iy,iz;
+      PDL_Indx in = 0;
+
+      PDL_Indx xstep = $COMP(npsa);
+      PDL_Indx ystep = $COMP(npsb);
+      PDL_Indx zstep = $COMP(npsc);
+
+      for(zof=0; zof <= $SIZE(z)-$SIZE(c); zof += zstep ) {
+         for(yof=0; yof <= $SIZE(y)-$SIZE(b); yof += ystep ) {
+    	    for(xof=0; xof <= $SIZE(x)-$SIZE(a); xof += xstep ) {
+	       for(iz=0; iz<$SIZE(c); iz++) {
+	          for(iy=0; iy<$SIZE(b); iy++) {
+		     for(ix=0; ix<$SIZE(a); ix++) {
+		        $out(a=>ix,b=>iy,c=>iz,n=>in) = $hanning(a=>ix,b=>iy,c=>iz) * $cube(x=>xof+ix, y=>yof+iy, z=>zof+iz);
+		     }
+                  }
+               }
+	       in++;
+            }
+         }
+      }
+EOC
+	);
+EOF
+
+

@@ -92,7 +92,15 @@ Basic, brutal.
 
 =item "split" -- do split Hanning windowing.
 
-This applies sin(x) up front, another sin(x) in back.  Not guaranteed to work.  
+This applies sin(x) up front, another sin(x) in back.  Not guaranteed to work.
+
+=item "tri" -- use sextature windowing
+
+This option does Hanning windowing in up front and in back for sin**4 windowing
+overall.  This is coupled with 3x-per-segment sampling (instead of 2x-per-segment
+with normal windowing) so it costs a factor of 3.4 in CPU time and memory compared
+to regular Hanning windows.  Results look equivalent to quad windowing, but at
+about half the overall resource hit.
 
 =item "quad" -- use octature windowing
 
@@ -135,7 +143,7 @@ sub noise_gate_batch {
 	mode => 'shot',
 	method => 'gate',
 	reference => undef,
-	window => 'quad',
+	window => 'trio',
 	verbose=>0,
 	noise_spectrum => undef
 		     },
@@ -153,7 +161,7 @@ sub noise_gate_batch {
 	die "noise_gate_batch: method must be 'gate' or 'wiener' (value '$opt{method}')";
     }
 
-    unless($opt{window} =~ m/^[fsq]/i) {
+    unless($opt{window} =~ m/^[fsqt]/i) {
 	die "noise_gat_batch: windowing method must be 'front' or 'split' or 'quad' (value '$opt{window}')";
     }
 
@@ -164,7 +172,10 @@ sub noise_gate_batch {
     my $nsub_cut = 2;
     if($opt{window} =~ m/^q/i) {
 	$nsub_cut = 4;
+    } elsif($opt{window} =~ m/^t/i) {
+        $nsub_cut = 3;
     }
+    
 
     my $ndc_dims = (($cube->shape - $opt{nsub}+1)/($opt{nsub}/$nsub_cut))->ceil;
 
@@ -176,7 +187,7 @@ sub noise_gate_batch {
 
     ## Prepare a window function (hanning windows by default, hence the name)
     my $hanning;
-    if($opt{window} =~ m/^[fq]/i) {
+    if($opt{window} =~ m/^[fqt]/i) {
 	print "Windowing..." if $opt{verbose};
 	$hanning = ( sin( (  ndcoords( $opt{nsub}->list ) + 0.5 ) * PI / $opt{nsub} ) ** 2 )->prodover;
     } elsif($opt{window} =~ m/^s/i) {
@@ -270,7 +281,7 @@ sub noise_gate_batch {
 	print "Computing Wiener filters...\n" if ($opt{verbose});
 	# Wiener filter is (SNR/SNR+1).  Calculate SNR, adjusted for the optional factor.
 	$filter = $fmcubies / (1e-9 + $mincubie * ($opt{factor} || 1));
-	$filter->range([-1,-1,-1],[3,3,3],'p') .= 1e9;  # assume infinite SNR in 0 band
+	$filter->range([0,-1,-1],[2,3,3],'p') .= 1e9;  # assume infinite SNR in f=0 & f=1 bands (asymmetry is due to rfft)
 	$filter /= ($filter + 1);
     }
 
@@ -285,12 +296,14 @@ sub noise_gate_batch {
     $out .= 0;
 
     # split or quad - apply another Hanning window.
-    if($opt{window} =~ m/^[sq]/i) {
+    if($opt{window} =~ m/^[sqt]/i) {
 	print "finishing windowing..." if ($opt{verbose});
 	$rcubies *= $hanning;
     }
     if($opt{window} =~ m/^q/i) {
 	$rcubies /= 1.5*1.5*1.5;
+    } elsif($opt{window} =~ m/^t/i) {
+        $rcubies /= 1.125*1.125*1.125;
     }
 
     print "Merging...\n" if ($opt{verbose});

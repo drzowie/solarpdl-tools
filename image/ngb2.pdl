@@ -1,0 +1,157 @@
+=head2 ngb2 - noise_gate_batch v2
+
+=for ref
+
+Duplicates the functionality of noise_gate_batch, but without the horrible range aspect.  This should reduce
+memory demands and also run quite a bit faster.
+
+=cut
+
+use PDL::NiceSlice;
+use PDL::FFTW3;
+use PDL::Options;
+use strict;
+
+sub ngb2 {
+    my $cube = shift;
+    my $u_opt = shift // {};
+    my $us = "ngb2";
+    my %opt = parse({
+	nsub=>12,    # default pixels for a subregion
+	pct=>50,     # percentile across the batch for each component, to be considered noise
+	factor=>3,   # factor by which you have to exceed the component amplitude, to be considered valid
+	mode=>'shot',
+	method=>'gate',
+	flat => undef,
+	window=>3,
+	verbose=>0,
+	noise_spectrum=>undef,
+	n_subsamp=>2,  # used to adjust how much of the dataset is used to accumulate the noise spectrum
+		    },
+		    $u_opt
+	);
+
+    unless(ref($opt{nsub})) {
+	$opt{nsub} = [$opt{nsub},$opt{nsub},$opt{nsub}];
+    }
+    if(UNIVERSAL::isa($opt{nsub},'PDL')){
+	$opt{nsub} = [$opt{nsub}->list];
+    }
+
+    unless($opt{method} =~ m/^[gw]/i) {
+	die "$us: method must be 'gate' or 'wiener' (value '$opt{method}')";
+    }
+
+    unless($opt{window} == 2 || $opt{window}==3 || $opt{window}==4) {
+	die "$us: window must be 2, 3, or 4";
+    }
+
+    my $out = $cube->new_or_inplace;
+    if(defined($opt{flat})) {
+	print "$us: de-applying flat field...\n" if($opt{verbose});
+	$out *= $opt{flat};
+    }
+
+
+    ##############################
+    # Get noise spectrum (from ngb_fs if necessary)
+    our $spec;
+    unless(defined($opt{noise_spectrum})) {
+	print "$us: Getting noise spectrum... (pct=$opt{pct})" if($opt{verbose}>1);
+	$spec = ngb_fs($out, {nsub=>$opt{nsub}, pct=>$opt{pct}, mode=>$opt{mode}, window=>$opt{window}, verbose=>(($opt{verbose}//0)?$opt{verbose}-1:0), subsamp => $opt{n_subsamp}});
+    } else {
+	$spec = $opt{noise_spectrum}->new_or_inplace;
+    }
+
+    ##############################
+    # Cut up the dataset, Fourier transform, and calculate adjusted magnitudes
+    print "$us: cutting up data...\n" if($opt{verbose});
+    my $cubies = cubify3d($cube, {nsub=>$opt{nsub}, samp=>$opt{window}, verbose=>$opt{verbose}});
+
+    print "$us: FFT...\n" if($opt{verbose});
+    our $fcubies = rfft3($cubies);
+
+    print "$us: magnitude...\n" if($opt{verbose});
+    our $fm2cubies = ($fcubies ** 2)->sumover;  # mag-squared to avoid a ton of square roots
+
+    if($opt{mode} =~ m/^s/i) {
+	### shot-noise mode: scale by the sum-of-square-roots
+	print "$us:finding shot-noise scaling coefficients...\n" if($opt{verbose});
+	our $sumsqrt = $cubies->abs->sqrt->sumover->sumover->sumover->clip(1e-20);
+	$fm2cubies /= ($sumsqrt**2)->(*1,*1,*1);
+    } elsif($opt{mode} =~ m/^m/i) {
+	### multiplicative mode: scale by the sum
+	print "$us: finding multiplicative scaling coefficients...\n" if($opt{verbose});
+	$fm2cubies /= ($cubies->abs->sumover->sumover->sumover->clip(1e-20)**2);
+    } else {
+	print "$us: using constant noise-spectrum...\n" if($opt{verbose});
+    }
+
+    ##############################
+    # Generate the multiplicative filter.  We do this *in* the fm2cubies array, to save memory.
+
+    if($opt{method} =~ m/^g/i) {
+	##############################
+	# gating:  multiply by fudge factor to get threshold for keepage; square to compare with
+	# fm2cubies.
+	print "$us: computing gates...\n" if($opt{verbose});
+	my $sp2 = ($spec * $opt{factor}) ** 2;
+	
+	PDL::ngb2_gate_helper($fcubies, $fm2cubies, $sp2);
+    } else {
+	print "$us: computing Wiener  filters...\n" if($opt{verbose});
+	my $sp = ($spec * $opt{factor});
+	PDL::ngb2_wiener_helper($fcubies, $fm2cubies, $sp);
+    }
+
+    print "$us: Inverse-transforming" if($opt{verbose});
+    $cubies .= irfft3($fcubies);
+
+    print "$us: reassembling...\n" if($opt{verbose});
+    uncubify3d($cubies, {out=>$out,verbose=>($opt{verbose}?$opt{verbose}-1:0)});
+
+
+    if(defined($opt{flat})) {
+	print "$us: re-applying flat field...\n" if($opt{verbose});
+	$out /= $opt{flat};
+    }
+
+    print "$us: returning\n";
+    return $out;
+}
+       
+no PDL::NiceSlice;
+use Inline Pdlpp => <<'EOF';
+
+pp_def('ngb2_gate_helper',
+    Pars => '[io]cubies(t); fm2cubies(); spec2()',
+    Code => <<'EOC',
+       if($spec2() >= $fm2cubies()) {
+         loop(t) %{
+           $cubies() = 0;
+         %}
+       }
+EOC
+);
+
+# wiener filter:  assemble (SNR / SNR + 1) filter.  The SNR is slightly tricky to get at.  The 
+# $fm2cubies is the magnitude-squared of the "signal", normalized for estimated noise level 
+# adjustment in that piece of image (constant, shot, or multiplicative).  The spec is the 
+# constant noise spectrum against which the scaled signal is to be compared.
+
+
+pp_def('ngb2_wiener_helper',
+    Pars => '[io]cubies(t); fm2cubies(); spec2()',
+    Code => <<'EOC',
+      $GENERIC() snr;
+      $GENERIC() filt;
+      snr = sqrt( $fm2cubies() ) / $spec2();
+      filt = snr/(snr+1);
+      $cubies(t=>0) *= filt;
+      $cubies(t=>1) *= filt;
+EOC
+);       
+
+EOF
+
+

@@ -29,7 +29,7 @@ sub noise_gate_parallel {
 	mode   => 'shot',
 	method => 'gate',
 	reference => undef,
-	window => 'quad',
+	window => 3,
 
 	noise_spectrum=>undef
 		    }, $u_opt

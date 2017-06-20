@@ -34,11 +34,10 @@ sub noise_gate_sequence {
 	verbose=>0,
 	nsub => 12,
 	pct  => 50,
-	factor => 3,
+	factor => 2,
 	mode => 'shot',
 	method => 'gate',
-	reference => undef,
-	window => 'quad',
+	window => 3,
 
 	noise_spectrum=>3,   # PDL containing the spectrum, or single number of time samples to take
 	keep_time_margin=>0
@@ -53,8 +52,12 @@ sub noise_gate_sequence {
     delete $o2{noise_spectrum};
     delete $o2{keep_time_margin};
 
+    my %o3 = %o2;
+    delete $o2{factor}; # sic (o2)
+    delete $o2{method};
+
     # Figure out how may images per step
-    my $divisor = ( ($opt{window} =~ m/^q/i) ? 4 : 2 );
+    my $divisor = $opt{window};
 
     my $step = $opt{nsub}/$divisor;
     my ($ii, $n);
@@ -75,11 +78,10 @@ sub noise_gate_sequence {
 	    printf ("Measuring slice %d of %d: files %d-%d...\n",$i,$#starts+1,$starts[$i],$starts[$i]+$opt{nsub}-1) if($opt{verbose});
 
 	    my $minicube = pdl(mrfits(@{$files}[$i..$i+$opt{nsub}-1]));
-	    $o2{noise_spectrum} = "measure";
-	    print "Calling noise_gate_batch (i=$i)...\n";
-	    push(@mins, noise_gate_batch($minicube,\%o2));
+	    print "Calling ngb_fs (i=$i)...\n";
+	    push(@mins, ngb_fs($minicube,\%o2));
 	}
-	$o2{noise_spectrum} = pdl(@mins)->mv(-1,0)->medover;
+	$o3{noise_spectrum} = pdl(@mins)->mv(-1,0)->medover;
     }
     
     use PDL::DiskCache;
@@ -95,7 +97,7 @@ sub noise_gate_sequence {
 	print "Slice $n of $N "." (layer $ii) \n" if $opt{verbose};
 	my $cube = float pdl(@{$inputs}[$ii..$ii+$opt{nsub}-1]);
 
-	$ocube += noise_gate_batch($cube,\%o2);
+	$ocube += ngb2($cube,\%o3);
 
 	if($opt{keep_time_margin} || ($ii>= $opt{nsub} - $step)) {
 	    for my $jj(0..$step-1){
