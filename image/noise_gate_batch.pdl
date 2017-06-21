@@ -275,7 +275,7 @@ sub noise_gate_batch {
     if($opt{method} =~ m/^g/i) {
 	print "Computing threshold filters...\n" if ($opt{verbose});
 	$mincubie *= $opt{factor};
-	$fmcubies->range([-1,-1,-1],[3,3,3],'p').= 1e15;
+	$fmcubies->range([0,-1,-1],[2,3,3],'p').= 1e15;
 	$filter = ($fmcubies >= $mincubie);
     } elsif($opt{method} =~ m/^w/i) {
 	print "Computing Wiener filters...\n" if ($opt{verbose});

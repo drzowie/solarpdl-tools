@@ -46,7 +46,9 @@ sub ngb2 {
 	die "$us: window must be 2, 3, or 4";
     }
 
-    my $out = $cube->new_or_inplace;
+    ## Make a local copy of the input cube (or work on it in-place)
+    my $out = $cube->new_or_inplace; 
+    
     if(defined($opt{flat})) {
 	print "$us: de-applying flat field...\n" if($opt{verbose});
 	$out *= $opt{flat};
@@ -66,7 +68,7 @@ sub ngb2 {
     ##############################
     # Cut up the dataset, Fourier transform, and calculate adjusted magnitudes
     print "$us: cutting up data...\n" if($opt{verbose});
-    my $cubies = cubify3d($cube, {nsub=>$opt{nsub}, samp=>$opt{window}, verbose=>$opt{verbose}});
+    my $cubies = cubify3d($out, {nsub=>$opt{nsub}, samp=>$opt{window}, verbose=>$opt{verbose}});
 
     print "$us: FFT...\n" if($opt{verbose});
     our $fcubies = rfft3($cubies);
@@ -88,17 +90,23 @@ sub ngb2 {
     }
 
     ##############################
-    # Generate the multiplicative filter.  We do this *in* the fm2cubies array, to save memory.
+    # Do the filtering.
 
     if($opt{method} =~ m/^g/i) {
 	##############################
 	# gating:  multiply by fudge factor to get threshold for keepage; square to compare with
 	# fm2cubies.
+
 	print "$us: computing gates...\n" if($opt{verbose});
 	my $sp2 = ($spec * $opt{factor}) ** 2;
+	$sp2->range([0,-1,-1],[2,3,3],'p') .= 0;  # do not zorch low spatial frequencies ever.
 	
 	PDL::ngb2_gate_helper($fcubies, $fm2cubies, $sp2);
     } else {
+        ##############################
+	# Wiener: multiply spectrum times fundge-factor; pass in to wiener code (which knows
+	# fm2cubies needs the square root taken)
+    
 	print "$us: computing Wiener  filters...\n" if($opt{verbose});
 	my $sp = ($spec * $opt{factor});
 	PDL::ngb2_wiener_helper($fcubies, $fm2cubies, $sp);
@@ -113,7 +121,7 @@ sub ngb2 {
 
     if(defined($opt{flat})) {
 	print "$us: re-applying flat field...\n" if($opt{verbose});
-	$out /= $opt{flat};
+	$out /= $opt{flat} + ($opt{flat}==0);
     }
 
     print "$us: returning\n";

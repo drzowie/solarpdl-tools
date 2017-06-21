@@ -38,6 +38,7 @@ sub noise_gate_sequence {
 	mode => 'shot',
 	method => 'gate',
 	window => 3,
+	flat => undef,
 
 	noise_spectrum=>3,   # PDL containing the spectrum, or single number of time samples to take
 	keep_time_margin=>0
@@ -53,8 +54,10 @@ sub noise_gate_sequence {
     delete $o2{keep_time_margin};
 
     my %o3 = %o2;
+
     delete $o2{factor}; # sic (o2)
     delete $o2{method};
+    delete $o2{flat};
 
     # Figure out how may images per step
     my $divisor = $opt{window};
@@ -78,8 +81,12 @@ sub noise_gate_sequence {
 	    printf ("Measuring slice %d of %d: files %d-%d...\n",$i,$#starts+1,$starts[$i],$starts[$i]+$opt{nsub}-1) if($opt{verbose});
 
 	    my $minicube = pdl(mrfits(@{$files}[$i..$i+$opt{nsub}-1]));
+
+	    $minicube *= $opt{flat} if(defined($opt{flat}));
+	    
 	    print "Calling ngb_fs (i=$i)...\n";
 	    push(@mins, ngb_fs($minicube,\%o2));
+	    
 	}
 	$o3{noise_spectrum} = pdl(@mins)->mv(-1,0)->medover;
     }
