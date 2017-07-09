@@ -43,7 +43,7 @@ sub cubify3d {
     $opt{nsub} = [$opt{nsub},$opt{nsub},$opt{nsub}] unless(ref($opt{nsub}) =~ m/ARRAY/);
 
     #npersub is the steps per subsample of the cubie
-    my $npersub = [ map { $opt{nsub}->[$_]/$opt{samp} * ($opt{subsamp}//1) } (0,1,2) ];
+    my $npersub = [ map { int($opt{nsub}->[$_]/$opt{samp} * ($opt{subsamp}//1)) } (0,1,2) ];
 
     unless( $opt{subsamp} > 1 or (
 		$npersub->[0] * $opt{samp} == $opt{nsub}->[0] and
