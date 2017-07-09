@@ -62,25 +62,32 @@ sub noise_gate_sequence {
     # Figure out how may images per step
     my $divisor = $opt{window};
 
-    my $step = $opt{nsub}/$divisor;
+    my $nsub;
+    if( ref($opt{nsub}) =~ m/ARRAY/ ) {
+    	$nsub = $opt{nsub}->[2];
+    } else {
+	$nsub = $opt{nsub};
+    }
+
+    my $step = $nsub/$divisor;
     my ($ii, $n);
-    my $N = pdl(($#$files + 1 - $opt{nsub})/$step)->floor;
+    my $N = int(($#$files + 1 - $nsub)/$step);
 
     ##############################
     # Make a minimum from <n> time slices, unless one gets passed in.
     print "Making minimum values...\n" if($opt{verbose});
-    $opt{noise_spectrum} = 3 unless(defined($opt{noise_spectrum}));
+    $opt{noise_spectrum} = 3 unless($opt{noise_spectrum});
     unless(UNIVERSAL::isa($opt{noise_spectrum},'PDL')) {
 	my @mins;
-	print "Making minimum...\n";
-	my $n = ($#$files+1) - $opt{nsub};
+	print "Making minimum... (noise_spectrum is $opt{noise_spectrum})\n" if($opt{verbose});
+	my $n = ($#$files+1) - $nsub;
 	my $npersamp = $n / $opt{noise_spectrum};
-
-	my @starts = map { int($_ * $npersamp) } (0..$opt{noise_spectrum}-1);
+	
+	my @starts = map { floor(pdl($_ * $npersamp))->at(0) } (0..$opt{noise_spectrum}-1);
 	for my $i(0..$#starts){
-	    printf ("Measuring slice %d of %d: files %d-%d...\n",$i,$#starts+1,$starts[$i],$starts[$i]+$opt{nsub}-1) if($opt{verbose});
+	    printf ("Measuring slice %d of %d: files %d-%d...\n",$i,$#starts+1,$starts[$i],$starts[$i]+$nsub-1) if($opt{verbose});
 
-	    my $minicube = pdl(mrfits(@{$files}[$i..$i+$opt{nsub}-1]));
+	    my $minicube = pdl(mrfits(@{$files}[$i..$i+$nsub-1]));
 
 	    $minicube *= $opt{flat} if(defined($opt{flat}));
 	    
@@ -92,21 +99,21 @@ sub noise_gate_sequence {
     }
     
     use PDL::DiskCache;
-    my $inputs = diskcache($files, {ro=>1,rw=>0,mem=>$opt{nsub}+2});
+    my $inputs = diskcache($files, {ro=>1,rw=>0,mem=>$nsub+2});
 
     `mkdir $outdir`;
 
     ##############################
     # Step through and process the files using the pre-existing noise spectrum.
-    my $ocube = zeroes(float, $inputs->[0]->dims,$opt{nsub});
+    my $ocube = zeroes(float, $inputs->[0]->dims,$nsub);
     print "Defined ocube...\n";
-    for( $ii = $n = 0; $ii < $#$files-$opt{nsub}; $ii += $step ) {
+    for( $ii = $n = 0; $ii < $#$files-$nsub; $ii += $step ) {
 	print "Slice $n of $N "." (layer $ii) \n" if $opt{verbose};
-	my $cube = float pdl(@{$inputs}[$ii..$ii+$opt{nsub}-1]);
+	my $cube = float pdl(@{$inputs}[$ii..$ii+$nsub-1]);
 
 	$ocube += ngb2($cube,\%o3);
 
-	if($opt{keep_time_margin} || ($ii>= $opt{nsub} - $step)) {
+	if($opt{keep_time_margin} || ($ii>= $nsub - $step)) {
 	    for my $jj(0..$step-1){
 		my $out = $ocube->(:,:,($jj));
 		$out->sethdr( $inputs->[$ii+$jj]->hdr_copy );
@@ -116,8 +123,8 @@ sub noise_gate_sequence {
 		printf "%d of %d: %s -->  %s\n",$ii+$jj, $#$files+1, $files->[$ii+$jj],$ofile;
 	    }
 	}
-	$ocube->(:,:,0:$opt{nsub}-$step-1) .= $ocube->(:,:,$step:-1);
-	$ocube->(:,:,$opt{nsub}-$step:-1) .= 0;
+	$ocube->(:,:,0:$nsub-$step-1) .= $ocube->(:,:,$step:-1);
+	$ocube->(:,:,$nsub-$step:-1) .= 0;
 	$n++;
     }
 }
