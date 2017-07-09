@@ -91,11 +91,10 @@ of high frequency structure might benefit from higher values, but
 =item noise_spectrum (default undef)
 
 This allows you to feed in a noise spectrum measured in an earlier
-call to C<noise_gate_batch> or C<ngb2>.  If you feed in the string
-"measure", then the cube is not processed -- only measured.  The noise
-spectrum is returned.  You can then feed that noise spectrum into
-the C<noise_spectrum> option in subsequent calls, and skip measurement.
-
+call to C<noise_gate_batch> or C<ngb2>.  If you want to create your
+own, you can -- but see the docmentation on PDL::FFTW3::rfft -- the
+structure of the array is not cubical since the real-only Fourier 
+transform is used.
 
 =item "verbose" -- be chatty
 
@@ -315,6 +314,8 @@ pp_def('ngb3_helper',
 		    );
 
     // Handle the cubies one at a time, stuffing the result of each into the output.
+    // The ix/iy/iz loop processes each cubie completely before moving on to the next
+    // one.
     
     for( iz=0; iz < zmax; iz += zstep ) {
       for( iy=0; iy < ymax; iy += ystep ) {
