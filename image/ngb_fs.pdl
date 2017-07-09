@@ -77,7 +77,7 @@ sub ngb_fs {
     
     print "$us: fft...\n" if($opt{verbose});
     my $c2 = rfft3($cubies);
-    our $c2m = ($c2 * $c2)->sumover;  # work with mag-squared to avoid a ton of square roots
+    my $c2m = ($c2 * $c2)->sumover;  # work with mag-squared to avoid a ton of square roots
 
     if($opt{mode} =~ m/s/i) {
 	# shot mode -- scale by the anticipated shot noise
