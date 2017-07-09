@@ -1,5 +1,5 @@
 use strict;
-=head2 noise_gate_batch
+=head2 noise_gate_batch (deprecated; use ngb2)
 
 =for usage
 
