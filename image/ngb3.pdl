@@ -282,6 +282,9 @@ pp_def('ngb3_helper',
 
     // Set up strides through the original and output data arrays.  
     // (Strides through the cubies and apod are designed to all be 1)
+    // This could be done directly from the dimincs() in the PDLs, but
+    // explicit calculation is more robust against Craig being stupid.
+    // Since it's outside all the loops it's "free".
     xstride = &( $in ( x=>1, y=>0, z=>0 ) ) - &( $in ( x=>0,     y=>0,     z=>0 ) );
     ystride = &( $in ( x=>0, y=>1, z=>0 ) ) - &( $in ( x=>nxmax, y=>0,     z=>0 ) );
     zstride = &( $in ( x=>0, y=>0, z=>1 ) ) - &( $in ( x=>0,     y=>nymax, z=>0 ) );
@@ -289,10 +292,10 @@ pp_def('ngb3_helper',
     oystride = &($out( x=>0, y=>1, z=>0 ) ) - &( $out( x=>nxmax, y=>0,     z=>0 ) );
     ozstride = &($out( x=>0, y=>0, z=>1 ) ) - &( $out( x=>0,     y=>nymax, z=>0 ) );
 
-    printf("\nxyzstrides=%d,%d,%d; oxoyozstrides=%d,%d,%d; apod_dimincs=%d,%d,%d, scr_dimincs=%d,%d,%d, type is %s\n",xstride,ystride,zstride,oxstride,oystride,ozstride,$PDL(apod)->dimincs[0],$PDL(apod)->dimincs[1],$PDL(apod)->dimincs[2],$PDL(scr)->dimincs[0],$PDL(scr)->dimincs[1],$PDL(scr)->dimincs[2],$TFD("float","double"));
-
     // Make FFTW3 plans -- these are cached data structures for FFTW, which
     // set up the Fourier transforms.
+    // (Remember, the TFD macro inserts different code strings depending on whether
+    // the GENERIC type is float or double.)
     dims_row_first[0] = nzmax;
     dims_row_first[1] = nymax;
     dims_row_first[2] = nxmax;
