@@ -282,12 +282,12 @@ pp_def('ngb3_helper',
 
     // Set up strides through the original and output data arrays.  
     // (Strides through the cubies and apod are designed to all be 1)
-    xstride = $PDL(in)->dimincs[0];
-    ystride = $PDL(in)->dimincs[1] - nxmax * xstride;
-    zstride = $PDL(in)->dimincs[2] - nymax * ystride; 
-    oxstride = $PDL(out)->dimincs[0];
-    oystride = $PDL(out)->dimincs[1] - nxmax * oxstride;
-    ozstride = $PDL(out)->dimincs[2] - nymax * oystride;
+    xstride = &( $in ( x=>1, y=>0, z=>0 ) ) - &( $in ( x=>0,     y=>0,     z=>0 ) );
+    ystride = &( $in ( x=>0, y=>1, z=>0 ) ) - &( $in ( x=>nxmax, y=>0,     z=>0 ) );
+    zstride = &( $in ( x=>0, y=>0, z=>1 ) ) - &( $in ( x=>0,     y=>nymax, z=>0 ) );
+    oxstride = &($out( x=>1, y=>0, z=>0 ) ) - &( $out( x=>0,     y=>0,     z=>0 ) );
+    oystride = &($out( x=>0, y=>1, z=>0 ) ) - &( $out( x=>nxmax, y=>0,     z=>0 ) );
+    ozstride = &($out( x=>0, y=>0, z=>1 ) ) - &( $out( x=>0,     y=>nymax, z=>0 ) );
 
     printf("\nxyzstrides=%d,%d,%d; oxoyozstrides=%d,%d,%d; apod_dimincs=%d,%d,%d, scr_dimincs=%d,%d,%d, type is %s\n",xstride,ystride,zstride,oxstride,oystride,ozstride,$PDL(apod)->dimincs[0],$PDL(apod)->dimincs[1],$PDL(apod)->dimincs[2],$PDL(scr)->dimincs[0],$PDL(scr)->dimincs[1],$PDL(scr)->dimincs[2],$TFD("float","double"));
 
@@ -327,14 +327,8 @@ pp_def('ngb3_helper',
 	  for(inz=0; inz < nzmax; inz++) {
             for(iny=0; iny < nymax; iny++) {
               for(inx=0; inx < nxmax; inx++) {
-  		 $scr(nx=>inx,ny=>iny,nz=>inz) = 
-		     $in(x=>ix+inx, y=>iy+iny, z=>iz+inz) *
-		     $apod(nx=>inx, ny=>iny, nz=>inz);
-//                 *(gzouta++) = (*(gzinta)) * (*(apod_el++) );
-//                 *gzouta = *gzinta * *apod_el;
-                 gzouta++;
+                 *(gzouta++) = *gzinta * *(apod_el++);
                  gzinta += xstride;
-                 apod_el++;
               }
               gzinta += ystride;
             }
@@ -349,17 +343,16 @@ pp_def('ngb3_helper',
             case 'f': // fixed noise -- just copy the spectrum into the scratch area
 		acc = 1;
                 break;
-            case 's': // shot noise -- sum-of-square-roots
+            case 's': // shot noise -- sum-of-square-roots.   Use pointer to step through 
+                      // the scr array, to avoid indexing math.
                 acc=0;
-		for(inz=0; inz<nzmax; inz++) {
-                  for(iny=0; iny<nymax; iny++) {
-                    for(inx=0; inx<nxmax; inx++) {
-                      acc += sqrt(  $TFD(fabsf,fabs)( $scr(nx=>inx,ny=>iny,nz=>inz) )  );
-                    }
-                  }
+                gzinta = &( $scr(nx=>0,ny=>0,nz=>0) );
+		for(inx=0; inx<nelem; inx++) {
+                      acc += sqrt(  $TFD(fabsf,fabs)( *(gzinta++) ) );
                 }
+
                 break;
-            case 'm': // multiplicative -- straight sum
+            case 'm': // multiplicative -- straight sum.  Already done for us by the fft.
                 acc = $scr_spec(ir=>0,fx=>0,ny=>0,nz=>0);
                 break;
             default:
@@ -378,20 +371,27 @@ pp_def('ngb3_helper',
           switch($COMP(method)){
             case 'g':  // gating -- just zero bad components
 
+              // Set up pointers to avoid lots of index arithmetic.
+              // scr_spec and spec2 are both assumed to have straight-up 
+              // standard ordering, so we can step through the arrays without
+              // use of special strides.
+              gzouta = &( $scr_spec( ir=>0, fx=>0, ny=>0, nz=>0 ) );
+              gzinta = &( $spec2(           fx=>0, ny=>0, nz=>0 ) );
               for(inz=0; inz<nzmax; inz++) {
                 for(iny=0; iny<nymax; iny++) {
                   for(inx=0; inx<fxmax; inx++) { // fxmax
-                    $GENERIC() zeta,alpha;
-                    // alpha gets the sum-of-squares of real and imaginary components.
-                    zeta = $scr_spec(ir=>0, fx=>inx, ny=>iny, nz=>inz);
-                    alpha = zeta * zeta;
-                    zeta = $scr_spec(ir=>1, fx=>inx, ny=>iny, nz=>inz);
-                    alpha += zeta * zeta;
+                    $GENERIC() alpha;
+
+                    // alpha gets the sum-of-squares of real and imaginary components,
+                    // scaled according to the magnitude scaling above.
+                    alpha = *(gzouta) * *(gzouta)  +  *(gzouta+1) * *(gzouta+1);
                     alpha /= acc;
-                    if( alpha < $spec2(fx=>inx,ny=>iny,nz=>inz) ) {
-                       $scr_spec(ir=>0,fx=>inx,ny=>iny,nz=>inz) = 0;
-                       $scr_spec(ir=>1,fx=>inx,ny=>iny,nz=>inz) = 0;
+
+                    // Gate out bad components
+                    if( alpha < *(gzinta++) ) {
+                       *(gzouta+1) = *(gzouta) = 0;
                     }
+                    gzouta += 2;
                   }
                 }
               }
@@ -428,18 +428,14 @@ pp_def('ngb3_helper',
 
           // apodize again, divide by the number of elements in the cubie, and 
           // accumulate in the output array.
-          gzinta = &($scr(nx=>0,ny=>0,nz=>0));   // source is cubie
-          apod_el = &($apod(nx=>0,ny=>0,nz=>0)); // apodization
-          gzouta = &($out(x=>ix, y=>iy, z=>iz));  // dest is in output array
+          gzinta  = &( $scr ( nx=>0,  ny=>0,  nz=>0  ) );  // source is cubie
+          apod_el = &( $apod( nx=>0,  ny=>0,  nz=>0  ) );  // apodization
+          gzouta  = &( $out (  x=>ix,  y=>iy,  z=>iz ) );  // dest is in output array
 
           for(inz=0;inz<nzmax; inz++) {
             for(iny=0; iny<nymax; iny++) {
               for(inx=0; inx<nxmax; inx++) {
-                $out(x=>ix+inx, y=>iy+iny, z=>iz+inz) += 
-                     $scr( nx=>inx, ny=>iny, nz=>inz) * 
-	             $apod(nx=>inx, ny=>iny, nz=>inz) * 
-                     apod_scale;
-                //*gzouta = *(gzinta++) * (*(apod_el++)) * apod_scale;
+                *gzouta += *(gzinta++) * (*(apod_el++)) * apod_scale;
                 gzouta += oxstride;
               }
               gzouta += oystride;
