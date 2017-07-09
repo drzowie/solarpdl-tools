@@ -111,7 +111,7 @@ sub noise_gate_sequence {
 	print "Slice $n of $N "." (layer $ii) \n" if $opt{verbose};
 	my $cube = float pdl(@{$inputs}[$ii..$ii+$nsub-1]);
 
-	$ocube += ngb2($cube,\%o3);
+	$ocube += ngb3($cube,\%o3);
 
 	if($opt{keep_time_margin} || ($ii>= $nsub - $step)) {
 	    for my $jj(0..$step-1){
