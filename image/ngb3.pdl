@@ -88,14 +88,6 @@ noise.  (The default of 50% is the median value).  Images with a lot
 of high frequency structure might benefit from higher values, but
 50% works fine for most images.
 
-=item noise_spectrum (default undef)
-
-This allows you to feed in a noise spectrum measured in an earlier
-call to C<noise_gate_batch> or C<ngb2>.  If you want to create your
-own, you can -- but see the docmentation on PDL::FFTW3::rfft -- the
-structure of the array is not cubical since the real-only Fourier 
-transform is used.
-
 =item "verbose" -- be chatty
 
 If set to 1, this prints some status messages as the calculation is happening.
