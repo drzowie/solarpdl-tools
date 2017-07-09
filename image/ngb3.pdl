@@ -319,11 +319,11 @@ pp_def('ngb3_helper',
     
           // some pointer holders for rapid stepping through the cubie array
           $GENERIC() *gzinta, *apod_el, *gzouta;
-          // First: copy the current cubie into the scratch space, and apodize
           gzinta =  &($in  ( x=>ix, y=>iy, z=>iz));  // source is in original array
           apod_el = &($apod(nx=>0, ny=>0, nz=>0 ));  // apodization
           gzouta =  &($scr (nx=>0, ny=>0, nz=>0 ));  // dest is in cubie
 
+          // Copy the current cubie into the scratch space, and apodize
 	  for(inz=0; inz < nzmax; inz++) {
             for(iny=0; iny < nymax; iny++) {
               for(inx=0; inx < nxmax; inx++) {
@@ -343,7 +343,7 @@ pp_def('ngb3_helper',
             case 'f': // fixed noise -- just copy the spectrum into the scratch area
 		acc = 1;
                 break;
-            case 's': // shot noise -- sum-of-square-roots.   Use pointer to step through 
+            case 's': // shot noise -- sum-of-square-roots.   Use pointers to step through 
                       // the scr array, to avoid indexing math.
                 acc=0;
                 gzinta = &( $scr(nx=>0,ny=>0,nz=>0) );
@@ -367,16 +367,20 @@ pp_def('ngb3_helper',
           acc *= factor;
           acc *= acc;
 
+
           // Now do the actual filtering. 
           switch($COMP(method)){
+
             case 'g':  // gating -- just zero bad components
 
               // Set up pointers to avoid lots of index arithmetic.
               // scr_spec and spec2 are both assumed to have straight-up 
               // standard ordering, so we can step through the arrays without
               // use of special strides.
+
               gzouta = &( $scr_spec( ir=>0, fx=>0, ny=>0, nz=>0 ) );
               gzinta = &( $spec2(           fx=>0, ny=>0, nz=>0 ) );
+
               for(inz=0; inz<nzmax; inz++) {
                 for(iny=0; iny<nymax; iny++) {
                   for(inx=0; inx<fxmax; inx++) { // fxmax
@@ -387,11 +391,11 @@ pp_def('ngb3_helper',
                     alpha = *(gzouta) * *(gzouta)  +  *(gzouta+1) * *(gzouta+1);
                     alpha /= acc;
 
-                    // Gate out bad components
+                    // Gate out bad components (alpha < baseline spectrum)
                     if( alpha < *(gzinta++) ) {
                        *(gzouta+1) = *(gzouta) = 0;
                     }
-                    gzouta += 2;
+                    gzouta += 2;  // stride is 2 since scr_spec has (real/im) pairs in dim 0
                   }
                 }
               }
