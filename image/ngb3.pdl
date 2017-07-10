@@ -72,6 +72,12 @@ attenuated by the computed value SNR/(SNR+1), where SNR is the value
 of the magnitude in the local segment's spectrum, divided by the
 "noise" spectrum and the "factor" parameter.
 
+=item factor (default 1.5)
+
+Individual Fourier components need to exceed the computed (or
+supplied) noise floor by this factor, to be considered "signal".
+For Wiener filtering, this factor scales the SNR for the rolloff.
+
 =item flat (default undef)
 
 If present, this is a flat-field image or vignetting function that
@@ -118,7 +124,7 @@ sub ngb3 {
     my %opt = parse({
 	nsub=>12,    # default pixels for a subregion
 	pct=>50,     # percentile across the batch for each component, to be considered noise
-	factor=>3,   # factor by which you have to exceed the component amplitude, to be considered valid
+	factor=>1.5, # factor by which you have to exceed the component amplitude, to be considered valid
 	mode=>'shot',
 	method=>'gate',
 	flat => undef,
@@ -265,9 +271,9 @@ pp_def('ngb3_helper',
     nxmax = $SIZE(nx);
     nymax = $SIZE(ny);
     nzmax = $SIZE(nz);
-    xmax = $SIZE(x) - nxmax;
-    ymax = $SIZE(y) - nymax;
-    zmax = $SIZE(z) - nzmax;
+    xmax = $SIZE(x) - nxmax + 1;
+    ymax = $SIZE(y) - nymax + 1;
+    zmax = $SIZE(z) - nzmax + 1;
     fxmax = $SIZE(fx);
     int dims_row_first[3];
 
@@ -308,18 +314,17 @@ pp_def('ngb3_helper',
     // Handle the cubies one at a time, stuffing the result of each into the output.
     // The ix/iy/iz loop processes each cubie completely before moving on to the next
     // one.
-    
     for( iz=0; iz < zmax; iz += zstep ) {
       for( iy=0; iy < ymax; iy += ystep ) {
         for( ix=0; ix < xmax; ix += xstep ) {
     
           // some pointer holders for rapid stepping through the cubie array
           $GENERIC() *gzinta, *apod_el, *gzouta;
+
+          // Copy the current cubie into the scratch space, and apodize
           gzinta =  &($in  ( x=>ix, y=>iy, z=>iz));  // source is in original array
           apod_el = &($apod(nx=>0, ny=>0, nz=>0 ));  // apodization
           gzouta =  &($scr (nx=>0, ny=>0, nz=>0 ));  // dest is in cubie
-
-          // Copy the current cubie into the scratch space, and apodize
 	  for(inz=0; inz < nzmax; inz++) {
             for(iny=0; iny < nymax; iny++) {
               for(inx=0; inx < nxmax; inx++) {

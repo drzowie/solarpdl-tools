@@ -37,7 +37,6 @@ sub noise_gate_sequence {
 	factor => 2,
 	mode => 'shot',
 	method => 'gate',
-	window => 3,
 	flat => undef,
 
 	noise_spectrum=>3,   # PDL containing the spectrum, or single number of time samples to take
@@ -60,7 +59,7 @@ sub noise_gate_sequence {
     delete $o2{flat};
 
     # Figure out how may images per step
-    my $divisor = $opt{window};
+    my $divisor = 3;
 
     my $nsub;
     if( ref($opt{nsub}) =~ m/ARRAY/ ) {
@@ -106,7 +105,7 @@ sub noise_gate_sequence {
     ##############################
     # Step through and process the files using the pre-existing noise spectrum.
     my $ocube = zeroes(float, $inputs->[0]->dims,$nsub);
-    print "Defined ocube...\n";
+
     for( $ii = $n = 0; $ii < $#$files-$nsub; $ii += $step ) {
 	print "Slice $n of $N "." (layer $ii) \n" if $opt{verbose};
 	my $cube = float pdl(@{$inputs}[$ii..$ii+$nsub-1]);
