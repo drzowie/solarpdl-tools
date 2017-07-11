@@ -1,73 +1,101 @@
-use strict;
-=head2 noise_gate_batch (deprecated; use ngb2)
+=head2 noise_gate_batch - rapid 3-D noise gating
 
 =for usage
 
-    $output_cube = noise_gate_batch($input_cube, \%options);
+    $ocube = noise_gate_batch($cube, \%options);
 
 =for ref
 
-Method of cleaning a movie "cube" via noise gating.  First, accumulate
-amplitude thresholds from the data themselves.  Then discard Fourier
-components whose amplitude does not exceed the threshold by a set
-proportion.
+Noise_gate_batch performs cleaning of a data "cube" (movie, spectral
+image, etc.) via noise gating.  It is useful for 3-D data sets that
+fit in RAM; for larger data sets, try C<noise_gate_sequence()> or
+C<noise_gate_parallel()>.
+
+By default, noise_gate_batch accumulates amplitude thresholds from the
+data themselves using C<noise_gate_fs>.  Then, in each neighborhood of
+the image cube, it discards or attenuates Fourier components whose
+amplitude does not exceed the noise threshold by a set factor.
 
 Processing happens in "cubies" -- subcubes of a size that is passed
-in, in the options hash.  Cubies are merged back into the output cube,
-with Hanning windows applied.  The edge condition is whatever rolloff
-the windowing function applies.
+in (but defaults to 12x12x12).  The cubie dimensions may be different
+on different axes, but each should be divisible by 3.  The cubies
+should be small enough that they represent structurally similar 
+"neighborhoods" of the original image sequence, but large enough to
+capture motion frame-to-frame.  
 
-The data cube is notionally formatted as (x,y,t).  Three dimensions
-are required.
+You can supply a noise spectrum of the data, and also a noise model.
+If you do not supply a noise spectrum, one gets estimated
+automatically from the data themselves, using the C<ngb_fs> code.  The
+spectrum is modified for each cubie with an adaptive noise model.
+Current noise models are:
 
-By default, noise_gate_batch uses statistics of the input cube itself
-to determine a noise spectrum.  An option (C<noise_spectrum=>'measure'>) allows you
-to accumulate a noise spectrum and return it.  You can then feed that
-spectrum into further calls to C<noise_gate_batch> for consistency
-and/or speed.  That is useful for wrappers like C<noise_gate_cube>,
-which use C<noise_gate_batch> as an engine to step through a large
-data set.
+=over 3
 
+=item "fixed"
+
+Noise is modeled as independent of the input image value.  This is
+useful for images corrupted by additive image-independent noise such
+as read noise.
+
+=item "shot"
+
+Noise is modeled as a Poisson (normal) distribution whose variance scales
+as the square root of image value.  This is the setting to use for
+images whose dominant noise source everywhere is photon noise.
+
+=item "hybrid"
+
+Noise is modeled using the "shot" model for bright regions, and
+the "fixed" model for faint regions.  The noise is considered to be
+the larger of the two distributions.  
+
+=item "multiplicative"
+
+Noise is modeled using a distribution whose variance is linearly
+dependent on the image value.
+
+=back
+
+The noise model is, by default, extracted from the data themselves
+using the methodology described by DeForest 2017 (Astrophys. J. 838, 155).
+This method requires that the conversion between estimated noise
+level and image value be constant.  This is usually the case, but in
+scientific images that have been flat-field corrected, it is not.  You
+can overcome that by supplying a multiplicative flat field (vignetting
+function, e.g.) for your data.  The data then get decorrected, gated, and
+recorrected for the flat field factor.
+
+The cubies are oversampled by a factor of 3 in each dimension and 
+apodized with dual-Hanning windows (proportional to sin(x_i)**4 along
+each axis).  This means that the output data are attenuated smoothly
+to 0 in a margin that is 2/3 the size of the cubie dimensions, on each
+axis.  Thus, with the default 12-pixel cubies, 8 pixels are lost at
+each edge of each image, and the first and last 8 images are also 
+degraded.  NOTE: earlier versions of the noise gating code allowed
+a variety of windowing and apodization options; the 3x oversample with
+dual Hanning windows was the best, and is now the only option.
 
 Options are:
 
 =over 3
 
-=item nsub (default 8)
+=item nsub (default 12)
 
 This is the size of the pixel/voxel subregions into which the input
 cube will be chopped for processing.  If you feed in an array ref, 
-you can get a different nsub for each dimension.
+you can get a different nsub for each dimension.  The dimensions must
+each be divisible by 3.
 
 =item mode (default 'shot')
 
-This can be either "shot" or "fixed" and determines the type of
-thresholding to be applied.  Use "shot" for simple images whose
-additive noise spectrum is dominated by shot noise (e.g., EUV solar
-images), use "fixed" for processed images where the additive noise
-floor is roughly constant (e.g., magnetograms).
+This can be "shot", "hybrid", "fixed", or "multiplicative" and
+determines the type of thresholding to be applied.  Use "shot" for
+simple images whose additive noise spectrum is dominated by shot noise
+(e.g., EUV solar images), use "fixed" for processed images where the
+additive noise floor is roughly constant (e.g., magnetograms).  Use 
+"hybrid" for images that contain a dark noise floor (e.g. from 
+camera read noise) in addition to normal shot noise.
 
-=item reference (default undef)
-
-If present, this is a separate reference image dataset that can be
-used for calculating shot noise.  It should either be a single image
-that exactly matches the original in size, or an image set that
-exactly matches the original cube.  The shot noise is scaled from the
-reference image, rather than from the data.
-
-=item pct (default 50)
-
-This is the percentile value of the local spectra, taken across the
-population of sub-image segments, to consider the magnitude of the
-noise.
-
-=item noise_spectrum (default undef)
-
-This allows you to feed in a noise spectrum measured in an earlier
-call to C<noise_gate_batch>.  If you feed in the string "measure",
-then the cube is not processed -- only measured.  The noise spectrum
-is measured and returned.  You can then feed that noise spectrum
-into subsequent calls, and skip measurement.
 
 =item method (default "gate")
 
@@ -79,36 +107,38 @@ attenuated by the computed value SNR/(SNR+1), where SNR is the value
 of the magnitude in the local segment's spectrum, divided by the
 "noise" spectrum and the "factor" parameter.
 
-=item window (default "front")
+=item factor (default 1.5)
 
-This adjusts the windowing function that is used for apodization.  
-Current options are:
+Individual Fourier components need to exceed the computed (or
+supplied) noise floor by this factor, to be considered "signal".
+For Wiener filtering, this factor scales the SNR for the rolloff.
 
-=over 3
+=item flat (default undef)
 
-=item "front" -- do Hanning windowing up front.  
+If present, this is a flat-field image or vignetting function that
+is multiplied with ("de-applied" to) the data before the noise calculation,
+then divided out from ("re-applied" to) the data after the noise
+calculation. This is useful for working with images where the actual signal at
+the detector is divorced from the final calibrated image.
 
-Basic, brutal.
+=item pct (default 50)
 
-=item "split" -- do split Hanning windowing.
+This is the percentile value of the local spectra, taken across the
+population of sub-image segments, to consider as the magnitude of the
+noise.  (The default of 50% is the median value).  Images with a lot
+of high frequency structure might benefit from higher values, but
+50% works fine for most images.
 
-This applies sin(x) up front, another sin(x) in back.  Not guaranteed to work.
+=item dkpct (default 5)
 
-=item "tri" -- use sextature windowing
+If you use the "hybrid" noise model, this is the percentile value that's
+used to calculate the dark level. 
 
-This option does Hanning windowing in up front and in back for sin**4 windowing
-overall.  This is coupled with 3x-per-segment sampling (instead of 2x-per-segment
-with normal windowing) so it costs a factor of 3.4 in CPU time and memory compared
-to regular Hanning windows.  Results look equivalent to quad windowing, but at
-about half the overall resource hit.
+=item dkfact (default 2)
 
-=item "quad" -- use octature windowing
-
-This option does Hanning windowing up front and in back for sin**4
-windowing overall.  This is coupled with 4x-per-segment sampling
-(instead of 2x-per-segment with normal windowing), so it costs a factor
-of 8 in CPU time and memory compared to regular Hanning windows.  But 
-the results are very smooth.
+The dkfact factor is used to set the dark (constant) noise spectral 
+threshold.  The threshold is (factor * dkfact) times the amplitude of the
+corresponding spectral component in dark regions.
 
 =item "verbose" -- be chatty
 
@@ -116,202 +146,422 @@ If set to 1, this prints some status messages as the calculation is happening.
 
 =item "noise_spectrum" -- provide pre-processed noise spectrum
 
-If this is provided, it must either be the string "measure", in which
-case the code measures the noise spectrum and returns it instead
-of a processed cube, or else a PDL containing a noise spectrum returned
-by an earlier call.  
+If this is provided, it must be a PDL containing a noise magnitude 
+spectrum for the instrument that created these data, normalized to your 
+noise model.  This can be created with a call to C<ngb_fs>).  Since
+noise spectrum calculation is itself a large-ish computing task, if you're 
+going to be processing a lot of images you can break out the spectrum
+calculation from the main gating operation.
 
 =back
 
-=back
 
 =cut
 
-use PDL::Options;
-use PDL::Constants;
 use PDL::NiceSlice;
 use PDL::FFTW3;
+use PDL::Options;
+use strict;
 
 sub noise_gate_batch {
     my $cube = shift;
     my $u_opt = shift // {};
-
-    my %opt = parse( {
-	nsub => 8,         # pixels for a subregion
-	pct => 50,
-	factor => 3,
-	mode => 'shot',
-	method => 'gate',
-	reference => undef,
-	window => 'trio',
+    my $us = "ngb3";
+    my %opt = parse({
+	nsub=>12,    # default pixels for a subregion
+	pct=>50,     # percentile across the batch for each component, to be considered noise
+	dkpct=>5,
+	dkfact=>2,
+	factor=>1.5, # factor by which you have to exceed the component amplitude, to be considered valid
+	mode=>'shot',
+	method=>'gate',
+	flat => undef,
 	verbose=>0,
-	noise_spectrum => undef
-		     },
-		     $u_opt
+	noise_spectrum=>undef,
+	n_subsamp=>2,  # used to adjust how much of the dataset is used to accumulate the noise spectrum
+		    },
+		    $u_opt
 	);
 
     unless(ref($opt{nsub})) {
 	$opt{nsub} = [$opt{nsub},$opt{nsub},$opt{nsub}];
     }
-    $opt{nsub} = pdl($opt{nsub});
+    if(UNIVERSAL::isa($opt{nsub},'PDL')){
+	$opt{nsub} = [$opt{nsub}->list];
+    }
+    my $nsub = pdl($opt{nsub});
+    unless(all($nsub % 3 == 0)) {
+	die "ngb3: nsub must be divisible by 3 in all dimensions";
+    }
 
-    print "nsub=$opt{nsub}, factor=$opt{factor}, window=>$opt{window}\n";
-	
     unless($opt{method} =~ m/^[gw]/i) {
-	die "noise_gate_batch: method must be 'gate' or 'wiener' (value '$opt{method}')";
-    }
-
-    unless($opt{window} =~ m/^[fsqt]/i) {
-	die "noise_gat_batch: windowing method must be 'front' or 'split' or 'quad' (value '$opt{window}')";
-    }
-
-    my $out = $cube->new_or_inplace;
-
-    
-    # Cut up the cube
-    my $nsub_cut = 2;
-    if($opt{window} =~ m/^q/i) {
-	$nsub_cut = 4;
-    } elsif($opt{window} =~ m/^t/i) {
-        $nsub_cut = 3;
-    }
-    
-
-    my $ndc_dims = (($cube->shape - $opt{nsub}+1)/($opt{nsub}/$nsub_cut))->ceil;
-
-    unless(all($ndc_dims > 0)) { die "Error: cut dims came out to $ndc_dims...\n"; }
-    my $corners =  ndcoords( $ndc_dims->list ) * $opt{nsub}/$nsub_cut ;               # make lower left early corners
-    $corners += ($cube->shape - $opt{nsub} - $corners->(:,-1,-1,-1))/2;  # center the pattern
-    $corners->inplace->floor;
-    $corners = $corners->clump(1,2,3)->sever;
-
-    ## Prepare a window function (hanning windows by default, hence the name)
-    my $hanning;
-    if($opt{window} =~ m/^[fqt]/i) {
-	print "Windowing..." if $opt{verbose};
-	$hanning = ( sin( (  ndcoords( $opt{nsub}->list ) + 0.5 ) * PI / $opt{nsub} ) ** 2 )->prodover;
-    } elsif($opt{window} =~ m/^s/i) {
-	print "Half-windowing...\n" if $opt{verbose};
-	$hanning = ( sin( (  ndcoords( $opt{nsub}->list ) + 0.5 ) * PI / $opt{nsub} )      )->prodover;
-    }
-
-    # If a reference image stack was supplied, find brightness values for each cubie (next block) in the
-    # reference stack.  Do this first so we can free the refcubies variable before allocating the main cubies.
-    my $ref_sumsqrt;
-    if(defined($opt{reference})) {
-	print "Storing reference brightnesses..." if ($opt{verbose});
-	# To save time, just store the sum of each reference cubie, if reference values are supplied.
-	if($opt{reference}->ndims==2){
-	    $opt{reference} = $opt{reference}->(:,:,*($cube->dim(2)));
-	}
-	my $refcubies = $opt{reference}->range($corners,$opt{nsub},'f')->mv(0,-1)->sever;
-	$refcubies *= $hanning;
-	$ref_sumsqrt = $refcubies->clip(0)->sqrt->sumover->sumover->sumover->(*1,*1,*1);
-    }
-
-    # make an array of cubies that is nsub x nsub x nsub x N, and disconnected from the original.
-    print "Cutting..." if ($opt{verbose});
-    our $cubies = $out->range($corners,$opt{nsub},'f')->mv(0,-1)->sever;
-    print "cubies is ".join("x",$cubies->dims)."..." if ($opt{verbose});
-
-    $cubies *= $hanning;
-
-    my $sumsqrt;
-    if($opt{mode} =~ m/^s/i) { # shot noise - calculate sum-of-sqrt before ditching ricubies
-	print "Calculating brigtnesses for shot noise..." if ($opt{verbose});
-	if(defined($ref_sumsqrt)) {
-	    $sumsqrt = $ref_sumsqrt;
-	} else {
-	    $sumsqrt = $cubies->clip(0)->sqrt->sumover->sumover->sumover->(*1,*1,*1);
-	}
-    }
-
-    print "Transforming..." if ($opt{verbose});
-    #    my $ricubies = pdl($cubies,0)->mv(-1,0);  # (ri) x nsub x nsub x nsub x N
-    #    my $fricubies = fft3($ricubies->inplace);
-    our $fricubies = rfft3($cubies); # 2 x nsub/2 x nsub x nsub x N
-#    undef $cubies;
-
-    print "Mag..." if ($opt{verbose});
-    #  my $fmcubies = ($fricubies*$fricubies)->sumover->sqrt; # nsub x nsub x nsub x N
-    our $fmcubies = ($fricubies * $fricubies)->sumover->sqrt; # nsub/2 x nsub x nsub x N
-    
-    # Convert percentile into an index for future converted cubies
-    my $c_n = floor( $opt{pct}/100  * $fmcubies->dim(3) ) ;
-    print "select percentile (n=$c_n)..." if ($opt{verbose});
-
-    if($opt{mode} =~ m/^s/i) {  # shot noise
-	print "shot noise: scaling by sum(sqrt)..." if ($opt{verbose});
-	$fmcubies /= $sumsqrt + 1e-20 * ($sumsqrt==0);
-    } elsif( $opt{mode} =~ m/^f/i) { # fixed noise
-        print "Finding fixed noise floor..." if ($opt{verbose});
-    }
-
-    # Calculate thresholds.  Do this from the statistics of the fmcubies, or use a passed-in mincube.
-    my $mincubie;
-    if(defined($opt{noise_spectrum}) && UNIVERSAL::isa($opt{noise_spectrum},'PDL')) {
-	if($opt{noise_spectrum}->ndims == 3  and  all($opt{noise_spectrum}->shape == $fmcubies->(:,:,:,(0))->shape)) {
-	    $mincubie = $opt{noise_spectrum}->copy;
-	} else {
-	    die "Passed-in noise spectrum has the wrong shape!";
-	}
-    } elsif(!$opt{noise_spectrum} or  $opt{noise_spectrum} =~ m/^m/i) {
-	## Default path here:  calculate the mincubie (threshold) from the fmcubies
-	
-	$mincubie = $fmcubies->mv(3,0)->qsort->(($c_n))->sever;
-
-	## If we are just measuring, then return that and be done.
-	if($opt{noise_spectrum} =~ m/^m/i) {
-	    print "\n" if ($opt{verbose});
-	    return $mincubie;
-	}
+	die "$us: method must be 'gate' or 'wiener' (value '$opt{method}')";
     } else {
-	## We got a noise_spectrum option and it isn't "measure" and it isn't a PDL.  WTF?
-	die "unknown noise_spectrum option '$opt{noise_spectrum}'";
+	# convert to one of 'g' or 'w'
+	$opt{method} = lc(substr($opt{method},0,1));
     }
 
-    
-    my $filter;
-    if($opt{method} =~ m/^g/i) {
-	print "Computing threshold filters...\n" if ($opt{verbose});
-	$mincubie *= $opt{factor};
-	$fmcubies->range([0,-1,-1],[2,3,3],'p').= 1e15;
-	$filter = ($fmcubies >= $mincubie);
-    } elsif($opt{method} =~ m/^w/i) {
-	print "Computing Wiener filters...\n" if ($opt{verbose});
-	# Wiener filter is (SNR/SNR+1).  Calculate SNR, adjusted for the optional factor.
-	$filter = $fmcubies / (1e-9 + $mincubie * ($opt{factor} || 1));
-	$filter->range([0,-1,-1],[2,3,3],'p') .= 1e9;  # assume infinite SNR in f=0 & f=1 bands (asymmetry is due to rfft)
-	$filter /= ($filter + 1);
+    unless($opt{mode} =~ m/^[msfh]/i) {
+	die "$us: mode must be 'fixed', 'shot', 'hybrid', or 'multiplicative'.";
+    } else {
+	$opt{mode} = lc(substr($opt{mode},0,1));
     }
 
-    print "Applying filters...\n" if ($opt{verbose});
-    $fricubies->((0)) *= $filter;
-    $fricubies->((1)) *= $filter;
-
-
-    print "Inverse transforming..." if ($opt{verbose});
-    #   my $rcubies = ifft3($fricubies->inplace)->((0))->sever;
-    my $rcubies = irfft3($fricubies);
-    $out .= 0;
-
-    # split or quad - apply another Hanning window.
-    if($opt{window} =~ m/^[sqt]/i) {
-	print "finishing windowing..." if ($opt{verbose});
-	$rcubies *= $hanning;
-    }
-    if($opt{window} =~ m/^q/i) {
-	$rcubies /= 1.5*1.5*1.5;
-    } elsif($opt{window} =~ m/^t/i) {
-        $rcubies /= 1.125*1.125*1.125;
+    if($opt{mode} eq 'h' and $opt{method} ne 'g') {
+	die "$us: hybrid noise mode is only supported by the gating method at the moment.";
     }
 
-    print "Merging...\n" if ($opt{verbose});
-    for my $i(0..$corners->dim(1)-1){
-	$out->range($corners->(:,($i)),$opt{nsub},'f') += $rcubies->(:,:,:,($i));
+    ## We can't scribble on the input cube unless the inplace flag is set...
+    my $cube_is_inplace = $cube->is_inplace(0);
+
+    ## The core can't actually work in place anyhow -- make a place for output.
+    ## It needs to be initialized to zero since the C loop accumulates (rather than
+    ## sets) values...
+    my $out = zeroes($cube);
+
+    ##############################
+    # Flat field decorrection -- remove an already-applied flat field if necessary
+    if(defined($opt{flat})) {
+	print "$us: de-applying flat field...\n" if($opt{verbose});
+	if($cube_is_inplace) {
+	    $cube *= $opt{flat};
+	} else {
+	    $cube = $cube * $opt{flat};
+	}
     }
 
+    ##############################
+    # Get noise spectrum (from ngb_fs if necessary)
+    # We operate with squared-magnitude spectrum so
+    # we don't have to take so many square roots.
+    my $spec;
+    unless(defined($opt{noise_spectrum})) {
+	print "$us: Getting noise spectrum... (pct=$opt{pct})" if($opt{verbose}>1);
+	$spec = ngb_fs($cube, 
+		       {nsub    =>  $opt{nsub}, 
+			dkpct   =>  $opt{dkpct}, 
+			pct     =>  $opt{pct}, 
+			mode    =>  $opt{mode}, 
+			window  =>  3, 
+			verbose =>  $opt{verbose},
+			subsamp =>  $opt{n_subsamp}
+		       }
+	    );
+    } else {
+	$spec = $opt{noise_spectrum}->new_or_inplace;
+    }
+
+    ##############################
+    # spec2 gets the square of the spectrum so we can use sum-of-squares
+    # comparisons in the helper.  Also, pad it out with zeroes if there
+    # is no dark spectrum. 
+    my $spec2 = $spec * $spec;
+    if($spec2->ndims < 4) {
+	$spec2 = pdl($spec2->type, $spec2, 0);
+    }
+    $spec2->range([0,-1,-1],[2,3,3],'p') .= 0; # Always keep the 0 and 1 components along each axis
+    $spec2->(:,:,:,(1)) *= $opt{dkfact}**2;    # Scale the dark spectrum by the darkfactor
+
+    ##############################
+    # Generate the apodization function.
+    # This will get multiplied into the data twice, then
+    # summed in sextature.  That implies a normalization 
+    # at the end by (9/8)**-3.  
+    print "$us: apodizing..." if($opt{verbose}>1);
+    my $apod;
+    $apod = ones($cube->type, @{$opt{nsub}});
+    $apod          *= sin(  (xvals($apod->dim(0))+0.5) * PI / $apod->dim(0) )**2;
+    $apod->mv(1,0) *= sin(  (xvals($apod->dim(1))+0.5) * PI / $apod->dim(1) )**2;
+    $apod->mv(2,0) *= sin(  (xvals($apod->dim(2))+0.5) * PI / $apod->dim(2) )**2;
+
+    ##############################
+    # Generate scratch space for the PP/C helper function
+    print "$us: allocating output..." if($opt{verbose}>1);
+    my $scr = PDL->new_from_specification($apod->type, $apod->dims);
+    my $scr_spec = PDL->new_from_specification($apod->type, 2,$spec->dim(0),$spec->dim(1),$spec->dim(2));
+
+    ##############################
+    # Do the real work in PP/C (helper function defined below)
+    print "$us: calling helper..." if($opt{verbose}>1);
+    PDL::ngb3_helper($cube, $out, $spec2, $apod, $scr, $scr_spec,$opt{mode},$opt{method},$opt{factor});
+    if($cube_is_inplace) {
+	$cube .= $out;
+	$out = $cube;
+    }
+
+    ##############################
+    # Flat field decorrection -- restore an already-applied flat field if necessary
+    if(defined($opt{flat})) {
+	print "$us: re-applying flat field...\n" if($opt{verbose});
+	$out *= $cube * $opt{flat};
+    }
     return $out;
 }
 
+
+##############################
+# From here on in it's all defining the C/PP helper function.
+#
+# The 'spec2' is a squared-magnitude spectrum that is normally
+# produced by ngb_fs.  It has a different x dimension because
+# it's produced with a real-FFT operation.  It has an extra
+# dimension ("ns", for "number of spectra") to support hybrid
+# noise models (dark + shot).
+#
+# The methodology is applied cubie-wise to each neighborhood of
+# the data cube in turn.  The sextature sin^4 apodization means
+# that we can simply sum apodized, processed neighborhoods into
+# the correct place in the output array, with no further
+# consideration or scaling after each one is processed.
+
+
+no PDL::NiceSlice;
+
+# Since we're linking an external library (FFTW) we have to
+# feed some INC/CFLAGS and LIBS arguments to Inline.  We get
+# them from Alien::FFTW3, which you should have anyway if you
+# are using Fourier transforms...
+use Alien::FFTW3;
+use Inline "Pdlpp" => Config =>
+    INC=> Alien::FFTW3->cflags,
+    LIBS => Alien::FFTW3->libs;
+
+# Here's the actual definition.
+use Inline "Pdlpp" => <<'EOF';
+pp_addhdr('
+#include <fftw3.h>
+');
+
+pp_def('ngb3_helper',
+    Pars => 'in(x,y,z); [o]out(x,y,z); spec2(fx,ny,nz,ns); apod(nx,ny,nz); scr(nx,ny,nz); scr_spec(ir,fx,ny,nz))',
+    OtherPars => 'char mode; char method; NV scale_factor;',
+    GenericTypes => [F,D],
+    HandleBad => 0,			       
+    Code => <<'EOC',
+    PDL_Indx ix, iy, iz, inx, iny, inz;
+    PDL_Indx xstep,ystep,zstep,xmax,ymax,zmax,nxmax,nymax,nzmax,fxmax;
+    void *plan_fwd, *plan_rev;  // used by FFTW3
+    $GENERIC() acc;
+    $GENERIC() f2 = $COMP(scale_factor) * $COMP(scale_factor);
+    $GENERIC() nelem = $SIZE(nx) * $SIZE(ny) * $SIZE(nz);
+
+    // These are stride lengths through different dimensions of the arrays
+    PDL_Indx xstride, ystride, zstride, oxstride, oystride, ozstride, speclen;
+
+    // The staggered sum of the apodization windows is 9/8.  The precalculated
+    // apod_scale gets multiplied into each element to undo that.  'nelem' factor
+    // undoes the scaling of the DFT.
+    $GENERIC() apod_scale = (8.0*8.0*8.0)/(9.0*9.0*9.0) / nelem; 
+
+    // This is used for FFTW, which requires an array of dimension sizes.
+    int dims_row_first[3];
+
+    // Set up some loop limits					   
+    xstep = $SIZE(nx)/3; 
+    ystep = $SIZE(ny)/3;  
+    zstep = $SIZE(nz)/3;
+    nxmax = $SIZE(nx);
+    nymax = $SIZE(ny);
+    nzmax = $SIZE(nz);
+    xmax = $SIZE(x) - nxmax + 1;
+    ymax = $SIZE(y) - nymax + 1;
+    zmax = $SIZE(z) - nzmax + 1;
+    fxmax = $SIZE(fx);
+
+    // Set up strides through the original and output data arrays.  
+    // (Strides through the cubies and apod are designed to all be 1)
+    // This precalculation could be done directly from the dimincs() in the 
+    // PDLs, but using PP is less error-prone, and is essentially free
+    // since we're not in a loop yet.
+    xstride = &( $in ( x=>1, y=>0, z=>0 ) ) - &( $in ( x=>0,     y=>0,     z=>0 ) );
+    ystride = &( $in ( x=>0, y=>1, z=>0 ) ) - &( $in ( x=>nxmax, y=>0,     z=>0 ) );
+    zstride = &( $in ( x=>0, y=>0, z=>1 ) ) - &( $in ( x=>0,     y=>nymax, z=>0 ) );
+    oxstride = &($out( x=>1, y=>0, z=>0 ) ) - &( $out( x=>0,     y=>0,     z=>0 ) );
+    oystride = &($out( x=>0, y=>1, z=>0 ) ) - &( $out( x=>nxmax, y=>0,     z=>0 ) );
+    ozstride = &($out( x=>0, y=>0, z=>1 ) ) - &( $out( x=>0,     y=>nymax, z=>0 ) );
+    speclen = &($spec2( fx=>0, ny=>0, nz=>0, ns=>1 )) - &($spec2( fx=>0, ny=>0, nz=>0, ns=>0));
+
+    // Make FFTW3 plans -- these are cached data structures for FFTW, which
+    // set up the Fourier transforms we'll perform later.
+    // (Remember, the TFD macro inserts different code strings depending on whether
+    // the GENERIC type is float or double.)
+    dims_row_first[0] = nzmax;
+    dims_row_first[1] = nymax;
+    dims_row_first[2] = nxmax;
+    plan_fwd = $TFD(fftwf,fftw)_plan_dft_r2c( 
+                    3, 
+		    dims_row_first, 
+		    ( $TFD(float,double) * )($PDL(scr)->data),
+		    ( $TFD(fftwf,fftw)_complex * )($PDL(scr_spec)->data),
+		    FFTW_ESTIMATE
+	);
+    plan_rev = $TFD(fftwf,fftw)_plan_dft_c2r(
+                    3,
+		    dims_row_first,
+		    ( $TFD(fftwf,fftw)_complex * )($PDL(scr_spec)->data),
+		    ( $TFD(float,double) *)($PDL(scr)->data),
+		    FFTW_ESTIMATE
+		    );
+
+    // Handle the cubies one at a time, stuffing the result of each into the output.
+    // The ix/iy/iz loop processes each cubie completely, in sequence. 
+    for( iz=0; iz < zmax; iz += zstep ) {
+      for( iy=0; iy < ymax; iy += ystep ) {
+        for( ix=0; ix < xmax; ix += xstep ) {
     
+          // some pointer holders for rapid stepping through the cubie array
+          $GENERIC() *gzinta, *apod_el, *gzouta;
+
+          // Copy the current cubie into the scratch space, and apodize.
+          // We have to triply nest to account for the strides in the input array.
+          gzinta =  &($in  ( x=>ix, y=>iy, z=>iz));  // Source is in original array.
+          apod_el = &($apod(nx=>0, ny=>0, nz=>0 ));  // Apodization.
+          gzouta =  &($scr (nx=>0, ny=>0, nz=>0 ));  // Dest is in scratch cubie.
+	  for(inz=0; inz < nzmax; inz++) {
+            for(iny=0; iny < nymax; iny++) {
+              for(inx=0; inx < nxmax; inx++) {
+                 *(gzouta++) = *gzinta * *(apod_el++);
+                 gzinta += xstride;
+              }
+              gzinta += ystride;
+            }
+            gzinta += zstride;
+          }
+
+          // Do the actual Fourier transform of the neighborhood.
+          $TFD(fftwf,fftw)_execute(plan_fwd);
+
+          // Figure the magnitude scaling coefficient for the spectrum.
+	  switch($COMP(mode)) {
+            case 'f': // fixed noise -- just copy the spectrum into the scratch area
+		acc = 1;
+                break;
+
+            case 'h': // hybrid requires a shot-noise calculation (fall through)
+
+            case 's': // shot noise -- sum-of-square-roots.   Use pointers to step through 
+                      // the scr array, to avoid indexing math.  All strides are 1, so 
+                      // we can use a single loop.
+                acc=0;
+                gzinta = &( $scr(nx=>0,ny=>0,nz=>0) );
+		for(inx=0; inx<nelem; inx++) {
+                      acc += sqrt(  $TFD(fabsf,fabs)( *(gzinta++) ) );
+                }
+                break;
+
+            case 'm': // multiplicative -- straight sum.  Already done for us by the fft.
+                acc = $scr_spec(ir=>0,fx=>0,ny=>0,nz=>0);
+                break;
+
+            default:
+                barf("Mode must be f, s, h, or m");
+                break;
+          }
+
+          // Adjust the scaling factor -- everything is in squared space in the
+          // actual comparison.  So the magnitude gets compared to the square of
+          // the accumulated sum.  The fudge factor on the threshold gets put in
+          // here as well (the f2 mult)
+          acc *= acc;
+          acc *= f2;
+
+          // Now do the actual filtering. 
+          switch($COMP(method)){
+
+            case 'g':  // gating -- just zero bad components
+
+              // Set up pointers to avoid lots of index arithmetic.
+              // scr_spec and spec2 are both assumed to have straight-up 
+              // standard ordering, so we can step through the arrays without
+              // use of special strides.
+
+              gzouta = &( $scr_spec( ir=>0, fx=>0, ny=>0, nz=>0        ) );
+              gzinta = &( $spec2   (        fx=>0, ny=>0, nz=>0, ns=>0 ) );
+              apod_el =  gzinta + speclen;  // not apod really -- just an index into the dark spectrum.
+
+              for(inz=0; inz<nzmax; inz++) {
+                for(iny=0; iny<nymax; iny++) {
+                  for(inx=0; inx<fxmax; inx++) { // fxmax
+                    $GENERIC() alpha;
+
+                    // alpha gets the sum-of-squares of real and imaginary components.
+                    alpha = *(gzouta) * *(gzouta)  +  *(gzouta+1) * *(gzouta+1);
+
+                    // Gate out bad components (alpha < baseline spectrum)
+                    if( (alpha < (*(gzinta++) * acc))    // shot noise
+                        || 
+                        (alpha < (*(apod_el++) * f2))    // fixed for hybrid (never true in shot noise case)
+                      )  {
+                       *(gzouta+1) = *(gzouta) = 0;      // set both real and imaginary components to 0
+                    }
+                    gzouta += 2;  // stride is 2 since scr_spec has (real/im) pairs in dim 0
+                  }
+                }
+              }
+              
+              break;
+
+            case 'w':  // Wiener filter -- calculate an attenuation coefficient
+                       // This is a little slower than gating -- needs to be optimized 
+                       // with pointer access instead of direct indexing.
+                       // Also doesn't yet recognize the hybrid noise model.
+	      for(inz=0; inz<nzmax; inz++) {
+                for(iny=0; iny<nymax; iny++) {
+                  for(inx=0; inx<fxmax; inx++) { // fxmax
+                    $GENERIC() zeta,alpha,snr, wf;
+                    zeta = $scr_spec(ir=>0, fx=>inx, ny=>iny, nz=>inz);
+                    alpha = zeta * zeta;
+                    zeta = $scr_spec(ir=>1, fx=>inx, ny=>iny, nz=>inz);
+                    alpha += zeta * zeta;
+                    alpha /= acc;
+                    snr = sqrt( alpha / $spec2(fx=>inx,ny=>iny,nz=>inz, ns=>0) );
+                    wf = snr/(snr+1);
+                    $scr_spec(ir=>0,fx=>inx,ny=>iny,nz=>inz) *= wf;
+                    $scr_spec(ir=>1,fx=>inx,ny=>iny,nz=>inz) *= wf;
+                  }
+                }
+              }
+        
+              break;
+ 
+            default:
+              barf("method must be g or w");
+              break;  
+          }
+
+          // filtering is done; now inverse transform.
+          $TFD(fftwf,fftw)_execute(plan_rev);
+
+          // apodize again, divide by the number of elements in the cubie, and 
+          // accumulate in the output array.
+          gzinta  = &( $scr ( nx=>0,  ny=>0,  nz=>0  ) );  // source is cubie
+          apod_el = &( $apod( nx=>0,  ny=>0,  nz=>0  ) );  // apodization
+          gzouta  = &( $out (  x=>ix,  y=>iy,  z=>iz ) );  // dest is in output array
+
+          for(inz=0;inz<nzmax; inz++) {
+            for(iny=0; iny<nymax; iny++) {
+              for(inx=0; inx<nxmax; inx++) {
+                *gzouta += *(gzinta++) * (*(apod_el++)) * apod_scale;
+                gzouta += oxstride;
+              }
+              gzouta += oystride;
+            }
+            gzouta += ozstride;
+          }
+          // all done with this cubie!  Move to the next one.
+        } // ix loop
+      } // iy loop
+    } // iz loop
+			      
+
+    // Clean up the plans
+    $TFD(fftwf,fftw)_destroy_plan(plan_fwd);
+    $TFD(fftwf,fftw)_destroy_plan(plan_rev);   		
+	
+    
+    
+EOC
+);
+
+EOF
+
