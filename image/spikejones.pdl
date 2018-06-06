@@ -52,41 +52,70 @@ Number of pixels by which to dilate the spike mask in all directions
 
 
 =cut
+use strict;
+
+use PDL::NiceSlice;
+use PDL::Options;
 
 sub spikejones {
     my $im = double  shift;
-    my $opt = shift || {};
+    my $u_opt = shift || {};
+    my %opt = parse( {
+	size   => 3,
+	smsize => undef,
+	alpha  => 1,
+	dilation => 0,
+	med => 1,
+		     }, $u_opt
+	);
+    my $opt = \%opt;
 
     die "spikejones requires a PDL" unless (UNIVERSAL::isa($im,'PDL'));
     my $a = $im->new_or_inplace;
         
     ##############################
     # Pick a size -- default is three pixels around the central one (7x7 kernel)
-    my $siz = $opt->{siz} || 3;
-    $siz = pdl($siz)->flat->at(0); # ensure a Perl scalar...
-    $siz *= 2;
-    $siz += 1;
+    my $size = $opt->{size};
+    $size = pdl($size)->flat->at(0); # ensure a Perl scalar...
+    $size *= 2;
+    $size += 1;
 
     ##############################
     # Pick a smoothing size -- default is twice $siz.
-    my $smsiz = $opt->{smsiz} || $siz*2+1;
-    $smsiz = pdl($smsiz)->flat->at(0); 
-    my $az = $a / $a->convolveND(ones($smsiz,$smsiz)/$smsiz/$smsiz,{bound=>'p'});
+    my $smsiz = $opt->{smsize} // $size*2+1;
+    $smsiz = pdl($smsiz)->flat->at(0);
+    my $smk = rvals($smsiz,$smsiz) <= $smsiz/2;
 
+    ##############################
+    # Normalize the value of the image to its smoothed value in the larger neighborhood.
+    my $az;
+    unless($opt->{med}) {
+	$az = $a / $a->convolveND($smk/$smk->sum,{bound=>'p'});
+    } else {
+	$az = $a / $a->med2d($smk);
+    }
 
-    my $k = -ones($siz,$siz)/$siz/$siz;
-    $k->($siz/2,$siz/2) += 0.75;
-    $k->($siz/2-1:$siz/2+1,$siz/2-1:$siz/2+1) += 0.25/9;
-    
+    ##############################
+    # Now assemble the kernel for the unsharp masking
+    my $am;
     my $thresh = ($opt->{alpha} || 1);
-    my $am = ($az->convolveND($k) > $thresh);
+    unless($opt->{med}) {
+	my $k = -ones($size,$size)/$size/$size;
+	$k->($size/2,$size/2) += 0.75;
+	$k->($size/2-1:$size/2+1,$size/2-1:$size/2+1) += 0.25/9;
+	
+	$am = ($az->convolveND($k) > $thresh);
+    } else {
+	my $k = (rvals($size,$size)<= $size/2);
+	$am = ($az - $az->med2d($k)) > $thresh;
+    }
     if($opt->{dilation}) {
 	$am .= ($am->convolveND(ones(2*$opt->{dilation}+1,2*$opt->{dilation}+1)) != 0);
     }
     my $spikes = whichND($am);
 
-    my $ar = $a->range($spikes-($siz-1)/2,$siz,'e');
-    my $amr = (!$am)->range($spikes-($siz-1)/2,$siz,'e');
+    my $ar = $a->range($spikes-($size-1)/2,$size,'e');
+    my $amr = (!$am)->range($spikes-($size-1)/2,$size,'e');
     my $ac = $a->indexND($spikes);
 
     if($amr->nelem){
@@ -96,10 +125,10 @@ sub spikejones {
     # Try to fill in non-finite values( generally clumped stuff )
     $a = $a->setbadif(!isfinite($a));
 
-    for $i(1..10){
+    for my $i(1..10){
 	my $dex = whichND($a->isbad);
 	last if($dex->nelem==0);
-	$av = $a->range($dex-2,[5,5],'e');
+	my $av = $a->range($dex-2,[5,5],'e');
 	$a->indexND($dex) .= $av->clump(1,2)->mv(1,0)->average;
     }
 

@@ -1,0 +1,20 @@
+=head2 greater
+
+=for usage
+
+    $a = greater($b,$c);
+
+=for ref
+
+Return, elementwise, the greater of two PDLs
+
+The two arguments are compared elementwise and in each case the greater
+element is copied into the output.
+
+=cut
+
+sub greater {
+    my($a,$b) = @_;
+    return ($a * ($a>$b)) + ($b * ($a <= $b));
+}
+

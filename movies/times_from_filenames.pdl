@@ -1,0 +1,29 @@
+=head2 times_from_filenames
+
+=for usage
+
+$times = times_from_filenames(\@f);
+
+=for ref
+
+Given a collection of filenames, try to get times out of them by
+pattern matching.  Convert to UT and return as a PDL.
+
+=cut
+
+use strict;
+use Date::Parse;
+
+
+sub times_from_filenames {
+    my $files = shift;
+
+    my @times = map { m/(\d\d\d\d\-\d\d\-\d\dT\d\d\:?\d\d(\:?\d\d(\.\d\d\d)?)?)/ ? 
+			  $1 :
+			  ( m/((\d\d\d\d)(\d\d)(\d\d)_(\d\d)(\d\d)(\d\d))_/ ?
+			    "$2-$3-$4T$5:$6:$7" :
+			    (die("no match in $_"))
+			  ) } @$files;
+		      
+    return  pdl( map { str2time($_,"UTC") } @times );
+}

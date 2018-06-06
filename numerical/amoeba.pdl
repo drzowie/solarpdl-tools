@@ -1,0 +1,212 @@
+use PDL::NiceSlice;
+=head2 amoeba
+
+=for usage
+
+  $p = amoeba( $heur, $strt, [$siz], [$stol], [$htol], [$mxn], [$mxsz] );
+
+=for ref
+
+Perform an "amoeba" N-dimensional fit to minimize a heuristic function.
+
+This is a simple, general-purpose hack that's based on the amoeba algorithm
+outlined in Press et al. (_Numerical_Recipes_).  You get back either the
+vector that minimizes the heuristic, or a NaN value, depending on whether
+the fit was successful.
+
+Amoeba is a poor algorithm to use for large numbers of free parameters, but 
+for small to midsized tasks it is a robust choice.  It works by assembling 
+a simplex (a collection of N+1 points, any N of which are linearly independent
+when the remaining point is taken as the origin), and manipulating it by 
+sucessively reflecting the worst point through its opposite face.
+
+Note that PDL includes a whole module, L<PDL::Fit|PDL::Fit>, that helps
+fit certain kinds of curves to data; and the GSL has several minimizers that
+may be useful as well. 
+
+INPUTS
+
+=over 3
+
+=item heur
+
+A code ref to a subroutine that accepts an N-vector and returns a heuristic
+value.  The code ref can be a thunk (that is, a subroutine that uses local
+variables present in the scope of declaration).  For example, 
+
+  $heur = sub { return sum(($_[0] - $p0) ** 2) };
+  $p0 = pdl(5,5);
+  $point = amoeba( $heur, pdl(1,1) );
+
+will return something very close to (5,5).  
+
+=item strt
+
+The starting centroid of the fit.  Amoeba will generate a simplex in the 
+vicinity of this point to start the fit.
+
+=item siz (default: 1)
+
+The size of the centroid, to start with.  This can be a scalar for a uniform
+size, or an N-vector for a squashed initial simplex.
+
+=item stol (default: siz / 10^4)
+
+The small-size limit for the simplex.  If the simplex shrinks below this size,
+the fit is deemed successful.
+
+=item htol (default: 10^-6)
+
+The minimum difference in heuristic values for the different points on the 
+simplex.  If the difference gets below this value, then the fit is deemed
+successful.
+
+=item mxn (default: 10^3)
+
+The maximum number of times that amoeba may call the heuristic.  If more steps are
+taken, then the fit is deemed unsuccessful and an error is returned.
+
+=item mxsz (default: 1e30*siz)
+
+The largest size that the simplex may have.  If the simplex gets larger
+than this, then the fit is deemed unsuccessful and an error is returned.
+
+=back
+
+RETURN VALUE
+
+The best-fit N-vector, or the undefined value in case of error.
+
+AUTHOR
+
+Craig DeForest, Sep 2001.  Documentation brought up-to-date, Oct 2003.
+May be distributed under the same terms as PDL.
+
+=cut  
+
+
+sub amoeba {
+  my $heuristic = shift;   # code ref with the heuristic
+  my $init = shift;        # Initial simplex vertex
+  my $isize = shift;       # Initial size of the simplex
+  $isize = defined($isize) ? pdl($isize) : pdl(1);
+  my $sizetol = shift || 1e-4*$isize->minimum->abs;      # termination size
+  $sizetol = pdl($sizetol);
+  my $htol = shift || 1e-6;                # Termination tolerance in the heuristic
+  my $maxn = pdl(shift || 1000);                # Max number of steps
+  my $maxsize = shift || 1e30 * $isize->max;  # biggest we're allowed to get 
+  $maxsize = pdl($maxsize);
+  my $maxdiff = shift;
+  print "Maxdiff = $maxdiff\n" if($PDL::verbose);
+  # Check inputs
+
+  barf('amoeba: initial vector must have 1 dimension\n')
+    if($init->dims != 1);
+
+  $isize = $isize->dummy(0,$init->dim(0)) unless($isize->ndims());
+  barf("sizes must be a scalar or an N-vector\n")
+    if($isize->dim(0) != $init->dim(0));
+
+  my $i;
+  
+  # Initialize the simplex
+  my $simplex = $init->dummy(0,($init->dim(0)+1))->sever;   # (list, dim)
+  for $i(1..$init->dim(0)) {
+    $simplex->(($i),($i-1)) += $isize;
+  }
+
+  # Initialize the heuristic values
+  my $hvals = zeroes($init->dim(0)+1);
+  for $i(0..$simplex->dim(0)-1) {                         # Loop prevents needing
+    $hvals->($i) .= pdl(&$heuristic($simplex->(($i))));   #  a threadable heuristic.
+  }
+
+  ##############################
+  # Loop till convergence (condition inside loop)
+  for($step=0;;) {
+    print "$step " if($PDL::verbose);
+    my $ih = qsorti $hvals;
+
+    # Figure the centroid of the simplex
+    my $centroid = $simplex->average;
+
+
+    # Check number of steps condition 
+    return undef if($step > $maxn);
+
+    # Check heuristic difference condition
+    print "htol - hvals is $hvals, ih is $ih" if($PDL::verbose);
+    return $centroid unless zcheck(!isfinite($hvals));
+
+    return $centroid if(abs($hvals->(($ih->((0)))) - $hvals->(($ih->((-1))))) < $htol);
+
+
+    # Make sure we don't run away...
+
+    return undef if( defined $maxdiff and 
+			     zcheck( ($centroid - $init)->abs < $maxdiff ) );
+
+    # Check size exit conditions
+    my $dp = $simplex->xchg(0,1) - $centroid;
+    $dp *= $dp;
+
+    my $size2 = $dp->sumover->maximum;
+    print "sizetol " if($PDL::verbose);
+    return $centroid if($size2 < $sizetol*$sizetol);
+    print "maxsiz " if($PDL::verbose);
+    return undef if($size2 > $maxsize*$maxsize);
+    
+    print "moving...\n" if($PDL::verbose);
+    # Reflect the maximum point through the centroid.  Twice
+    # distance, to get the same size triangle going the other way
+    # (centroid is 1/3 of the way to the apex in all directions!)
+    my $p2 = 3 * $centroid - 2 * $simplex->(($ih->((-1))));
+    my $ph2 = &$heuristic($p2);
+    $step++;
+
+    # If the new point is egregiously bad, try shrinking 
+    # around the best point instead.
+    print "ph2 is $ph2; best is ".$hvals->($ih->((-1)))."\n" if($PDL::verbose);
+    if($ph2 >= $hvals->($ih->((-1)))) {
+      $simplex .= 0.5 * ($simplex - $simplex->($ih->((0))))
+	          + $simplex->($ih->((0)));
+
+      for $i(0..$simplex->dim(0)-1) {
+	$hvals->($i) .= &$heuristic($simplex->(($i)));  
+	$step++;
+      }
+      next;
+    }
+
+    # If the new point is better than the previous best, try extending farther.
+    elsif($ph2 < $hvals->(($ih->((0))))) {
+      my $p3 = 5 * $centroid - 4 * $simplex->(($ih->((-1))));
+      my $ph3 = &$heuristic($p3);
+      $step++;
+      if($ph3 < $ph2) {
+	$p2 = $p3; 
+	$ph2 = $ph3;
+      } 
+    }
+
+    # If the new point is only marginally better, try squashing a bit..
+    elsif($ph2 > $hvals->(($ih->((-2))))) {
+      $p3 = ($p2*3 + $centroid*2) * 0.2;
+      $ph3 = &$heuristic($p3);
+      $step++;
+      if($ph3 < $ph2) {
+	$p2 = $p3;
+	$ph2 = $ph3;
+      }
+    }
+
+
+    $simplex->(($ih->((-1)))) .= $p2;
+    $hvals->(($ih->((-1)))) .= $ph2;
+
+  }
+}
+	
+
+
+      

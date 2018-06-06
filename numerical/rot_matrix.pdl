@@ -1,0 +1,88 @@
+=head2 rot_matrix
+
+=for usage
+
+    $rm = rot_matrix( $n, \@dims, $angle)
+
+=for ref
+
+Return a rotation matrix that mixes the given two axes
+
+Useful for building rotation matrices rapidly and conveniently.  You
+specify the number of dimensions, the two dimensions that are to be
+mixed, and the angle.  <dims> is a 2-element piddle containing the
+numbers of the dimensions (starting at 0 as alwyas) to mix.  Element 0
+is the starting dimension and element 1 is the dimension toward which
+you want to rotate.  (order matters).
+
+The rotation is specified in DEGREES.
+
+This routine is useful mainly for avoiding having lots of matrix
+assembly operations inside manipulation routines.
+
+If you find yourself making a lot of rotation matrices, you might
+consider using PDL::Transform.
+
+CAVEATS
+
+NOT vectorizable at present -- grabs just the first element of the "rotation" 
+field.
+
+
+=cut
+
+
+## Initialization -- stash a few identity matrices around...
+$_rot_matrix_identities = [
+			   pdl(1),pdl([[1]])
+	     ];
+for(my($i) = 2;$i<=5;$i++) {
+    print "Iteration $i...";
+    my($a) = zeroes($i,$i);
+    ($a->diagonal(0,1))++;
+
+    push(@{$_rot_matrix_identities},$a);
+
+}
+constants(''); # Passing the null string avoids the @_-passing shortcut
+
+
+
+
+
+sub rot_matrix {
+  my($n,$pij,$angle,$sin) = @_;
+  my($rad) = $angle * $DEGRA;
+  if(ref $rad) { $rad = ($rad->list)[0]; }
+
+    my($out);
+    if($n >= scalar(@{$_rot_matrix_identities})) {
+      $out = zeroes($n,$n);
+      (my ($b) = $out->diagonal($i,$j))++;
+    } else {
+      $out = $_rot_matrix_identities->[$n];
+    }
+
+  my($mini);
+
+  if($n == 2) {
+    $mini = $out; # Assignment by reference.
+  } else  {
+    $out = $_rot_matrix_identities->[$n]->copy;
+    $mini = $out->dice($pij,$pij);
+  }
+
+  my($a);
+  if(defined($sin)) {
+    $angle = $angle->at(0) if(ref $angle);
+    $sin = $sin->at(0) if(ref $sin);
+    $a = pdl( [[$angle, $sin], [ - $sin, $angle]]);
+  } else {
+    $a = pdl( [[cos($rad),sin($rad)],[-sin($rad),cos($rad)]]);
+  }
+
+  $mini .= $a;
+  return $out;
+}
+
+       

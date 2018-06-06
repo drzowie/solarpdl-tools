@@ -1,0 +1,116 @@
+=head2 uncubify3d - restore a data set from cubies, further apodizing if necessary
+
+=for ref
+
+=cut
+
+use PDL::Options;
+use PDL::Constants;
+use strict;
+
+sub uncubify3d {
+    my $cubies = shift;
+    my $u_opt = shift // {};
+    my $us = "uncubify3d";
+
+    my %opt = parse({
+	apod=>undef,
+	factor=>undef,
+	out=>undef,
+	verbose=>0
+		    },
+		    $u_opt);
+        
+    my $hdr = $cubies->hdr;
+
+    unless($hdr->{made_by_cubify3d}){
+	die "$us: This cubies array appears not to have been made by cubify3d!";
+    }
+
+    if($hdr->{subsamp} > 1){
+	die "$us: can't reconstitute this cubie array because it was subsampled!";
+    }
+
+    my $apod = $hdr->{apod};
+    my $samp = $hdr->{samp};
+    $apod = $opt{apod} if(defined($opt{apod}));
+    $samp = $opt{samp} if(defined($opt{samp}));
+    
+    my $factor = 1;
+    if($samp==3 && $apod =~ m/^h/i) {
+	if($apod =~ m/2/) {
+	    $factor = 1.125;  # sum of 3 sin**4's is 9/8
+	} else {
+	    $factor = 1.5;    # sum of 3 sin**2's is 1.5
+	}
+    } elsif($samp==4 && $apod =~ m/^h/i) {
+	if($apod =~ m/2/) {
+	    $factor = 1.5;    # sum of 4 sin**4's is 1.5
+	} else {
+	    $factor = 2;      # sum of 4 sin**2's is 2
+	}
+    } elsif($samp==2 && $apod =~ m/^h/i) {
+	if($apod =~ m/2/) {
+	    print "WARNING: $us - apodization not constant!\n";
+	} else {
+	    $factor = 1;
+	}
+    } else {
+	print "WARNING: $us - nonstandard apodization!\n";
+    }
+
+    print "$us: apod=$apod; factor=$factor\n" if($opt{verbose});
+
+    my $hanning = ones($cubies->dim(0),$cubies->dim(1),$cubies->dim(2));
+    if($apod =~ m/^h/i && $apod =~ m/2/) {
+	$hanning           *= ( sin( (xvals($cubies->dim(0)) + 0.5) * PI/$cubies->dim(0)) )**2;
+	$hanning->mv(1,0)  *= ( sin( (xvals($cubies->dim(1)) + 0.5) * PI/$cubies->dim(1)) )**2;
+	$hanning->mv(2,0)  *= ( sin( (xvals($cubies->dim(2)) + 0.5) * PI/$cubies->dim(2)) )**2;
+    }
+
+    my $out = $opt{out} // PDL->new_from_specification($hdr->{orig_type}, @{$hdr->{orig_dims}});
+    $out .= 0;
+    
+    PDL::uncubify3d_helper($cubies, $out, $hanning, @{$hdr->{npersub}});
+    $out *= (1.0/$factor/$factor/$factor);
+
+    return $out;
+}
+
+no PDL::NiceSlice;
+use Inline Pdlpp => <<'EOF';
+
+pp_def('uncubify3d_helper',
+    Pars=>'cubies(a,b,c,n); [o]out(x,y,z); hanning(a,b,c)',
+    OtherPars=>'long npsa; long npsb; long npsc',
+    Code => <<'EOC',
+      PDL_Indx xof, yof, zof;
+      PDL_Indx ix, iy, iz;
+      PDL_Indx in=0;
+      
+      PDL_Indx xstep = $COMP(npsa);
+      PDL_Indx ystep = $COMP(npsb);
+      PDL_Indx zstep = $COMP(npsc);
+
+      for(zof=0; zof <= $SIZE(z)-$SIZE(c); zof += zstep) {
+         for(yof=0; yof <= $SIZE(y)-$SIZE(b); yof += ystep) {
+   	    for(xof=0; xof <= $SIZE(x)-$SIZE(a); xof += xstep) {
+	       if(in>=$SIZE(n)) {
+	         barf("uncubify3d_helper: Something went horribly awry with the cube geometry!");
+	       }
+	       for(iz=0; iz<$SIZE(c); iz++) {
+	          for(iy=0; iy<$SIZE(b); iy++) {
+		     for(ix=0; ix<$SIZE(a); ix++) {
+		        $out(x=>xof+ix, y=>yof+iy, z=>zof+iz) += $hanning(a=>ix, b=>iy, c=>iz) * $cubies(a=>ix, b=>iy, c=>iz, n=>in);
+	             }
+                  }
+               }
+	       in++;
+            }
+         }
+      }
+EOC
+    );
+EOF
+
+                     

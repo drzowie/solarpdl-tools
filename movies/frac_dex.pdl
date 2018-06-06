@@ -1,0 +1,43 @@
+=head2 frac_dex
+
+=for usage
+
+$dexes = frac_dex($data, $value);
+
+=for ref
+
+Given a monotonically increasing collection of data points ("data")
+and a single value (threadable), find the location in "data" where the
+"value" occurs.  The underlying dataset is interpolated linearly, so that
+(e.g.) if data are [1,2,3] and value is 1.5, the return value is 0.5.
+
+=cut
+
+    use strict;
+
+no PDL::NiceSlice;
+use Inline Pdlpp =><<'EOF';
+    
+pp_def('frac_dex',
+       Pars=>'data(n); val(); [o]out();',
+       OtherPars=>'',
+       Code=><<'EOC'
+int i;
+
+/* Why be smart when you can be stoopid?  Binary search or memory search */
+/* would be a lot faster here, but linear search is Good Enough For Now. */
+
+for(i=0; i<$SIZE(n) && $data(n=>i) < $val(); i++)
+    ;
+if(i>=$SIZE(n)-1) {
+  $out() = $SIZE(n)-1;
+} else if(i==0) {
+  $out() = 0;
+} else {
+  $out() = i + ($val()-$data(n=>i-1)) / ($data(n=>i) - $data(n=>i-1));
+}
+EOC
+);
+EOF
+
+*frac_dex = \&PDL::frac_dex;

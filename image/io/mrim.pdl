@@ -1,0 +1,40 @@
+=head2 mrim
+
+=for usage
+
+  @cube = mrim(@files);
+
+=for ref
+
+Conveniently read in a collection of arbitrary image files
+
+You feed in a list of file names containing images; you get back a
+perl list of piddles containing the images, one per element.  The
+images are read in with L<"rim"|rim>, so most image formats are
+supported.
+
+Note that for very large collections of files you want to use a
+L<"DiskCache"|PDL::DiskCache> object rather than a normal perl list of
+images.  DiskCache tied lists act like normal lists but don't have all
+the data resident in memory at once.  
+
+SEE ALSO
+
+L<"PDL::DiskCache"|DiskCache>, L<"mrim"|mrim>, L<"rim"|rim>, L<"rpic"|rpic>, L<"rfits"|rfits>, L<"wfits"|wfits>
+
+AUTHOR
+
+C. DeForest (SwRI), 2003; distributable under the same terms as PDL.
+
+=cut
+
+sub mrim {
+  chomp (  my(@files) = @_  );
+
+  my(@out,$f);
+  foreach $f(@files) {
+    push(@out, rim($f));
+  }
+
+  @out;
+}

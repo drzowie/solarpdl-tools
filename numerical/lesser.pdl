@@ -1,0 +1,17 @@
+=head2 lesser
+
+=for usage 
+
+    $a = lesser($b,$c);
+
+=for ref
+
+Returns the lesser of two PDLs, elementwise.
+
+=cut
+
+sub lesser {
+    my($a,$b) = @_;
+    return ($a * ($a < $b)) + ($b * ($a >= $b));
+}
+

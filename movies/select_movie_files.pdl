@@ -1,0 +1,69 @@
+=head2 select_movie_files
+
+=for usage
+
+$frame_files = select_movie_files(\@f, $start_time, $end_time, $cadence);
+
+($frame_files1, $frame_files2, $alpha) = select_movie_files(...)
+
+=for ref
+
+select_movie_files selects frames for uniformly-sampled movie.  You
+feed in a list of candidate files and a start and end time, and a cadence in seconds.
+You get back a list of file names for each frame of the output movie.
+In list context, you also get back a set of alpha weightings for the files,
+as a PDL.  Alpha ranges from 0 (use the current frame) to 1.0 (use the next one).
+It's useful for interpolation if you're into that.
+
+
+If you omit a cadence, you get 600 seconds (10 minutes).
+
+=cut
+
+use Date::Parse;
+use strict;
+
+sub select_movie_files {
+    my $files = shift;
+    my $start_time = shift;
+    my $end_time = shift;
+    my $cadence = shift // 600;
+
+    
+    my $start = str2time($start_time,"UTC");
+    my $end = str2time($end_time,"UTC");
+    my $len = $end - $start;
+    my $ct = $len / $cadence + 1;
+    
+    print "Length is $len seconds long in (about) $ct frames\n";
+
+    my $tt = times_from_filenames($files);
+
+    our $ttt = $tt;
+    our $tstart = $start;
+    our $tend = $end;
+
+    die "All files happen after your movie interval\n" if($tt->min > $end);
+    die "All files happen before your movie interval\n" if($tt->max < $start);
+    print "Warning: movie starts before files" if ($tt->min > $start);
+    print "Warning: movie ends after files" if($tt->max < $end);
+
+    my $ui = uniform_indexes($tt, $start, $end, $cadence);
+
+    print "ui $ui\n";
+
+    unless(wantarray) {
+	my @dexes = $ui->rint->list;
+
+       	my @out_list = map { $files->[ $_ ] } ($ui->rint->list);
+	return \@out_list;
+    } else {
+
+	my @ol1 = map { $files->[ $_ ] } ($ui->floor->list);
+	my @ol2 = map { $files->[ $_ ] } ($ui->ceil->list);
+	my $alpha = $ui - $ui->floor;
+
+	return( \@ol1, \@ol2, $alpha );
+
+    }
+}

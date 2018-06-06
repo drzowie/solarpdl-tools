@@ -1,0 +1,103 @@
+=head2 wim
+
+=for usage
+
+  wim $pdl,$file;
+  $pdl->wim("foo.gif",{LUT=>$lut});
+
+=for ref
+
+Write out an image file.  You can specify the format explicitly as an
+option, or the function will try to guess the correct image
+format from the filename extension, e.g.
+
+  $pdl->wim("image.gif");
+  $pdl->wim("image.fits");
+
+will write a gif and a FITS file.  The data written out will be scaled
+to byte if the input if of type float/double.  Input data that is of a
+signed integer type and contains negative numbers will be rejected.
+
+If you append C<.gz> or C<.Z> to the end of the file name, the final
+file will be automatically compresed with L<"gzip"|gzip> |
+L<"compress"|compress>, respectively.
+
+OPTIONS
+
+You can pass in a hash ref whose keys are options.  The code uses the
+PDL::Options module so unique abbreviations are accepted.  Accepted
+keys are:
+
+=over 3
+
+=item CONVERTER
+
+Names the converter program to be used by pbmplus (e.g. "ppmtogif" to 
+output a gif file)
+
+=item FLAGS
+
+Flags that should be passed to the converter (replacing any default flag list)
+e.g. "-interlaced" to make an interlaced GIF
+
+=item IFORM
+
+Explicitly specifies the intermediate format (e.g. PGM, PPM, or PNM).
+
+=item XTRAFLAGS
+
+Flags that should be passed to the converter (in addition to any default
+flag list).  
+
+=item FORMAT
+
+Explicitly specifies the output image format (allowing pbmplus to pick an
+output converter)
+
+=item COLOR
+
+Specifies color conversion (e.g. 'bw' converts to black-and-white; see
+L<pbmplus> for details).
+
+=item LUT
+
+Use color-table information
+
+=back
+
+BUGS
+
+wim is just a front-end for L<"wpic"|wpic>, which has poorly designed
+RGB handling but is now ubiquitous.  Ultimately, wim should be the 
+engine and wpic should be a wrapper for backwards compatibility.
+
+AUTHOR
+
+Craig DeForest (SwRI) 2003; distributable under the same terms as PDL.
+
+=cut
+
+use PDL::IO::Pic;
+
+sub wim {
+  my(@args) = @_;
+
+  my($im) = $args[0];
+
+  $args[0] = $im->reorder(2,0,1)
+    if(    $im->ndims == 3
+       and $im->dim(2)==3 
+       and !( 
+	      ( $args[1] =~ m/\.fits$/i ) 
+	      or 
+	      ( ref $args[2] eq 'HASH' and $args[2]->{FORMAT} =~ m/fits/i ) 
+	    )
+       );
+
+  wpic(@args);
+}
+	  
+  
+
+
+

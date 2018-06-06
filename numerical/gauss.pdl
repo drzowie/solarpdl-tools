@@ -1,0 +1,71 @@
+=head2 gauss
+
+=for usage
+
+  $g = gauss( $size, $width, $location );
+
+=for ref
+
+Generate a Gaussian normalized to peak value of 1
+
+Creates a Gaussian with the specified number of pixels, width, and center
+location.    You can thread over the width or location to create many
+related Gaussians.
+
+INPUTS
+
+=over 3
+
+=item size
+
+The size of the array to return
+
+=item width
+
+The sigma (e-folding half-width) of the Gaussian  (To specify the HWHM,
+you want to divide by sqrt(log(2)).)
+
+=item location
+
+The center pixel (default is $size/2)
+
+=back
+
+RETURNS
+
+The Gaussian you asked for, in 1-D.
+
+=for example
+
+  $g = gauss(100,20,30);
+
+Generates a 100-pixel array full of a Gaussian with sigma=20, centered
+on pixel #30.
+
+$g = gauss(100,10+xvals(10),50)
+
+Generates a 100x10 array.  0th dimension is the X axis; 1st dimension runs
+across Gaussians.  Their FWHMs go from 10 to 19 inclusive.
+
+=for history
+
+Craig DeForest, Sep 2001.  May be distributed under the same terms as PDL.
+
+=cut
+
+  sub gauss {
+    my($width, $sigma, $zero) = @_;
+    $zero = $width/2 unless(defined($zero));
+
+    # Handle threading:  if sigma has thread dimensions, add a width dummy.
+    # Ditto the zero.
+    $sigma = $sigma->dummy(0,$width)
+      if( (ref $sigma eq 'PDL') && ($sigma->dims));
+    $zero = $zero->dummy(0,$width)
+      if( (ref $zero eq 'PDL')  && ($zero->dims));
+
+    my $a = (xvals($width) - $zero)/$sigma;
+    return exp(- log(2) * $a*$a);
+  }
+
+

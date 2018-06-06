@@ -1,0 +1,98 @@
+=head2 speed_filter
+
+=for usage
+
+$out = speed_filter($cube, \%opt);
+
+=for ref
+
+You feed in a data cube in (x,y,t) form, and some options.  You get back the same data,
+Fourier filtered to a particular speed range.  You can have fastpass, slowpass, or
+bandpass filtering.
+
+Options are:
+
+=over 3
+
+=item apod
+
+This is the width of the apodization window, in samples, along each dimension.
+
+=item pass
+
+This specifies the type of filter:  'slow', 'fast', or 'band'.  It defaults to 'slow'.
+
+=item speed
+
+This is the speed to which to filter, in pixels per temporal frame.  It defaults to 1.
+
+=item blur_pct
+
+This is the amount of blur for the filter window, normalized to speed.  It defaults to 30%.
+
+=back
+
+=cut
+
+use PDL::FFTW3;
+use PDL::NiceSlice;
+use PDL::Options;
+
+
+# cube arrives as (x,y,t).
+
+sub simple_speed_filter {
+    my $cube = shift;
+    my $u_opt = shift;
+
+    my $ipflag = ($cube->is_inplace);
+    
+    my %opt = parse( {
+	apod=>30,
+	pass=>'slow',  # slowpass or fastpass
+	speed=>1,      # pixels per frame
+	blur_pct => 30, # 30% of speed
+		     }, $u_opt);
+    
+	
+    my $c2 = PDL->new_from_specification(2,$cube->dims);
+    $c2->((0)) .= apodize($cube,$opt{apod},[0,1,2]);
+    $c2->((1)) .= 0;
+
+    my $c2f = fft3($c2);
+
+    $ndc = ndcoords($cube->dim(0),$cube->dim(1));
+    $ndc -= $cube->shape->(0:1) * ($ndc > $cube->shape->(0:1)/2);
+    $ndr = ($ndc*$ndc)->sumover->sqrt;
+    print "speed is $opt{speed}...\n";
+    
+    for $i(0..$cube->dim(2)-1){
+	if($i>$cube->dim(2)/2){
+	    $i = $cube->dim(2) - $i;
+	}
+	my $filtparam = (  ($ndr - $i/$opt{speed}) * $opt{blur_pct}/100 * $i/$opt{speed} )->clip(-0.5,0.5) * 3.1415926535;
+
+	if($opt{pass}=~ m/band/) {
+	    $filt = (cos($filtparam * 2) + 1)/2;
+	} elsif($opt{pass} =~ m/sl/) {
+	    $filt = (sin($filtparam) + 1)/2;
+	} else {
+	    $filt = (-sin($filtparam)+1)/2;
+	}
+
+	$c2f->(:,:,:,($i)) *= $filt->(*1);
+    }
+
+
+    $c2 .= ifft3($c2f);
+
+    if($ipflag) {
+	$cube .= $c2->((0));
+	$cube->set_inplace(0);
+	return $cube;
+    } 
+
+    return $c2->((0))->sever;
+}
+		    
+    

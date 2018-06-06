@@ -1,0 +1,42 @@
+=head2 mrfits
+
+=for usage
+
+  @cube = mrfits(<dir/*.fits>);  # Direct file-list expansion
+  @cube = mrfits(@files);        # Explicit list of files
+
+=for ref
+
+Conveniently read in a collection of FITS files
+
+You feed in a list of FITS file names; you get back a perl list of
+piddles containing the FITS images, one per element.  Note that this
+is unlike the analogous SSW/IDL routine "MREADFITS", in that the
+individual images are stored separately and can be different sizes.
+The headers are also preserved individually.
+
+Note that for very large collections of files you want to use a
+L<"DiskCache"|PDL::DiskCache> object rather than a normal perl list of
+images.  DiskCache tied lists act like normal lists but don't have all
+the data resident in memory at once.  
+
+SEE ALSO
+
+L<"PDL::DiskCache"|DiskCache>, L<"mrim"|mrim>, L<"rim"|rim>, L<"rpic"|rpic>, L<"rfits"|rfits>, L<"wfits"|wfits>
+
+AUTHOR
+
+C. DeForest (SwRI), 2001; distributable under the same terms as PDL.
+
+=cut
+
+sub mrfits {
+  chomp(  my(@files) = @_  );
+
+  my(@out,$f);
+  foreach $f(@files) {
+    push(@out, rfits($f));
+  }
+
+  @out;
+}

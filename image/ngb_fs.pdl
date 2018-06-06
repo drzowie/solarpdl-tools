@@ -1,0 +1,142 @@
+=head2 ngb_fs - noise_gate_batch find_spectrum
+
+=for ref
+
+You feed in an image sequence suitable for noise_gate_batch and a
+noise model.  You get out a model noise spectrum, with the corresponding
+noise model (shot, constant, multiplicative).
+
+This is mainly a helper routine for C<noise_gate_batch>, though it may
+come in handy for other things as well.  The model noise spectra
+arrive as (n/2+1,n,n) data cubes
+
+
+Accepted options are:
+
+=over 3
+
+=item nsub -- scalar or 3-array containing cubie size
+
+You *must* specify this.
+
+=item pct -- percentile across the corpus that forms the baseline for noise
+
+You *must* specify this.  50 (i.e. median) is a good choice for most things.
+
+=item mode -- type of noise reduction to consider (default "shot")
+
+This must be one of "constant", "hybrid", "shot", or "multiplicative"
+-- though you can abbreviate them to 'c', 'h', 's', or 'm'.
+
+If you choose "hybrid" mode, then a separate dark-region fixed
+spectrum gets calculated and returned, stacked up with the main
+spectrum itself.
+
+=item window -- oversampling factor for the cubies (default 3)
+
+The default value of 3 gives you nice double-Hanning sampling with "only" 27x 
+oversampling of each point.  (4 gives you 64x oversampling!)
+
+=item subsamp -- skip factor in each dimension (default 2)
+
+For spectral calculation you often don't need to examine every single 
+subcubie of a dataset.  The "subsamp" option lets you get a perfectly
+adequate answer faster (and sometimes a LOT faster).  The default value
+of 1 samples every subcubie.  Set this to a small integer to skip on every
+axis.  Setting it to 2 gives you an 8x speedup; setting it to 3 gives you
+27x.
+
+=item pct -- percentile value for noise spectrum (default 50)
+
+=item dkpct -- percentile value for dark noise (default 10)
+
+If you specify a hybrid spectrum, then the dark spectrum is assembled
+from the median amplitude of each Fourier component across the darkest 
+dkpct percentile of image neighborhoods.
+
+This is the 
+
+=back
+
+
+=cut
+
+use PDL::NiceSlice;
+use PDL::FFTW3;
+use PDL::Options;
+use PDL::Constants;
+use strict;
+
+sub ngb_fs {
+    my $cube = shift;
+    my $u_opt = shift // {};
+    my $us = "ngb_fs";
+
+    my %opt = parse({
+	nsub=>undef,
+	pct=>5,
+	dkpct=>10,
+	mode=>'shot',
+	window=>3,
+	subsamp=>2,
+	verbose=>0,
+		    }, $u_opt);
+
+    die "$us: must specify nsub!" unless(defined($opt{nsub}));
+    die "$us: must specify pct!" unless(defined($opt{pct}));
+
+    $opt{nsub} = [$opt{nsub},$opt{nsub},$opt{nsub}] unless(ref($opt{nsub}) =~ m/ARRAY/);
+    die "$us: nsub must be a 3-array or scalar" unless((0+@{$opt{nsub}})==3);
+
+    my $cubies = cubify3d($cube, {nsub=>$opt{nsub}, subsamp=>$opt{subsamp}, samp=>$opt{window}, verbose=>$opt{verbose}});
+    
+    print "$us: fft...\n" if($opt{verbose});
+    my $c2 = rfft3($cubies);
+    my $c2m = ($c2 * $c2)->sumover;  # work with mag-squared to avoid a ton of square roots
+
+    my $dark_c2m = zeroes($c2m->type, $c2m->dim(0),$c2m->dim(1),$c2m->dim(2));
+
+    
+    if($opt{mode} =~ m/^[sh]/i ) {
+
+        if($opt{mode} =~ m/^h/i ) {
+	    # hybrid mode -- get the dark spectrum first
+	    # median amplitude from the faintest <dkpct>% of neighborhoods
+	    print "$us: finding constant dark noise from darkest ".$opt{dkpct}."% of neighborhoods...\n" if($opt{verbose});
+	    my $dex = $opt{dkpct}/100 * $c2m->dim(3);
+	    my $qsi = $c2m->((0),(0),(0))->qsorti->(0:$dex);
+	    $dark_c2m .= $c2m->(:,:,:,$qsi)->mv(3,0)->qsort->(($dex/2))->sqrt;
+	}
+
+	# shot mode -- scale by the anticipated shot noise
+	print "$us: finding scaling coefficients (shot noise)...\n" if($opt{verbose});
+	my $sumsqrt = $cubies->abs->sqrt->sumover->sumover->sumover->clip(1e-20);
+
+	print "$us: scaling Fourier terms...\n" if($opt{verbose});
+	$c2m /= ($sumsqrt**2)->(*1,*1,*1);
+
+    } elsif($opt{mode} =~ m/^m/i) {
+	# multiplicative noies - scale by the average value
+	print "$us: finding scaling coefficients (multiplicative noise)...\n" if($opt{verbose});
+	$c2m /= $c2m->((0),(0),(0))->clip(1e-20,);
+    }
+    
+    print "$us: sorting...\n" if($opt{verbose});
+    my $qs = $c2m->mv(3,0)->qsort->sever;
+
+    my $dex = $qs->dim(0)*$opt{pct}/100;
+    my $out = $qs->(($dex))->sqrt;  # take the square root at the end to return the spectrum itself.
+
+    if($opt{mode} =~ m/^h/i) {
+	return pdl($out,$dark_c2m);
+    } else {
+	return $out;
+    }
+}
+
+
+
+    
+	
+	
+	

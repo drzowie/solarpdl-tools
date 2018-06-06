@@ -99,7 +99,7 @@ sub apodize {
  my @fade_to;
  for my $ddex(0..$#$dims) {
      if($opt->{'fade_to'} =~ m/^z/i) {
-	 $fade_to[$ddex] = zeroes($out->mv($dims->[$ddex],0)->((0)));
+	 $fade_to[$ddex] = 0;
      } elsif($opt->{'fade_to'} =~ m/^m/i) {
 	 $fade_to[$ddex] = ($out->mv($dims->[$ddex],0)->(0) + $out->mv($dims->[$ddex],0)->(-1)) / 2;
      } else {

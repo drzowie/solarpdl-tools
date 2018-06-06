@@ -1,0 +1,62 @@
+=head2 gather_fits_dims
+
+=for usage
+
+  @foo = scatter_fits_dims($hdr);
+  # do stuff to @foo;
+  $hdr2 = gather_fits_dims(@foo);
+
+=for ref
+
+Assemble a complete FITS header out of a global part and per-dimension parts
+
+The idea here is that sometimes you want to edit individual dimensions of
+a FITS header in a general way.  Scatter_fits_dims and its companion,
+L<"gather_fits_dims"|gather_fits_dims>, accomplish this by letting you 
+separate out the per-dimension tags in a FITS header so you can edit
+them without keeping track of the dimension number at the end of the index
+string (for example, C<CDELT> instead of C<CDELT1>).
+
+The list you hand in should have the global part of the FITS header in 
+C<$foo[0]>, and the per-dimension parts in C<$foo[1..$#foo]>.
+
+SEE ALSO
+
+scatter_fits_dims
+
+BUGS
+
+Doesn't know about L<"Astro::FITS::Header"|Astro::FITS::Header> -- 
+so you get back a vanilla hash rather than a cool tied hash.
+
+AUTHOR
+
+C. DeForest (SwRI), 20-Sep-2001; distributable under the same terms as PDL.
+
+=cut
+
+use Carp;
+
+sub gather_fits_dims {
+  
+  my(%out) = %{$_[0]};
+  my($out) = \%out;
+
+  for(my ($i) = 1; $i <= $#_; $i++) {
+    if(!defined $_[$i]) {
+      carp("gather_fits_dims: dim $i (of $#_) seems to be missing\n");
+      next;
+    }
+    croak("gather_fits_dims: found non-hash-ref in dim $i of fits hdr list\n")
+      if(ref $_[$i] ne 'HASH');
+
+    foreach (keys (%{$_[$i]})) {
+      $out->{$_.$i} = $_[$i]->{$_};
+    }
+  }
+
+  $out->{NAXIS} = $#_;
+  return $out;
+
+}
+

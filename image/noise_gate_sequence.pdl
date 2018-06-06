@@ -1,0 +1,132 @@
+use strict;
+=head2 noise_gate_sequence
+
+=for usage
+
+    noise_gate_sequence( $outdir, \@input_files, \%options );
+
+=for ref
+
+This implements a non-memory-resident, pipelineable version of C<noise_gate_batch()>.  You feed in a list of files
+and it processes them in memory-bite-sized chunks.
+
+=cut
+
+use PDL::Options;
+use PDL::Constants;
+use PDL::NiceSlice;
+
+sub noise_gate_sequence {
+    my $outdir = shift;
+    my $files = shift;
+    my $u_opt = shift // {};
+
+
+    die "usage: noise_gate_sequence($outdir, \@files, \%options)" unless(
+	defined($outdir) and 
+	!ref($outdir) and
+	$outdir and
+	defined($files) and
+	ref($files) eq 'ARRAY'
+	);
+
+    my %opt = parse({
+	verbose=>0,
+	nsub => 12,
+	pct  => 50,
+	factor => 2,
+	dkfact=>2,
+	dkpct=>10,
+	mode => 'shot',
+	method => 'gate',
+	flat => undef,
+
+	noise_spectrum=>3,   # PDL containing the spectrum, or single number of time samples to take
+	keep_time_margin=>0
+		    },
+		    $u_opt
+	);
+
+    print "options...\n";
+
+    # Prepare options for passthrough
+    my %o2 = %opt;
+    delete $o2{noise_spectrum};
+    delete $o2{keep_time_margin};
+
+    my %o3 = %o2;
+
+    delete $o2{factor}; # sic (o2)
+    delete $o2{method};
+    delete $o2{flat};
+
+    # Figure out how may images per step
+    my $divisor = 3;
+
+    my $nsub;
+    if( ref($opt{nsub}) =~ m/ARRAY/ ) {
+    	$nsub = $opt{nsub}->[2];
+    } else {
+	$nsub = $opt{nsub};
+    }
+
+    my $step = $nsub/$divisor;
+    my ($ii, $n);
+    my $N = int(($#$files + 1 - $nsub)/$step);
+
+    ##############################
+    # Make a minimum from <n> time slices, unless one gets passed in.
+    print "Making minimum values...\n" if($opt{verbose});
+    $opt{noise_spectrum} = 3 unless($opt{noise_spectrum});
+    unless(UNIVERSAL::isa($opt{noise_spectrum},'PDL')) {
+	my @mins;
+	print "Making minimum... (noise_spectrum is $opt{noise_spectrum})\n" if($opt{verbose});
+	my $n = ($#$files+1) - $nsub;
+	my $npersamp = $n / $opt{noise_spectrum};
+	
+	my @starts = map { floor(pdl($_ * $npersamp))->at(0) } (0..$opt{noise_spectrum}-1);
+	for my $i(0..$#starts){
+	    printf ("Measuring slice %d of %d: files %d-%d...\n",$i,$#starts+1,$starts[$i],$starts[$i]+$nsub-1) if($opt{verbose});
+
+	    my $minicube = pdl(mrfits(@{$files}[$i..$i+$nsub-1]));
+
+	    $minicube *= $opt{flat} if(defined($opt{flat}));
+	    
+	    print "Calling ngb_fs (i=$i)...\n";
+	    push(@mins, ngb_fs($minicube,\%o2));
+	    
+	}
+	$o3{noise_spectrum} = pdl(@mins)->mv(-1,0)->medover;
+    }
+    
+    use PDL::DiskCache;
+    my $inputs = diskcache($files, {ro=>1,rw=>0,mem=>$nsub+2});
+
+    `mkdir $outdir`;
+
+    ##############################
+    # Step through and process the files using the pre-existing noise spectrum.
+    my $ocube = zeroes(float, $inputs->[0]->dims,$nsub);
+
+    for( $ii = $n = 0; $ii < $#$files-$nsub; $ii += $step ) {
+	print "Slice $n of $N "." (layer $ii) \n" if $opt{verbose};
+	my $cube = float pdl(@{$inputs}[$ii..$ii+$nsub-1]);
+
+	$ocube += noise_gate_batch($cube,\%o3);
+
+	if($opt{keep_time_margin} || ($ii>= $nsub - $step)) {
+	    for my $jj(0..$step-1){
+		my $out = $ocube->(:,:,($jj));
+		$out->sethdr( $inputs->[$ii+$jj]->hdr_copy );
+		my $ofile = $files->[$ii+$jj];
+		$ofile =~ s:^.*\/:$outdir\/:   or  die "Couldn't redirect '$ofile' to directory '$outdir'...";
+		wfits($out,$ofile);
+		printf "%d of %d: %s -->  %s\n",$ii+$jj, $#$files+1, $files->[$ii+$jj],$ofile;
+	    }
+	}
+	$ocube->(:,:,0:$nsub-$step-1) .= $ocube->(:,:,$step:-1);
+	$ocube->(:,:,$nsub-$step:-1) .= 0;
+	$n++;
+    }
+}
+

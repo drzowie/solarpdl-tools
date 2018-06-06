@@ -1,0 +1,31 @@
+=head2 nan
+
+=for usage
+
+  $a = nan()
+  $b = nan(3);
+
+=for ref
+
+Create a PDL containing NaN values
+
+Works by analogy with L<zeroes|zeroes> -- sometimes it's useful to
+have a nan generator.  This one generates asin(2) -- ie neither
+C<+inf> nor C<-inf>, but real C<nan>.
+
+=head1 AUTHOR
+
+Craig DeForest, 2001.  May be distributed under the same terms as PDL.
+
+=cut
+sub nan {
+  our $nan_out;
+
+  $nan_out = PDL::asin(2) 
+    unless defined($nan_out);
+
+  return zeroes(@_) + $nan_out
+    if(@_);
+
+  $nan_out;
+}

@@ -1,0 +1,64 @@
+=head2 rk4
+
+=for usage
+
+$y1 = rk4( $x, $dx, \&dydx, $y0, $dydx_0, )
+
+=for ref
+
+4th order approximation to the derivative.
+
+rk4 is the basic 4th order integrator workhorse.  It integrates the
+vector equation 
+	y = Integral ( (f(x)) dx )
+where y is an <n>-vector.  More precisely, it steps along such a solution.  
+See Numerical Recipes (Press, et al.) if you don't know what you're doing!  
+
+You feed in an initial value of the value of the vector Y and optionally
+its derivatives at the initial point (this saves an evaluation of dy/dx --
+but if you leave 'em out, rk4 gets 'em for you).  The input parameters are:
+
+	$x      -- The independent variable (scalar!)
+	$dx     -- The stepsize (scalar!)
+	$dydx   -- A code ref to a subroutine returning the derivative.
+	         It gets called like this:
+			$yprime = &{$dydx}($x,$y)
+		 It's supposed to return an <n>-vector.
+	$y0     -- The initial value of $y
+	$dydx_0 -- The initial value of dydx -- this is optional.
+
+=head2 RETURNS
+
+the updated <n>-vector.
+
+Note that $x is not incremented!  That's your job.
+
+=head2 HISTORY
+
+Hacked together 30-Apr-2000, Craig DeForest (SWRI) based on Press, et al.,
+"Numerical Recipes".  May be distributed under the same terms as PDL.
+
+=cut
+
+sub rk4 {
+  my($x0,$dx,$dydx,$y0,$dydx_0) = @_;
+  
+  $dydx_0 = &{$dydx}($x0,$y0) unless defined($dydx_0);
+  
+  my($dx2) = $dx/2;
+  my($x1) = $x0 + $dx2;
+  
+  my($yt);
+  my($dyt,$dym, $dyt2);
+
+  $yt =  $y0 + $dx2 * $dydx_0;                           ## First step
+  $yt =  $y0 + $dx2 * ( $dyt = &{$dydx}( $x1, $yt ) );   ## Second step
+  $yt =  $y0 + $dx  * ( $dym = &{$dydx}( $x1, $yt ) );   ## Third step
+  $dyt2 = &{$dydx}( $x0 + $dx, $yt );                     ## Fourth step
+  
+  ### Accumulate
+  my($out);
+  $out = $y0 + ($dx/6) * ( $dydx_0 + $dyt2 + 2 * ($dym + $dyt) );
+ 
+  return $out;
+}

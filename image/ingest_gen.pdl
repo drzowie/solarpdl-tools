@@ -1,0 +1,18 @@
+=head2 ingest_gen - ingest a generic FITS file
+
+=for ref
+
+This is called by C<ifits>, and is intended to massage FITS files that
+are both noncompliant and also not from a recognized instrument.  It
+hasn't really been implemented -- this is a stub.  Should ultimately check
+things like DATE_OBS and put in a pixel coordinate system.
+
+=cut
+
+
+sub ingest_gen {
+  print "generic ingester isn't here yet!  Returning your header unchanged...\n";
+  return shift;
+}
+	
+	

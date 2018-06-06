@@ -1,0 +1,132 @@
+=head2 sunpos
+
+=for usage
+
+$azalt = sunpos( $utlonlat );
+$azalt = sunpos( $ut, $lonlat );
+
+=for ref
+
+Return the solar position angle as a function of UT and location on Earth.
+
+Adapted from Reda & Andreas 2008 (http://www.nrel.gov/docs/fy08osti/34302.pdf)
+
+Limitation:  assumes a fixed delta-T between UT and TAI, 
+
+=cut
+
+use Date::Parse;
+use Date::Format;
+
+BEGIN {    
+    $PDL::SunPos::EarthPTerms = {
+	L0 => { pdl( 
+    [  0,   175347046,   0,               0        ],
+    [  1,     3341656,   4.6692568,    6283.07585  ],
+    [  2,       34894,   4.6261,      12566.1517   ],
+    [  3,        3497,   2.7441,       5753.3849   ],
+    [  4,        3418,   2.8289,          3.5231   ],
+    [  5,        3136,   3.6277,      77713.7715   ],
+    [  6,        2676,   4.4181,       7860.4194   ],
+    [  7,        2343,   6.1352,       3930.2097   ],
+    [  8,        1324,   0.7425,      11506.7698   ],
+    [  9,        1273,   2.0371,        529.691    ],
+    [ 10,        1199,   1.1096,       1577.3435   ],
+    [ 11,         990,   5.233,        5884.927    ],
+    [ 12,         902,   2.045,          26.298    ],
+    [ 13,         857,   3.508,         398.149    ],
+    [ 14,         780,   1.179,        5223.694    ],
+    [ 15,         753, ],
+    [ 16,         505, ],
+    [ 17,         492, ],
+    [ 18, ],
+    [ 19, ],
+    [ 20, ],
+    [ 21, ],
+    [ 22, ],
+    [ 23, ],
+    [ 24, ],
+    [ 25, ],
+    [ 26, ],
+    [ 27, ],
+    [ 28, ],
+    [ 29, ],
+    [ 30, ],
+    [ 31, ],
+    [ 32, ],
+    [ 33, ],
+    [ 34, ],
+    [ 35, ],
+
+
+
+
+
+
+		     
+
+sub sunpos {
+    my $time = shift;
+    if( ref($time) ne 'PDL' ) {
+	$time = str2time($time, "UTC");
+    }
+    my $tll = pdl($time);
+    if($tll->dim(0)!=3) {
+	$lonlat = pdl(shift // (0,0));
+	die "sunpos: lonlat, if specified must have two columns" if($lonlat->dim(0) != 2);
+	$tll = $tll->(*1)->glue(0,$lonlat);
+    }
+
+    # Hack threading through recursion (necessary?);
+    if($tll->nelem > 3) {
+	print "tll: $tll\n";
+	return pdl( map { sunpos( $_ ) } ($tll->dog) );
+    }
+
+
+    # the algorithm makes use of TT (Terrestrial Time) and UT separately.
+    # We assume they're the same for simplicity but track them separately
+    # for clarity in following the algorithm.
+    #
+    # Also, we treat UNIX time as if it were UT, which it isn't.
+    my $UT = $tll->((0));
+    my $DT = 0;  # delta-T explicitly zero.  Naughty (should be up to +/- 1 for precision)
+    my $TT = $UT + $DT;  
+
+
+    ### Step 1: define times
+    
+    # Step 1.1: calculate Julian Day
+    my $Y = time2str("%Y",$UT,"UTC");
+    my $M = time2str("%L",$UT,"UTC");
+    my $month_start = str2time( sprintf("%4.4d-%2.2d-01 00:00:00",$Y,$M), "UTC" );
+    my $D = ($UT - $month_start)/24/3600 + 1;
+    $JD =  floor( 365.25 * ( $Y + 4716 ) ) + floor( 30.6001 * ($M + 1)) + $D - 1524.5;
+    
+    my $A = int($Y/100);
+    my $B = 2 - $A + int($A/4);
+    if($JD > 2299160) {
+	$JD += $B;
+    }
+
+    # Step 1.2: calculate the Julian Ephemeris Day
+    my $JDE = $JD + $DT/86400;
+
+    # Step 1.3: Julian Century and Ephemeris Century
+    my $JC  = ($JD  -  2451545)/36525;
+    my $JCE = ($JDE -  2451545)/36525;
+
+    # Step 1.4: Julian Ephemeris Millennium (JME) for 2000 standard epoch
+    my $JME = $JCE/10;
+
+    ### Step 2: Calculate Earth heliocentric longitude, latitude, and radius (L, B, R)
+
+    $TabA4.2 = pdl(
+	
+    # Step 2.1: 
+
+    
+}
+    
+
+    

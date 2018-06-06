@@ -1,0 +1,164 @@
+=head2 strong_apodize 
+
+=for usage
+
+$b = $a->strong_apodize($npix_margin, $dims, $opt)
+$b = strong_apodize($a, $npix_margin, $dims, $opt);
+
+=for ref
+
+Apodize an array, with spline padding and rollout
+
+Simple apodization of certain data types leads to leakage across the
+boundary under the Fourier transform.  strong_apodize attempts to
+remove this by generating a padding margin at the outer edges of the
+array.  The padded area is a smooth spline between the last few values
+of the original data on the end of that dim, and the first few values
+on the other side.
+
+You specify the number of pixels in the rolloff window and the
+dimension(s) on which to do the rolloff.
+
+If $npix_margin is a 1-D PDL or a list ref, it is applied pixelwise to the dimensions.
+If $dims is a scalar, it is the dimension to use. If it is a list ref or a 1-D PDL, 
+then apodization takes place on those dimensions.  If it is missing, then the 0 dim 
+is used or the first C<n> dims if npix_margin is specified.
+
+If C<npix_margin> isn't specified then 25% of the dimension is used, lengthening that
+dimension to 4/5 of the original.
+
+=cut
+*PDL::strong_apodize = \&strong_apodize;
+use Safe::Isa;
+use PDL::Options;
+use PDL::Slatec;
+use strict;
+
+sub strong_apodize {
+ my $in = shift;
+ my $npix_margin = shift;
+ my $dims = shift;
+ my $u_opt = shift // {};
+
+ my $opt = {
+    parse( {
+        fade_window => 32, # if specified, smoothly fade to the spline over this window of data.
+	spline_from => 64, # fit this many points to get the spline slope
+	spline_offset=>16, # go back in this many pixels before the edge before splining
+	}, 
+	$u_opt
+	)
+	};
+
+ if(defined($npix_margin)) {
+     unless( ref($npix_margin) ) {
+	 $npix_margin = [$npix_margin];
+     } elsif( $npix_margin->$_isa('PDL') ) {
+	 if($npix_margin->ndims > 1) {
+	     die "apodize: npix_margin argument must have no more than 1-D if it is a PDL (not threadable)";
+	 } else {
+	     $npix_margin = [ list $npix_margin ];
+	 }
+     } elsif( ref $npix_margin ne 'ARRAY' ) {
+	 die "apodize: npix_margin argument must be scalar, list ref, or 1-D PDL";
+     }
+ }
+
+ unless(defined($dims)){
+     if(defined($npix_margin)) {
+	 $dims = [ list xvals( 0+@$npix_margin ) ];
+     } else {
+	 $dims = [0];
+     }
+ } elsif( $dims->$_isa('PDL') ) {
+     if($dims->ndims > 1) {
+	 die "apodize:  dims argument must have no more than 1-D if it is a PDL (not threadable)";
+     }
+     $dims = [list $dims];
+ } elsif( !ref($dims) ) {
+     $dims = [$dims+0];
+ } elsif( ref $dims ne 'ARRAY' ) {
+     die "apodize: dims argument must be scalar, list ref, or 1-D PDL";
+ }
+ 
+ unless(defined($npix_margin)) {
+     $npix_margin = [];
+     for my $i(0..$#$dims) {
+	 $npix_margin->[$i] = $in->dim($i)/10;
+     }
+ }
+
+ use PDL::IO::Dumper;
+ # Mock up threading
+ if( @$npix_margin == 0  or  @$dims == 0 ) {
+     die "apodize: empty list refs not allowed!";
+ }
+
+ if( $#$npix_margin != $#$dims ) {
+     if( @$npix_margin == 1 ) {
+	 my $a = $npix_margin->[0];
+	 @$npix_margin = map { $a } 0..$#$dims;
+     } else {
+	 die "apodize: dims and npix_margin must agree in size";
+     }
+ }
+
+ ## Figure the padded output size
+ my $new_size = $in->shape;
+ for my $ddex(0..$#$dims){
+     $new_size->($dims->[$ddex]) += $npix_margin->[$ddex];
+ }
+ my $out = zeroes($in->type, $new_size->list); # this is a waste, but WTH.
+ 
+ ## Now set the subset of the output that matches the input, to the input values.
+ my @slicelist = map { [0,$in->dim($_)-1] } (0..$in->ndims-1);
+ use PDL::IO::Dumper;
+ $out->slice(@slicelist) .= $in;
+
+ for my $ddex(0..$#$dims) {
+   # Bring the active dim to the front
+   my $o2 = ($dims->[$ddex] ? $out->mv($dims->[$ddex],0) : $out);
+   my $i2 = ($dims->[$ddex] ? $in->mv($dims->[$ddex],0)  : $in);
+
+   # Fit a line to the first and last few elements.
+   my $n = $opt->{spline_from};
+   my $of = $opt->{spline_offset};
+   my $start_coeffs = polyfit(xvals($n,$o2->((0))->dims) + $of,  $o2($of:$of+$n-1), ones($n), 1);
+   my $end_coeffs   = polyfit(-xvals($n,$o2->((0))->dims) - $of, $o2($i2->dim(0)-1-$of:$i2->dim(0)-$n-$of), ones($n), 1);
+
+   # Now use the slope of the line to launch a spline.
+   my $spline_x = pdl(
+       $i2->dim(0)-1,
+       $i2->dim(0),
+       $o2->dim(0), 
+       $o2->dim(0)+1
+       );
+   my $spline_y = pdl(
+       $end_coeffs->((0)),
+       $end_coeffs->((0))+$end_coeffs->((1)),
+       $start_coeffs->((0)) - $start_coeffs->((1)),
+       $start_coeffs->((0))
+       )->mv(-1,0);
+   my $locs = xvals($o2->dim(0) - $i2->dim(0)) + $i2->dim(0);
+
+   $o2->($i2->dim(0):$o2->dim(0)-1) .= cspline_irregular($spline_x->dummy(1,1), $spline_y->dummy(1,1), $locs, 1);
+
+   # Now, if there's a fade window, fade over it to the linear fit.
+   if($opt->{fade_window}) {
+       my $xi = xvals($opt->{fade_window})/$opt->{fade_window} * PI/2;
+       my $alpha = sin($xi)**2;
+       my $lin = $start_coeffs->(0) + $start_coeffs->(1) * xvals($opt->{fade_window});
+       $o2->(0:$opt->{fade_window}-1) *= $alpha;
+       $o2->(0:$opt->{fade_window}-1) += (1-$alpha) * $lin;
+
+       my $lin2 = $end_coeffs->(0) + $end_coeffs->(1) * (-xvals($opt->{fade_window}));
+       $o2->($i2->dim(0)-1:$i2->dim(0)-$opt->{fade_window}) *= $alpha;
+       $o2->($i2->dim(0)-1:$i2->dim(0)-$opt->{fade_window}) += (1-$alpha) * $lin2;
+   }
+ }
+
+ return $out;
+}
+     
+
+

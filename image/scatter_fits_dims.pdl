@@ -1,0 +1,71 @@
+=head2 scatter_fits_dims
+
+=for usage
+
+  @foo = scatter_fits_dims($hdr);
+  # do stuff to @foo;
+  $hdr2 = gather_fits_dims(@foo);
+
+=for ref
+
+Split a FITS header into a global part and per-dimension parts
+
+Sometimes you want to edit individual dimensions of a FITS header in a general
+way, without keeping track of the dimension-number string within each tag.
+C<scatter_fits_dims> and its companion, L<"gather_fits_dims"|gather_fits_dims>,
+accomplish this for you.  
+
+You feed a single FITS header into scatter_fits_dims and you get back out
+a perl list that contains a global part and individual dimensional parts
+that you can edit, then cram back into place.
+
+Currently, any field that ends in a number is assumed to be a dimensionalized
+quantity!  (e.g. FOO12 is associated with dimension #12).  This could become
+a problem later.  Fields that are known to work properly this way are
+NAXISn, CRPIXn, CRVALn, CDELTn, CTYPEn, and CROTAn [*].  
+
+[*](CROTAn has conceptual problems; see BUGS)
+
+SEE ALSO
+
+gather_fits_dims
+
+BUGS
+
+Doesn't know about L<"Astro::FITS::Header"|Astro::FITS::Header> -- so you
+get back vanilla hashes rather than cool tied hashes.  
+
+The full WCS specification includes a mixing matrix between dimensions;
+that isn't handled.
+
+AUTHOR
+
+C. DeForest (SwRI), 20-Sep-2001; distributable under the same terms as PDL.
+
+written 20-sep-2001, C. DeForest (SWRI)
+
+=cut
+sub scatter_fits_dims {
+  my($hdr) = @_;
+  my(@out);
+
+  $out[0] = {};
+
+  foreach (keys (%{$hdr})) {
+    my($k) = $_;
+    if(s/(\d+)$//) {
+      my($n) = $1;
+      if(defined $out[$n]) {
+	$out[$n]->{$_} = $hdr->{$k};
+      } else {
+	$out[$n] = {$_ => $hdr->{$k}};
+      }
+    } else {
+      $out[0]->{$_} = $hdr->{$_};
+    }
+  }
+  return @out;
+}
+      
+      
+

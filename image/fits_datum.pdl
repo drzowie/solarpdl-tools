@@ -1,0 +1,84 @@
+=head2 fits_datum
+
+=for usage
+
+  $hdr = t_fits_datum($hdr,{center=>1});
+  $hdr = t_fits_datum($hdr,{CRVAL=>[<x>,<y>]});
+  $hdr = t_fits_datum($hdr,{CRPIX=>[<x>,<y>]});
+
+=for ref
+
+Kludge to move the datum around in the image plane of a FITS file (with 
+linear header fields).  This is mainly useful for t_fits2helio, which
+shouldn't need it and defintely won't need it once everyone adopts full
+WCS-IV conventions.  The linear coordinate system remains unchanged -- only
+the anchor point moves.  (That point is treated as special by t_fits2helio.)
+
+AUTHOR
+
+Craig DeForest, 25-Jun-2004
+
+=cut
+
+use PDL::Transform;
+use strict;
+
+sub fits_datum {
+  my $hdr = shift;
+  my @opt =shift;
+  if(ref($opt[0]) eq 'HASH') {
+    $opt = $opt[0];
+  } else {
+    $opt = {@opt};
+  }
+
+  if(UNIVERSAL::isa($hdr,'PDL')) {
+    if($hdr->is_inplace) {
+      $hdr->set_inplace(0);
+      $hdr = $hdr->gethdr;
+    } else {
+      $hdr = $hdr->hdr_copy;
+    }
+  } else {
+    my %hdr = %$hdr;
+    $hdr = \%hdr;
+  }
+
+  if(PDL::Transform::_opt($opt,['c','cen','center','Center'],undef)) {
+    $opt->{CRPIX} = [($hdr->{NAXIS1}+1)/2,($hdr->{NAXIS2}+1)/2];
+  }
+  
+  my $thunk;
+
+  my $c = PDL::Transform::_opt($opt,['pix','PIX','CRPIX','crpix'],undef);
+  $thunk = sub {
+    ($n,$crpix) = @_;
+    $hdr->{"CRVAL$n"} += $hdr->{"CDELT$n"} * ($crpix - $hdr->{"CRPIX$n"});
+    $hdr->{"CRPIX$n"} = $crpix;
+  } if($c);
+
+  unless($c) {
+    $c = PDL::Transform::_opt($opt,['val','VAL','CRVAL','crval'],undef);
+    $thunk = sub {
+      ($n,$crval) = @_;
+      $hdr->{"CRPIX$n"} += ($crval - $hdr->{"CRVAL$n"})/$hdr->{"CDELT$n"};
+      $hdr->{"CRVAL$n"} = $crval;
+    } if($c);
+  }    
+  
+  if(defined $thunk) {
+    &$thunk(1,$c->[0]);
+    &$thunk(2,$c->[1]);
+  }
+  return $hdr;
+}  
+
+
+
+
+  
+  
+  
+
+    
+    

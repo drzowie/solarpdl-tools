@@ -1,0 +1,75 @@
+=head2 gauss2 
+
+=for ref
+
+Return a circular Gaussian with specified HWHM, and unit area integral.
+
+=for sig
+
+Signature: gauss(size(n); hwhm(); location(n))
+
+=for usage
+  
+  $g = gauss2(<field-size>,<hwhm>,[<center-coords>]);
+
+=for opt
+
+ size: the size, in pixels of the field.  Scalar or 2 values, or a 2-D pdl
+  representing the playing field.
+
+ hwhm: the half-width-half-maximum size of the Gaussian
+
+ location: the location, in pixels, of the center of the
+    gaussian.  Pixel locations are centered on that pixel --
+    so (0,0) puts the gaussian's center at the middle of the (0,0)
+    pixel, and (-0.5,-0.5) puts the center at the lower left edge
+    of the lower left pixel.
+
+=for example
+
+  $g = gauss(100,20,pdl(30,30));
+
+Generates a 100-pixel array full of a Gaussian with sigma=20, centered
+on pixel #30.
+
+  $g = gauss(100,10+xvals(10),50)
+
+Generates a 100x10 array.  0th dimension is the X axis; 1st dimension runs
+across Gaussians.  Their FWHMs go from 10 to 19 inclusive.
+
+=for history
+
+Writen 3-Dec-2001, C. DeForest
+
+=cut
+
+  sub gauss2 {
+    ($size0,$hwhm,$location) = @_;
+#    my($size);
+#    my($wk,$out);
+
+    $size0 = pdl($size0)
+      if(ref $size0 ne 'PDL');
+    
+    if($size0->nelem == 1) {
+      $size = [$size0->dummy(0,2)->list]
+    } elsif($size0->nelem == 2) {
+      $size=[$size0->list];
+    } elsif($size0->ndims == 2) {
+      $size = [$size0->dims];
+    } else {
+      barf("gauss2: unrecognized size");
+    }
+
+    if(!defined $location) {
+      $location = [$size->[0]/2 - 0.5, $size->[1]/2 - 0.5];
+    }
+
+    $wk = rvals(@$size,{Center=>$location});
+    $out = exp(- log(2) * $wk * $wk / $hwhm / $hwhm);
+    $out /= sum($out);
+    return $out;
+  }
+
+
+

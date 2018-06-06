@@ -1,0 +1,121 @@
+=head2 make_distortion_map
+
+=for ref
+
+Generate a distortion map between two DASH images, given nothing else.
+Inputs are WxH each, and the output is 2xWxH, showing the shift in pixels FROM
+the first TO the second (i.e. a value of (-2,5) means features in the second
+image are two pixels left and five pixels up from the first image -- you
+can use $b->range([-2,5],$a->shape,'e') to get pixels comparable to $a.
+
+=cut
+use PDL::Options;
+use strict;
+use PDL::NiceSlice;
+
+
+sub make_distortion_map {
+    my $a = shift;
+    my $b = shift;
+    my $u_opt = shift // {};
+
+    my %opt = parse( {
+	patch_r0      => 50,  # patch size to correlate, in pixels
+	initial_range => 50,  # Check for shifts up to this many pixels at image center for the initial alignment
+	delta_range   => 20,   # Check for delta-shifts up to this many pixels everywhere after shift and rotate.
+	corr_thresh   => 0.9,  # Correlation must be at least this much for a fit to be kept
+	bkg_size      => 50,
+	bkg_pct       => 1,
+	bkg_skip      => 2,
+        pix_per_patch => 25,
+	preblur       => 0,    # If nonzero, Gaussian blur both starfields with a kernel of this HW (radius) to reduce read noise.
+	diff_zthresh  => 0,   
+		     }, $u_opt);
+    my $opt = \%opt;
+
+    our ($aa, $bb, $bulk_offset, $bbo, $x1, $y1, $of, $of1, $of2, $dist_x, $dist_y, $corrs, $xx, $yy, $x0, $x1, $lin_t, $distortion_submap, $ret, $ams, $bms,$amsk);
+    
+    ##############################
+    # Zeroth -- prepare starfield-only images using minismooth
+    print "prepping starfields...";
+    my $amsr = rvals($opt->{bkg_size}*2+1,$opt->{bkg_size}*2+1);
+    $amsk = exp(-$amsr*$amsr / ($opt->{bkg_size} * $opt->{bkg_size} / 1.5 / 1.5) );
+    $amsk /= $amsk->sum;
+    
+    $ams = minismooth($a,$opt->{bkg_size},($opt->{bkg_pct}/100)*(($opt->{bkg_size}/$opt->{bkg_skip})**2)+0.5,$opt->{bkg_skip});
+    $aa = $a - $ams->convolveND($amsk,{boundary=>'e'});
+    
+    print "...";
+    $bms = minismooth($b,$opt->{bkg_size},($opt->{bkg_pct}/100)*(($opt->{bkg_size}/$opt->{bkg_skip})**2)+0.5,$opt->{bkg_skip});
+    $bb = $b - $bms->convolveND($amsk,{boundary=>'e'});
+
+    if($opt->{diff_zthresh}) {
+	$aa->where($aa->abs < $opt->{diff_zthresh}) .= 0;
+	$bb->where($bb->abs < $opt->{diff_zthresh}) .= 0;
+    }
+
+    if($opt->{preblur}) {
+      print "Applying preblur of $opt->{preblur} pixels...";
+      my $kr= rvals($opt->{preblur}*4+1);
+      my $k = exp(-$kr*$kr / $opt->{preblur} / $opt->{preblur});
+      $k /= $k->sum;
+      $aa->inplace->convolveND($k,{bound=>'e'});
+      $bb->inplace->convolveND($k,{bound=>'e'});
+    }
+
+    ##############################
+    # First - figure the main offset.
+    print "Figuring bulk offset...";
+    $bulk_offset = correlate_patch_fft($aa,$bb,$aa->shape/2,pdl(0,0),$opt->{initial_range},$opt->{patch_r0}, $opt->{corr_thresh});
+    print "BULK OFFSET IS ". $bulk_offset . ".   \n\n\n";
+
+    $bbo = $bb->range($bulk_offset->rint, $bb->shape, 't');
+
+
+    $distortion_submap = zeroes(3, list (($a->shape - $opt->{patch_r0}*2 - $opt->{delta_range}*2)/$opt->{pix_per_patch}));
+    $dist_x = $distortion_submap->((0));
+    $dist_y = $distortion_submap->((1));
+    $corrs  = $distortion_submap->((2));
+    
+    $dist_x->sethdr( {
+	NAXIS=>2,
+	NAXIS1=>$dist_x->dim(0),
+	NAXIS2=>$dist_x->dim(1),
+	CRPIX1=>1,
+	CRPIX2=>1,
+	CRVAL1=>$opt->{patch_r0} + $opt->{delta_range},
+	CRVAL2=>$opt->{patch_r0},
+	CDELT1=>$opt->{pix_per_patch},
+	CDELT2=>$opt->{pix_per_patch}
+		     });
+    $dist_y->sethdr($dist_x->hdr_copy);
+    $corrs->sethdr($dist_x->hdr_copy);
+
+    print "Looping over a ".join("x",$dist_x->dims)." grid...\n";
+
+    for $yy(0..$dist_y->dim(1)-1) {
+	for $xx(0..$dist_x->dim(0)-1) {
+	    $x0 = pdl($xx,$yy)->apply(t_fits($dist_x));  # location in original image-plane pixels
+
+	    print "($xx,$yy): ";
+	    my($of, $corr) = 	correlate_patch_fft( $aa, $bb, $x0, $bulk_offset,
+				  $opt->{delta_range}, $opt->{patch_r0},
+				  $opt->{corr_thresh});
+ 	    $distortion_submap->(0:1,($xx),($yy)) .= $of;
+	    $distortion_submap->((2),($xx),($yy)) .= $corr;
+	    
+	    print ((($opt->{delta_range}+$opt->{patch_r0})*2+1)," -- ",$distortion_submap->(:,($xx),($yy)),"; corr=$corr");
+	    print "\n";
+	}
+
+    }
+
+    $dist_x->where($corrs < $opt->{corr_thresh}) .= asin(pdl(1.1));
+    $dist_y->where($corrs < $opt->{corr_thresh}) .= asin(pdl(1.1));
+
+    $ret = zeroes(3, $a->dims);
+    $ret->((0)) .= $dist_x->match($a,{method=>'s',bound=>'e'});
+    $ret->((1)) .= $dist_y->match($a,{method=>'s',bound=>'e'});
+    $ret->((2)) .= $corrs->match($a,{method=>'s',bound=>'e'});
+    return $ret;
+}

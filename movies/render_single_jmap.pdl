@@ -1,0 +1,68 @@
+=for usage
+
+$z = render_single_jmap( \@files, $time, \%opt );
+
+=for ref
+
+Render a J-map for a particular event at a particular time.  Options let you choose various aspects.
+
+=over 3
+
+=item NORM_POWER 
+
+(default is 0) Values are multiplied by the distance from the Sun, raised to this power. Default does nothing.
+
+=item CADENCE
+
+(default is 1200) This is the step time, in seconds, between rasters of the J map.
+
+=item WINDOW
+
+(default is 5) This is the full-width, in days, of the window around the central time that is used for the J map.
+
+=back
+
+=cut
+
+use PDL::Options;
+use PDL::Transform;
+use Date::Parse;
+use Date::Format;
+
+use strict;
+
+sub render_single_jmap {
+    my $files = shift;
+    my $time = shift;
+    my $u_opt = shift // {};
+
+    my %opt = parse( {
+	NORM_POWER => 1,
+	CADENCE => 1200,
+	WINDOW => 8,
+	ROWS => undef
+		     }, $u_opt);
+    my $opt = \%opt;
+
+    my $t = str2time($time,"UTC");
+    my $ts = $t - 3600*24*$opt{WINDOW}/2;
+    my $time_s = time2str("%c",$ts);
+    my $te = $t + 3600*24*$opt{WINDOW}/2;
+    my $time_e = time2str("%c",$te);
+
+
+    my $z = make_single_jmap($files, $time_s, $time_e, $opt{CADENCE}, $opt{ROWS});
+    $z->hdrcpy(1);
+    for(qw/CROTA PC1_1 PC1_2 PC2_1 PC2_2/) {
+	delete($z->hdr->{$_});
+    }
+
+    if($opt{NORM_POWER}) {
+	my $ndc = ndcoords($z)->apply(t_fits($z));
+	$z *= $ndc->((0))->abs ** $opt{NORM_POWER};
+    }
+
+    return $z;
+}
+
+		     

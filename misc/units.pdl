@@ -1,0 +1,86 @@
+=head2 units
+
+=for usage
+  # Find conversion constant where possible
+  $const = units($from_unit, $to_unit)
+ 
+  # Convert one type of value to another where possible. 
+  $a = units( $value,  $from_unit,  $to_unit );
+
+=for ref
+
+Units converter 
+
+You can find conversion constants between different named units, or 
+convert single values.  The latter syntax is retained for backward
+compatibility wih the older Math::Units module.
+
+units() is just an interface to one of two existing perl units engines.
+Physics::Unit is the preferred engine, but the code falls back to Math::Units 
+if necessary. Both are available from www.cpan.org.  
+
+AUTHOR & HISTORY
+
+- Craig DeForest, in the dim past
+
+- Updated to use Physics::Unit, 22-Jun-2004
+
+=cut
+
+BEGIN {
+ eval "use Physics::Unit;";
+ if( !$@ ) {
+   print STDERR "\nFound Physics::Unit...\n\n" if($PDL::verbose);
+   eval  q{
+     sub units {
+       my ($from, $to, $val);
+       if(@_==3) {
+	 ($val, $from, $to) = @_;
+       } else {
+	 ($val, $from, $to) = (1,@_);
+       }
+
+       my $fu = Physics::Unit::GetUnit($from);
+       my $tu = Physics::Unit::GetUnit($to);
+       if (Physics::Unit::CompareDim($fu, $tu)){
+	 print STDERR "Warning: units can't convert '$from' to '$to'\n" if($PDL::verbose);
+	 return undef;
+       }
+       return $val * $fu->{factor}/$tu->{factor};
+     }
+   };
+
+	use Physics::Unit;
+	new Physics::Unit('6.9595e8 meter','r_sun');
+
+ } # end of "Physics::Unit is defined" case
+else {
+  eval "use Math::Units;";
+  if( !$@ ) {
+    print STDERR "\nFound Math::Units (deprecated; please install Physics::Unit)\n [Angular units may fail]\n\n" if($PDL::verbose);
+    eval q{
+      sub units {
+	my($from, $to, $val);
+
+ 	if(@_==3){
+	  ($val, $from, $to) = @_;
+	} else {
+	  ($val, $from, $to) = (1,@_);
+	}
+	return Math::Units::convert($val, $from, $to);
+      }
+    };
+  }
+  else {
+    print STDERR "\nunits: Neither Physics::Unit nor Math::Units could be loaded. Giving up.\n\n";
+    eval q{
+      sub units {
+      print STDERR "units: Neither Physics::Unit nor Math::Units could be loaded.\n";
+      return undef;
+      }
+    };
+  }
+}
+} 
+
+

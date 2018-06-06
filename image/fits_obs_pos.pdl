@@ -1,0 +1,122 @@
+=pod
+
+=head2 fits_obs_pos
+
+=for ref
+
+Make sure that observer position coordinates are present in a FITS header.
+
+If they're not, take a guess at where the observer is located, and insert
+them.
+
+Returns the modified header.  If you pass in a PDL, then its header
+is used.  If the PDL's inplace flag is set, then the work is done in-place.
+
+=cut
+
+use strict;
+
+sub fits_obs_pos {
+  my $hdr = shift;
+
+  if(UNIVERSAL::isa($hdr,'PDL')) {
+    my $z = $hdr;
+    $hdr = ($hdr->is_inplace ? $hdr->hdr : $hdr->hdr_copy);
+    $z->set_inplace(0);
+  } else {
+    my %foo = %$hdr;
+    $hdr = \%foo;
+  }
+
+  my ($r, $lon, $lat);
+
+  my $thunk = sub { 
+    map { 
+      my $u=shift;
+      return $hdr->{$_->[0]} * units($_->[1],$u) if(defined $hdr->{$_}) 
+      } @_ ;
+      return undef;
+    };
+
+  $r = &$thunk('meter'
+	       ,['DSUN_OBS','meter']        # Thompson spec
+	       ,['OBS_DSUN','meter']        # Inverted Thompson spec
+	       ,['OBS_DIST','au']           # MDI keywords
+	       );
+  $r /= 695.95e6 if defined($r); # Convert meters -> solar radii
+
+  $lon = &$thunk('degree'
+		 ,['HGLN_OBS','degree']     # Thompson spec
+		 ,['OBS_HGLN','degree']     # Inverted Thompson spec
+		 ,['OBS_L0','degree']       # MDI keywords
+		 );
+  $lat = &$thunk('degree'
+		 ,['HGLT_OBS','degree']     # Thompson spec
+		 ,['OBS_HGLT','degree']     # Inverted Thompson spec
+		 ,['OBS_B0','degree']       # MDI keywords
+		 );
+
+  unless(defined $r && defined $lon && defined $lat) {
+    
+    ##############################
+    # Location wasn't fully in the headers -- guess at observatory location
+    
+    print (STDERR "Basic location tags not found for: ",
+	   join(", ",
+		( ("dist.","")[defined $r],
+		  ("lon.","")[defined $lon],
+		  ("lat.","")[defined $lat]
+		  )
+		),
+	   ".  Guessing location\n") if($PDL::verbose);
+
+    unless(defined $PDL::Solar::instrument_inventory) {
+      my $s = 'soho';
+      my $e = 'earth';
+      map { $PDL::Solar::instrument_inventory->{$_}='soho' } 
+      ('soho','mdi','eit','lasco','sumer','cds','lasco');
+      map { $PDL::Solar::instrument_inventory->{$_}='earth' }
+      ('gong','gong+','trace','rhessi','hessi','nso',
+       'hinode','sot/nb','sot/wb','sot/sp','xrt','eis',
+       );
+    }
+    
+    my $s = $hdr->{INSTRUME} || $hdr->{TELESCOP};
+    $s =~ s/\s//g;
+    $s =~ tr/[A-Z]/[a-z]/;
+    
+    my $where = $PDL::Solar::instrument_inventory->{$s};
+    
+    print (STDERR "Location is ",($where||"not present; guessing Earth"),"\n")
+      if($PDL::verbose);
+    
+    $where = $where||"earth";
+
+    print STDERR "fits_obs_pos: DATE_OBS tag not present in header; using today's date!\n" 
+      unless($hdr->{DATE_OBS});
+
+    my(@pb0r) = pb0r($hdr->{DATE_OBS})->list;
+
+#    use Physics::Unit;
+#     my $rsun_unit = new Physics::Unit('6.96E8 meter','r_sun');
+
+    ($lon,$lat,$r) = (0,$pb0r[1],$pb0r[3] * units('r_sun','meter'));
+
+    if($where eq 'soho') {
+      $r *= 0.99;
+    }
+
+    unless( defined($hdr->{DSUN_OBS})) {
+	$hdr->{DSUN_OBS} = $r;
+    } else {print "DSUN_OBS already defined - ignoring\n";}
+    unless( defined($hdr->{HGLN_OBS})) {
+	$hdr->{HGLN_OBS} = $lon;
+    } else {print "HGLN_OBS already defined - ignoring\n";}
+    unless( defined($hdr->{HGLT_OBS})) {
+	$hdr->{HGLT_OBS} = $lat;
+    } else {print "HGLT_OBS already defined - ignoring\n";}
+
+  }
+
+  $hdr;
+}

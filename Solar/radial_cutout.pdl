@@ -1,0 +1,80 @@
+=head2 radial_cutout
+
+=for ref
+
+Make a radial=vertical cutout of a solar image, at the specified location.
+
+=cut
+
+use strict;
+use PDL::Options;
+use PDL::Transform;
+use PDL::Constants;
+use PDL::NiceSlice;
+
+sub radial_cutout {
+    my $image = shift;
+    my $u_opt = shift;
+
+    my $tf = t_fits($image); # dies if $image is not a FITS image
+
+    my %opt = parse( {
+       size    => [512,512],
+       pix_loc => undef,
+       sci_loc => undef,
+       scale   => undef,
+       rot     => undef,
+       ctr     => undef,
+       }, $u_opt);
+
+
+    if( !defined($opt{pix_loc}) ) {
+	if(!defined($opt{sci_loc})) {
+	    die "radial_cutout: must specify a pix or sci location\n";
+	} else {
+	    $opt{sci_loc} = pdl($opt{sci_loc});
+	    $opt{pix_loc} = $opt{sci_loc}->apply(!$tf);
+	}
+    } else {
+	if(defined($opt{sci_loc})) {
+	    print STDERR "radial_cutout: WARNING - pix_loc specification overriding sci_loc!\n";
+	}
+	$opt{pix_loc} = pdl($opt{pix_loc});
+	$opt{sci_loc} = $opt{pix_loc}->apply($tf);
+    }
+
+
+    unless(defined($opt{rot})) {
+	$opt{rot} = - atan2($opt{sci_loc}->at(0), $opt{sci_loc}->at(1)) * 180/PI;
+    }
+
+    $opt{size} = [ pdl($opt{size})->list ];
+
+    unless(defined($opt{ctr})) {
+	$opt{ctr} = [ $opt{size}->[0]/2, $opt{size}->[1]/2 ];
+    }
+
+
+    my($ohdr, $out);
+    
+    $ohdr = $image->hdr_copy;
+    $ohdr->{NAXIS1} = $opt{size}->[0];
+    $ohdr->{NAXIS2} = $opt{size}->[1];
+    $ohdr->{CRVAL1} = $opt{sci_loc}->at(0);
+    $ohdr->{CRVAL2} = $opt{sci_loc}->at(1);
+    $ohdr->{CRPIX1} = $opt{ctr}->[0] + 1;
+    $ohdr->{CRPIX2} = $opt{ctr}->[1] + 1;
+    $ohdr->{CROTA2} += ($opt{rot}) ;
+
+    if(defined($opt{scale})) {
+	$ohdr->{CDELT1} /= $opt{scale};
+	$ohdr->{CDELT2} /= $opt{scale};
+    }
+
+    $out = $image->match($ohdr,{method=>"h"});
+    return $out;
+}
+
+
+
+       
