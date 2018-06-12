@@ -4,7 +4,7 @@
 
 =for usage
 
-    $pos = sun_pos($mod_jday);
+    $pos = sun_pos($dub_jday);
 
 =for ref 
 
@@ -23,9 +23,9 @@ angular cordinates (T.E.D.) to a precision of one second of time".
 
 =over 4
     
-=item $mod_jday
+=item $dub_jday
 
-Fractional number of days since JD 2415020.0
+Fractional number of days since JD 2415020.0.  This is also known as the "Dublin Julian Day."
 
 =back
 
