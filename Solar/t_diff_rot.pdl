@@ -97,15 +97,14 @@ sub t_diff_rot {
     local($_) = $o->{meth};
 #D.Lamb: changed from $o->{m} to $o->{meth}
     if(m/^a/i) {
-      # Allen case
-      my $sin2l;
-      $sin2l = (defined $o->{lat}) ? sin($o->{lat}/$o->{conv}) : sin($o1);
+      # Allen case (deg / day)
+      my $sin2l = (defined $o->{lat}) ? sin($o->{lat}/$o->{conv}) : sin($o1);
       $sin2l *= $sin2l;
       $out->((0)) += $t * ( (3.1415926 / 180) * 
 				 ((14.44 - $msd) - 3.0 * $sin2l)
 				 );
     } elsif(m/^h/i) {
-      # Howard, Harvey, & Forgach case
+      # Howard, Harvey, & Forgach case (micro-rad / s)
       my $sin2l = (defined $o->{lat}) ? sin($o->{lat}/$o->{conv}) : sin($o1);
       $sin2l *= $sin2l;
       my $sin4l = $sin2l * $sin2l;
@@ -132,3 +131,4 @@ sub t_diff_rot {
   $me;
 }
   
+1;
