@@ -7,6 +7,5 @@ This is a synonym for C<average>.
 =cut
 
 sub mean {
-  my($X) = shift;
-  return $X->sumover / $X->dim(0);
+  return average shift;
 }

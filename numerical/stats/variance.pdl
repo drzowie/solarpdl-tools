@@ -7,12 +7,14 @@
 =for ref
 
 Collapses the 0th dimension, returning the statistical variance along
-the 0th dimension.
+the 0th dimension. Note that this currently performs the "parent distribution" (1/N) calculation, and not the "sample" (1/(N-1)) calculation.
+
+See also PDL::Stats::Basic.
 
 =cut
 
 sub variance {
   my($X) = shift;
   my($mX) = $X->sumover / $X->dim(0);
-  return sqrt (    ( ($X * $X)->sumover/ $X->dim(0)) - $mX * $mX   );
+  return ($X * $X)->sumover/ $X->dim(0) - $mX * $mX ;
 }

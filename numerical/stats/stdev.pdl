@@ -2,13 +2,15 @@
 
 =for ref
 
-The standard deviation is mean( | X - mean(X) | ).
+The standard deviation is sqrt( mean(X^2) - mean(X)^2 ).
+Note that this currently performs the "parent distribution" (1/N) calculation, and not the "sample" (1/(N-1)) calculation.
+
+See also PDL::Stats::Basic.
 
 =cut
 
 sub stdev{
     my($input)=@_;
-$input=$input->flat;
     my $variance=average($input*$input)-average($input)**2;
     return sqrt($variance);
 }

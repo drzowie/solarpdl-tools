@@ -6,8 +6,10 @@
 
 =for ref
 
-The covariance of two random variables X and Y is given by 
+The covariance of two random variables X and Y is given by
 Cov(X,Y)= mean(XY) - mean(X)mean(Y).
+
+See also PDL::Stats::Basic.
 
 =cut
 

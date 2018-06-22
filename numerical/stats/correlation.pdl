@@ -1,4 +1,4 @@
-=head2 correlation - correlation coefficient between two PDLs
+=head2 correlation - Pearson correlation coefficient between two PDLs
 
 =for usage
 
@@ -7,12 +7,14 @@
 =for ref
 
 This is the covariance of the two variables, divided by their individual
-variances.
+standard deviations.
+
+See also PDL::Stats::Basic.
 
 =cut
 
 sub correlation {
   my($X) = shift->double;
   my($Y) = shift->double;
-  return covariance($X,$Y) / variance($X) / variance($Y);
+  return covariance($X,$Y) / stdev($X) / stdev($Y);
 }
